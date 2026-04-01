@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precast ERP - WIP Inventory</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; align-items: center; justify-content: space-between; border-left: 4px solid var(--border); box-shadow: var(--shadow-sm); }
+        .stat-card.blue { border-left-color: var(--accent); }
+        .stat-card.emerald { border-left-color: var(--green); }
+        .stat-card.orange { border-left-color: #f97316; }
+        .stat-card.indigo { border-left-color: #6366f1; }
+        
+        .stat-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .stat-card.blue .stat-icon { background: var(--accent-light); color: var(--accent); }
+        .stat-card.emerald .stat-icon { background: #f0fdf4; color: var(--green); }
+        .stat-card.orange .stat-icon { background: #fff7ed; color: #f97316; }
+        .stat-card.indigo .stat-icon { background: #eef2ff; color: #6366f1; }
+
+        .stat-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
+        .stat-value { font-size: 24px; font-weight: 700; color: var(--text-primary); }
+        .stat-unit { font-size: 13px; font-weight: 400; color: var(--text-muted); }
+
+        .tools-bar { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid var(--border); background: var(--bg); border-radius: var(--radius) var(--radius) 0 0; gap: 16px; flex-wrap: wrap; }
+        .search-box { position: relative; flex: 1; max-width: 320px; }
+        .search-box i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+        .search-box input { width: 100%; padding: 8px 12px 8px 36px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; outline: none; }
+        
+        .filter-group { display: flex; gap: 8px; }
+        .filter-group select, .filter-group button { padding: 8px 12px; border: 1px solid var(--border); background: white; border-radius: var(--radius-sm); font-size: 13px; color: var(--text-primary); cursor: pointer; outline: none; font-weight: 600; }
+
+        .table-wrap { overflow-y: auto; max-height: 500px; }
+        .table-wrap table { width: 100%; border-collapse: collapse; }
+        .table-wrap th { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-muted); text-transform: uppercase; background: var(--bg); position: sticky; top: 0; z-index: 10; }
+        .table-wrap td { padding: 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .table-wrap tr { transition: background 0.15s; }
+        .table-wrap tr:hover td { background: var(--hover); }
+        
+        .table-wrap tr.alert-row { border-left: 4px solid #f97316; background: rgba(249, 115, 22, 0.03); }
+        .table-wrap tr.alert-row:hover td { background: rgba(249, 115, 22, 0.08); }
+
+        .progress-bar-wrap { width: 100%; background: #e2e8f0; border-radius: 4px; height: 6px; overflow: hidden; margin-top: 4px; }
+        .progress-bar-fill { height: 100%; border-radius: 4px; }
+        
+        .badge { padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; }
+        .badge-gray { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+        .badge-orange-outline { background: #fff7ed; color: #ea580c; border-color: #ffedd5; }
+        .badge-emerald-outline { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+
+        .form-dark { background: #1e293b; border-radius: var(--radius); border: 1px solid #334155; display: flex; flex-direction: column; overflow: hidden; color: white; height: 100%; box-shadow: var(--shadow-sm); margin-bottom: 24px; }
+        .form-dark-header { padding: 20px; border-bottom: 1px solid #334155; background: #0f172a; font-weight: 700; font-size: 16px; color: #60a5fa; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .form-dark-body { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+        .form-dark-field { display: flex; flex-direction: column; gap: 6px; }
+        .form-dark-field label { font-size: 12px; font-weight: 600; color: #94a3b8; }
+        .form-dark-input { background: #334155; border: 1px solid #475569; color: white; padding: 10px; font-size: 13px; outline: none; border-radius: var(--radius-sm); font-weight: 600; }
+        .form-dark-input:focus { border-color: #3b82f6; }
+        
+        .bom-preview { background: rgba(15, 23, 42, 0.8); border-radius: var(--radius-sm); padding: 16px; border: 1px solid rgba(59, 130, 246, 0.3); margin-top: 16px; box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06); position: relative; overflow: hidden; }
+        .bom-preview::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: #3b82f6; }
+        .bom-header { font-size: 10px; font-weight: 700; color: #60a5fa; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; }
+        
+        .bom-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #334155; }
+        .bom-row:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+        .bom-tag { background: #1e293b; padding: 2px 6px; border-radius: 4px; font-weight: 700; color: white; font-size: 11px; }
+        
+        .form-dark-footer { padding: 20px; border-top: 1px solid #334155; background: rgba(15, 23, 42, 0.8); flex-shrink: 0; }
+        .btn-blue { background: #2563eb; color: white; border: none; padding: 14px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 700; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; transition: 0.15s; width: 100%; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3); }
+        .btn-blue:hover { background: #1d4ed8; }
+        
+        @keyframes pulse-anim { 0%, 100% {opacity: 1;} 50% {opacity: .5;} }
+        .anim-pulse { animation: pulse-anim 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside>
+    <div class="logo">
+        <div class="logo-icon"><i class="fas fa-industry"></i></div>
+        <div class="logo-text">PCC <span>POSTENTION</span></div>
+    </div>
+
+        <nav>
+        <div class="nav-label">Main</div>
+        <a href="index.html"><i class="fas fa-chart-line"></i> Dashboard</a>
+
+        <div class="nav-label">Production</div>
+        <a href="planner.html"><i class="fas fa-calendar-alt"></i> แผนการผลิต</a>
+        <a href="job_orders.html"><i class="fas fa-clipboard-list"></i> คิวงานเทปูน</a>
+        <a href="demolding.html"><i class="fas fa-hammer"></i> งานถอดแบบ</a>
+
+        <div class="nav-label">Inventory</div>
+        <a href="inventory.html"><i class="fas fa-layer-group"></i> คลังวัตถุดิบ</a>
+        <a href="wip.html" class="active"><i class="fas fa-th-large"></i> โครงเหล็ก (WIP)</a>
+        <a href="fg.html"><i class="fas fa-cubes"></i> สินค้าพร้อมขาย</a>
+
+        <div class="nav-label">System</div>
+        <a href="products.html"><i class="fas fa-box-open"></i> ข้อมูลสินค้า</a>
+        <a href="users.html"><i class="fas fa-users-cog"></i> จัดการผู้ใช้งาน</a>
+        <a href="qc.html"><i class="fas fa-clipboard-check"></i> จัดการของเสีย (QC)</a>
+        <a href="logs.html"><i class="fas fa-history"></i> ประวัติการทำงาน</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+        <a href="#"><i class="fas fa-cog"></i> ตั้งค่า</a>
+        <a href="#" class="logout"><i class="fas fa-sign-out-alt"></i> ออกจากระบบ</a>
+    </div>
+</aside>
+
+<!-- MAIN -->
+<main>
+    <header>
+        <div class="header-left">
+            <h1 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 8px;">
+                <i class="fas fa-th-large" style="color: var(--accent);"></i> จัดการโครงเหล็กเตรียมผลิต (WIP)
+            </h1>
+        </div>
+        <div style="flex: 1;"></div>
+        <div class="header-right">
+            <div class="date-pill" style="background: #f0fdf4; border-color: #d1fae5; color: #047857; font-weight: 600;">
+                <i class="fas fa-calendar-check"></i>
+                <span style="font-weight: 500;">แผนความต้องการของวันที่: <span style="font-weight: 700; color: #064e3b; margin-left: 4px;">วันนี้ (31 มี.ค.)</span></span>
+            </div>
+
+            <div class="notif-btn">
+                <i class="far fa-bell"></i>
+                <span class="notif-dot"></span>
+            </div>
+            <div class="user-profile">
+                <div class="avatar">
+                    <img src="https://i.pravatar.cc/150?img=11" alt="Profile">
+                </div>
+                <div class="user-details">
+                    <span class="user-name">วริศรา ผู้ดูแล</span>
+                    <span class="user-role">ผู้ดูแลระบบ (Admin)</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="content">
+        
+        <div class="stats-grid">
+            <div class="stat-card blue">
+                <div class="stat-info">
+                    <div class="stat-label">ความต้องการตามแผน (Demand)</div>
+                    <div class="stat-value">115 <span class="stat-unit">ชุด</span></div>
+                </div>
+                <div class="stat-icon"><i class="fas fa-clipboard-list"></i></div>
+            </div>
+            <div class="stat-card emerald">
+                <div class="stat-info">
+                    <div class="stat-label">เตรียมพร้อมแล้ว (Ready)</div>
+                    <div class="stat-value" style="color: var(--green);">90 <span class="stat-unit">ชุด</span></div>
+                </div>
+                <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+            </div>
+            <div class="stat-card orange">
+                <div class="stat-info">
+                    <div class="stat-label">ขาดของ/เร่งด่วน (Shortage)</div>
+                    <div class="stat-value" style="color: #ea580c;">25 <span class="stat-unit" style="color: #fb923c;">ชุด</span></div>
+                </div>
+                <div class="stat-icon anim-pulse"><i class="fas fa-exclamation-triangle"></i></div>
+            </div>
+            <div class="stat-card indigo">
+                <div class="stat-info">
+                    <div class="stat-label">ผลงานประกอบวันนี้ (Output)</div>
+                    <div class="stat-value" style="color: #4f46e5;">+45 <span class="stat-unit">ชุด</span></div>
+                </div>
+                <div class="stat-icon"><i class="fas fa-tools"></i></div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; min-height: 0; align-items: start;">
+            
+            <div class="card" style="padding: 0; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-sm);">
+                
+                <div class="tools-bar">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="ค้นหา รหัส, ชื่อโครงเหล็ก...">
+                    </div>
+                    <div class="filter-group">
+                        <select>
+                            <option value="all">ดูรายการทั้งหมด</option>
+                            <option value="shortage" selected>ดูเฉพาะที่ขาดของตามแผน (Shortage)</option>
+                            <option value="ready">พร้อมผลิต (Ready)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="table-wrap custom-scrollbar">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>รหัส / รายการโครงเหล็ก (WIP)</th>
+                                <th style="text-align: center;">แผนต้องการ (Demand)</th>
+                                <th style="text-align: center;">มีในสต็อก (Stock)</th>
+                                <th style="width: 120px;">ความพร้อม (Readiness)</th>
+                                <th style="text-align: center;">สถานะ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            
+                            <tr class="alert-row">
+                                <td style="padding-left: 12px;">
+                                    <div style="font-weight: 700; color: #c2410c; font-size: 14px;">เมชกำแพงกันดิน Type 1</div>
+                                    <div style="font-size: 11px; color: #ea580c; margin-top: 2px;">WIP-RW-T1-MS</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; font-size: 16px; color: var(--text-primary);">25</div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">แผง</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; font-size: 16px; color: #ea580c;">10</div>
+                                    <div style="font-size: 10px; color: #f97316;">แผง</div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                                        <span style="color: #ea580c; font-weight: 700;">40%</span>
+                                    </div>
+                                    <div class="progress-bar-wrap" style="background: #fed7aa;">
+                                        <div class="progress-bar-fill" style="width: 40%; background: #f97316;"></div>
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-orange-outline"><i class="fas fa-exclamation-triangle"></i> ขาด 15</span>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td>
+                                    <div style="font-weight: 700; color: var(--text-primary); font-size: 14px;">โครงเหล็กเสาเข็ม I-22 (10m)</div>
+                                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">WIP-IP22-10M</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; font-size: 16px; color: var(--text-primary);">50</div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">ต้น</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; font-size: 16px; color: var(--green);">50</div>
+                                    <div style="font-size: 10px; color: var(--green);">ต้น</div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                                        <span style="color: var(--green); font-weight: 700;">100%</span>
+                                    </div>
+                                    <div class="progress-bar-wrap">
+                                        <div class="progress-bar-fill" style="width: 100%; background: var(--green);"></div>
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-emerald-outline"><i class="fas fa-check-circle"></i> พร้อมใช้</span>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td>
+                                    <div style="font-weight: 700; color: var(--text-primary); font-size: 14px;">โครงเหล็กเสาเข็ม I-26 (12m)</div>
+                                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">WIP-IP26-12M</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; font-size: 16px; color: var(--text-primary);">40</div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">ต้น (แผนพรุ่งนี้)</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; font-size: 16px; color: var(--accent);">65</div>
+                                    <div style="font-size: 10px; color: var(--accent);">ต้น</div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                                        <span style="color: var(--accent); font-weight: 700;">162%</span>
+                                    </div>
+                                    <div class="progress-bar-wrap" style="background: #dbeafe;">
+                                        <div class="progress-bar-fill" style="width: 100%; background: var(--accent);"></div>
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-gray"><i class="fas fa-box"></i> มีของในสต็อก</span>
+                                </td>
+                            </tr>
+                            
+                            <tr class="alert-row">
+                                <td style="padding-left: 12px;">
+                                    <div style="font-weight: 700; color: #c2410c; font-size: 14px;">เหล็กปลอกเสา (Stirrup)</div>
+                                    <div style="font-size: 11px; color: #ea580c; margin-top: 2px;">WIP-STP-01</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; font-size: 16px; color: var(--text-primary);">500</div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">ชิ้น</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; font-size: 16px; color: #ea580c;">400</div>
+                                    <div style="font-size: 10px; color: #f97316;">ชิ้น</div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                                        <span style="color: #ea580c; font-weight: 700;">80%</span>
+                                    </div>
+                                    <div class="progress-bar-wrap" style="background: #fed7aa;">
+                                        <div class="progress-bar-fill" style="width: 80%; background: #f97316;"></div>
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-orange-outline"><i class="fas fa-exclamation-triangle"></i> ขาด 100</span>
+                                </td>
+                            </tr>
+
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="form-dark shadow-sm">
+                
+                <div class="form-dark-header">
+                    <i class="fas fa-tools"></i> บันทึกงานประกอบเหล็ก
+                </div>
+
+                <div class="form-dark-body custom-scrollbar">
+                    
+                    <div class="form-dark-field">
+                        <label>เลือกโครงเหล็กที่เตรียมเสร็จ <span style="color: #f87171;">*</span></label>
+                        <select class="form-dark-input focus:ring-blue-500">
+                            <option value="" disabled>-- เลือกชิ้นงาน (WIP) --</option>
+                            <option value="WIP-RW-T1-MS" selected>เมชกำแพงกันดิน Type 1 (กำลังขาดของ)</option>
+                            <option value="WIP-IP22-10M">โครงเหล็กเสาเข็ม I-22 (10m)</option>
+                            <option value="WIP-STP-01">เหล็กปลอกเสา</option>
+                        </select>
+                    </div>
+
+                    <div class="form-dark-field">
+                        <label>จำนวนที่ทำสำเร็จ <span style="color: #f87171;">*</span></label>
+                        <div style="display: flex; border-radius: var(--radius-sm); overflow: hidden;">
+                            <input type="number" value="15" style="flex: 1; background: #334155; border: 1px solid #475569; border-right: none; color: #60a5fa; padding: 12px; font-size: 24px; font-weight: 700; text-align: right; outline: none;">
+                            <span style="background: #475569; border: 1px solid #475569; padding: 12px 16px; font-weight: 700; display: flex; align-items: center; color: #cbd5e1; font-size: 16px;">แผง</span>
+                        </div>
+                    </div>
+
+                    <div class="bom-preview">
+                        <div class="bom-header">
+                            <i class="fas fa-microchip" style="margin-right: 6px;"></i> ระบบจะอัปเดตสต็อกอัตโนมัติตาม BOM:
+                        </div>
+                        
+                        <div class="bom-row" style="align-items: flex-start;">
+                            <div style="color: #f87171; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                                <div style="background: rgba(239, 68, 68, 0.2); padding: 4px; border-radius: 4px;"><i class="fas fa-minus" style="font-size: 10px;"></i></div>
+                                คลังวัตถุดิบ (Raw)
+                            </div>
+                            <div style="text-align: right; color: #cbd5e1; display: flex; flex-direction: column; gap: 4px;">
+                                <div>ตัด เหล็ก DB12 <span class="bom-tag">30 เส้น</span></div>
+                                <div>ตัด ลวดผูก <span class="bom-tag">0.5 ม้วน</span></div>
+                            </div>
+                        </div>
+
+                        <div class="bom-row" style="align-items: center;">
+                            <div style="color: #34d399; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                                <div style="background: rgba(16, 185, 129, 0.2); padding: 4px; border-radius: 4px;"><i class="fas fa-plus" style="font-size: 10px;"></i></div>
+                                คลังพร้อมผลิต (WIP)
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="color: #34d399; font-weight: 700; background: rgba(16, 185, 129, 0.1); padding: 4px 8px; border-radius: 4px;">
+                                    เพิ่ม เมชกำแพง <span style="color: white; margin-left: 4px;">15 แผง</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="form-dark-footer">
+                    <button class="btn-blue group" style="position: relative; overflow: hidden;">
+                        <i class="fas fa-sync-alt"></i> ยืนยันตัดสต็อก RM และเพิ่ม WIP
+                    </button>
+                </div>
+
+            </div>
+
+        </div>
+    </div>
+</main>
+
+</body>
+</html>

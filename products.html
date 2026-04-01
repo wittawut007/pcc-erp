@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precast ERP - Product Management</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .role-badge { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+        
+        /* Category Badges */
+        .badge-pile { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+        .badge-plank { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+        .badge-wall { background: #f3e8ff; color: #7e22ce; border-color: #e9d5ff; }
+        .badge-gray-cat { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+
+        .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; }
+        .status-active { background: #ecfdf5; color: #059669; border: 1px solid #d1fae5; }
+        .status-inactive { background: #fef2f2; color: #dc2626; border: 1px solid #fee2e2; }
+
+        .btn-action { width: 32px; height: 32px; border-radius: var(--radius-sm); border: none; background: #f1f5f9; color: #475569; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: 0.15s; }
+        .btn-action:hover { background: #e2e8f0; }
+        .btn-action-edit:hover { background: #dbeafe; color: #2563eb; }
+        .btn-action-trash:hover { background: #fef2f2; color: #dc2626; }
+        .btn-action-undo { background: #e2e8f0; color: #475569; width: auto; padding: 0 12px; font-weight: 700; font-size: 12px; gap: 6px; }
+        .btn-action-undo:hover { background: #d1fae5; color: #059669; }
+
+        .tr-inactive { opacity: 0.6; background: rgba(248,250,252, 0.5); border-left: 4px solid #ef4444; }
+        .tr-inactive:hover td { background: rgba(241,245,249, 0.5); }
+        .tr-active-alert { background: rgba(59, 130, 246, 0.05); border-left: 3px solid #3b82f6; }
+
+        /* KPI Specific */
+        .kpi-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-bottom: 24px; }
+        .kpi-user-card { background: white; border-radius: var(--radius); padding: 16px; border: 1px solid var(--border); box-shadow: var(--shadow-sm); display: flex; align-items: center; justify-content: space-between; border-left: 4px solid var(--accent); transition: transform 0.2s; }
+        .kpi-user-card:hover { transform: translateY(-2px); }
+        .kpi-user-label { font-size: 11px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
+        .kpi-user-val { font-size: 24px; font-weight: 700; color: var(--text-primary); }
+        .kpi-user-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; background: #eff6ff; color: var(--accent); }
+
+        /* Tools Bar specific */
+        .tools-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--hover); gap: 16px; }
+        .tools-filters { display: flex; gap: 12px; align-items: center; flex: 1; min-width: 0; }
+        .filter-select { padding: 8px 12px; border: 1px solid var(--border); background: white; border-radius: var(--radius-sm); font-size: 13px; color: var(--text-primary); cursor: pointer; outline: none; font-weight: 600; }
+        
+        .search-box { position: relative; width: 100%; max-width: 320px; min-width: 150px; }
+        .search-box i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+        .search-box input { width: 100%; padding: 8px 12px 8px 36px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; outline: none; }
+        
+        .btn-primary { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.15s; }
+        .btn-primary:hover { background: #2563eb; }
+
+        table { width: 100%; border-collapse: collapse; min-width: 900px; }
+        th { padding: 16px 20px; text-align: left; border-bottom: 2px solid var(--border); font-size: 12px; color: var(--text-muted); text-transform: uppercase; background: white; font-weight: 600; white-space: nowrap; position: sticky; top: 0; z-index: 10; }
+        td { padding: 16px 20px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+        tr:hover td { background: var(--hover); }
+
+        .pagination { padding: 16px 20px; border-top: 1px solid var(--border); background: var(--bg); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; border-radius: 0 0 var(--radius) var(--radius); }
+        .page-btn { padding: 4px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; font-weight: 500; color: var(--text-secondary); background: white; cursor: pointer; transition: 0.15s; }
+        .page-btn:hover:not(:disabled) { background: var(--hover); }
+        .page-btn:disabled { color: #cbd5e1; cursor: not-allowed; background: var(--bg); }
+        .page-btn.active-blue { background: var(--accent); color: white; border-color: var(--accent); font-weight: 700; }
+
+        /* Modal specific */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); z-index: 100; display: none; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s; }
+        .modal-overlay.show { display: flex; opacity: 1; }
+        .modal-content { background: white; border-radius: 16px; width: 100%; max-width: 700px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; transform: scale(0.95); transition: transform 0.3s; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); position: relative; }
+        .modal-overlay.show .modal-content { transform: scale(1); }
+        
+        .modal-close { position: absolute; top: 20px; right: 20px; width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.2); border: none; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); cursor: pointer; z-index: 20; transition: 0.2s; }
+        .modal-close:hover { background: rgba(0,0,0,0.1); color: var(--text-primary); }
+
+        .modal-header { padding: 24px; background: #eff6ff; position: relative; border-bottom: 1px solid #dbeafe; overflow: hidden; flex-shrink: 0; }
+        .modal-header i.bg-icon { position: absolute; right: -24px; bottom: -32px; font-size: 120px; color: #dbeafe; opacity: 0.5; pointer-events: none; }
+        .modal-title { font-size: 20px; font-weight: 700; color: #1d4ed8; display: flex; align-items: center; gap: 12px; position: relative; z-index: 10; margin-bottom: 4px; }
+        .modal-subtitle { font-size: 13px; color: var(--text-secondary); position: relative; z-index: 10; }
+
+        .modal-body { padding: 24px; overflow-y: auto; flex: 1; background: white; }
+        .modal-section-title { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 16px; margin-top: 24px; display: flex; align-items: center; gap: 8px; }
+        .modal-section-title:first-child { margin-top: 0; }
+        
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+        
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+        .form-label span { color: #ef4444; }
+        .form-input { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; outline: none; transition: 0.2s; font-family: inherit; }
+        .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
+        
+        .input-group { display: flex; overflow: hidden; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+        .input-group input { flex: 1; padding: 12px; border: none; font-size: 14px; outline: none; font-family: inherit; }
+        .input-group input:focus { box-shadow: inset 0 0 0 1px var(--accent); }
+        .input-group-append { background: var(--bg); border-left: 1px solid var(--border); padding: 12px 16px; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; }
+
+        .toggle-wrap { background: var(--bg); padding: 16px 20px; border-radius: var(--radius); border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+        
+        /* Toggle Switch Styling */
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .4s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #10b981; }
+        input:focus + .slider { box-shadow: 0 0 1px #10b981; }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        .modal-footer { padding: 20px 24px; border-top: 1px solid var(--border); background: var(--bg); display: flex; justify-content: flex-end; gap: 12px; flex-shrink: 0; }
+        .btn-cancel { background: white; color: var(--text-secondary); border: 1px solid var(--border); padding: 10px 20px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 700; cursor: pointer; transition: 0.15s; }
+        .btn-cancel:hover { background: var(--hover); }
+        .btn-save { background: var(--accent); color: white; border: none; padding: 10px 24px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.15s; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2); }
+        .btn-save:hover { background: #2563eb; transform: translateY(-1px); }
+        .btn-save:active { transform: translateY(0); box-shadow: none; }
+    </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside>
+    <div class="logo">
+        <div class="logo-icon"><i class="fas fa-industry"></i></div>
+        <div class="logo-text">PCC <span>POSTENTION</span></div>
+    </div>
+
+    <nav>
+        <div class="nav-label">Main</div>
+        <a href="index.html"><i class="fas fa-chart-line"></i> Dashboard</a>
+
+        <div class="nav-label">Production</div>
+        <a href="planner.html"><i class="fas fa-calendar-alt"></i> แผนการผลิต</a>
+        <a href="job_orders.html"><i class="fas fa-clipboard-list"></i> คิวงานเทปูน</a>
+        <a href="demolding.html"><i class="fas fa-hammer"></i> งานถอดแบบ</a>
+
+        <div class="nav-label">Inventory</div>
+        <a href="inventory.html"><i class="fas fa-layer-group"></i> คลังวัตถุดิบ</a>
+        <a href="wip.html"><i class="fas fa-th-large"></i> โครงเหล็ก (WIP)</a>
+        <a href="fg.html"><i class="fas fa-cubes"></i> สินค้าพร้อมขาย</a>
+
+        <div class="nav-label">System</div>
+        <a href="products.html" class="active"><i class="fas fa-box-open"></i> ข้อมูลสินค้า</a>
+        <a href="users.html"><i class="fas fa-users-cog"></i> จัดการผู้ใช้งาน</a>
+        <a href="qc.html"><i class="fas fa-clipboard-check"></i> จัดการของเสีย (QC)</a>
+        <a href="logs.html"><i class="fas fa-history"></i> ประวัติการทำงาน</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+        <a href="#"><i class="fas fa-cog"></i> ตั้งค่า</a>
+        <a href="#" class="logout"><i class="fas fa-sign-out-alt"></i> ออกจากระบบ</a>
+    </div>
+</aside>
+
+<!-- MAIN -->
+<main>
+    <header>
+        <div class="header-left">
+            <h1 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 8px;">
+                <i class="fas fa-box-open" style="color: var(--accent);"></i> จัดการข้อมูลสินค้า (Product Master Data)
+            </h1>
+        </div>
+        <div style="flex: 1;"></div>
+        <div class="header-right">
+            <button style="background: var(--bg); color: var(--text-secondary); border: 1px solid var(--border); padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                <i class="fas fa-shield-alt" style="color: var(--accent);"></i> สิทธิ์ของคุณ: System Admin
+            </button>
+            <div class="user-profile">
+                <div class="avatar">
+                    <img src="https://i.pravatar.cc/150?img=11" alt="Profile">
+                </div>
+                <div class="user-details">
+                    <span class="user-name">วริศรา ผู้ดูแล</span>
+                    <span class="user-role">ผู้ดูแลระบบ (Admin)</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="content">
+        
+        <!-- KPI Cards -->
+        <div class="kpi-grid">
+            <div class="kpi-user-card">
+                <div>
+                    <div class="kpi-user-label">เสาเข็มไอ (I-Pile)</div>
+                    <div class="kpi-user-val">12 <span style="font-size: 13px; font-weight: 400; color: var(--text-muted);">รายการ</span></div>
+                </div>
+                <div class="kpi-user-icon"><i class="fas fa-bars"></i></div>
+            </div>
+            <div class="kpi-user-card">
+                <div>
+                    <div class="kpi-user-label">เสาเข็มเหลี่ยม (Sq)</div>
+                    <div class="kpi-user-val">8 <span style="font-size: 13px; font-weight: 400; color: var(--text-muted);">รายการ</span></div>
+                </div>
+                <div class="kpi-user-icon"><i class="fas fa-cube"></i></div>
+            </div>
+            <div class="kpi-user-card">
+                <div>
+                    <div class="kpi-user-label">แผ่นพื้น (Plank)</div>
+                    <div class="kpi-user-val">10 <span style="font-size: 13px; font-weight: 400; color: var(--text-muted);">รายการ</span></div>
+                </div>
+                <div class="kpi-user-icon"><i class="fas fa-layer-group"></i></div>
+            </div>
+            <div class="kpi-user-card">
+                <div>
+                    <div class="kpi-user-label">กำแพงกันดิน (Wall)</div>
+                    <div class="kpi-user-val">5 <span style="font-size: 13px; font-weight: 400; color: var(--text-muted);">รายการ</span></div>
+                </div>
+                <div class="kpi-user-icon"><i class="fas fa-border-all"></i></div>
+            </div>
+            <div class="kpi-user-card">
+                <div>
+                    <div class="kpi-user-label">เสา-คาน (Col/Beam)</div>
+                    <div class="kpi-user-val">9 <span style="font-size: 13px; font-weight: 400; color: var(--text-muted);">รายการ</span></div>
+                </div>
+                <div class="kpi-user-icon"><i class="fas fa-columns"></i></div>
+            </div>
+            <div class="kpi-user-card">
+                <div>
+                    <div class="kpi-user-label">ชิ้นส่วนพิเศษ/อื่นๆ</div>
+                    <div class="kpi-user-val">4 <span style="font-size: 13px; font-weight: 400; color: var(--text-muted);">รายการ</span></div>
+                </div>
+                <div class="kpi-user-icon"><i class="fas fa-puzzle-piece"></i></div>
+            </div>
+        </div>
+
+        <!-- Product Table Card -->
+        <div class="card" style="padding: 0; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-sm); flex: 1; margin-bottom: 24px;">
+            
+            <div class="tools-bar">
+                <div class="tools-filters">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="ค้นหา ชื่อสินค้า, รหัส (FG)...">
+                    </div>
+                    <select class="filter-select">
+                        <option value="all">ทุกหมวดหมู่ (All Categories)</option>
+                        <option value="i-pile">เสาเข็มไอ (I-Pile)</option>
+                        <option value="sq-pile">เสาเข็มเหลี่ยม (Square Pile)</option>
+                        <option value="plank">แผ่นพื้นสำเร็จรูป (Plank)</option>
+                        <option value="wall">กำแพงกันดิน (Retaining Wall)</option>
+                        <option value="col-beam">เสา-คาน (Column/Beam)</option>
+                        <option value="special">ชิ้นส่วนสั่งทำพิเศษ</option>
+                    </select>
+                    <select class="filter-select">
+                        <option value="active">เปิดใช้งาน (Active)</option>
+                        <option value="inactive">เลิกผลิต (Inactive)</option>
+                    </select>
+                </div>
+                
+                <button onclick="openProductModal('add')" class="btn-primary">
+                    <i class="fas fa-plus"></i> เพิ่มรายการสินค้าใหม่
+                </button>
+            </div>
+
+            <div class="table-wrap custom-scrollbar" style="overflow-x: auto; flex: 1;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>รหัสสินค้า (Item Code)</th>
+                            <th>ชื่อสินค้า (Product Name)</th>
+                            <th>ขนาดสินค้า (Dimensions)</th>
+                            <th style="text-align: center;">หมวดหมู่</th>
+                            <th style="text-align: center;">สถานะ (Status)</th>
+                            <th style="text-align: center;">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+                        <!-- Product 1 -->
+                        <tr>
+                            <td><div style="font-weight: 700; color: var(--text-primary);">FG-IP22-10M</div></td>
+                            <td>
+                                <div style="font-weight: 700; color: var(--accent); transition: 0.15s; cursor: pointer;" onclick="openProductModal('edit', 'เสาเข็ม I-22')" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">เสาเข็ม I-22</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">WIP: WIP-IP22-10M</div>
+                            </td>
+                            <td><div style="font-weight: 500; color: var(--text-secondary);">ยาว 10.00 ม.</div></td>
+                            <td style="text-align: center;">
+                                <span class="role-badge badge-pile">เสาเข็ม</span>
+                            </td>
+                            <td style="text-align: center;"><span class="status-badge status-active">ใช้งานปกติ (Active)</span></td>
+                            <td style="text-align: center;">
+                                <div style="display: flex; justify-content: center; gap: 8px;">
+                                    <button onclick="openProductModal('edit', 'เสาเข็ม I-22')" class="btn-action btn-action-edit" title="แก้ไข"><i class="fas fa-edit"></i></button>
+                                    <button class="btn-action btn-action-trash" title="ลบรายการ"><i class="fas fa-trash-alt"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Product 2 -->
+                        <tr>
+                            <td><div style="font-weight: 700; color: var(--text-primary);">FG-IP26-12M</div></td>
+                            <td>
+                                <div style="font-weight: 700; color: var(--accent); transition: 0.15s; cursor: pointer;" onclick="openProductModal('edit', 'เสาเข็ม I-26')" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">เสาเข็ม I-26</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">WIP: WIP-IP26-12M</div>
+                            </td>
+                            <td><div style="font-weight: 500; color: var(--text-secondary);">ยาว 12.00 ม.</div></td>
+                            <td style="text-align: center;">
+                                <span class="role-badge badge-pile">เสาเข็ม</span>
+                            </td>
+                            <td style="text-align: center;"><span class="status-badge status-active">ใช้งานปกติ (Active)</span></td>
+                            <td style="text-align: center;">
+                                <div style="display: flex; justify-content: center; gap: 8px;">
+                                    <button onclick="openProductModal('edit', 'เสาเข็ม I-26')" class="btn-action btn-action-edit" title="แก้ไข"><i class="fas fa-edit"></i></button>
+                                    <button class="btn-action btn-action-trash" title="ลบรายการ"><i class="fas fa-trash-alt"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Product 3 -->
+                        <tr>
+                            <td><div style="font-weight: 700; color: var(--text-primary);">FG-PLK-3M</div></td>
+                            <td>
+                                <div style="font-weight: 700; color: var(--accent); transition: 0.15s; cursor: pointer;" onclick="openProductModal('edit', 'แผ่นพื้นสำเร็จรูป')" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">แผ่นพื้นสำเร็จรูป (Solid)</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">ไม่ใช้โครงเหล็ก (ดึงลวดในตัว)</div>
+                            </td>
+                            <td><div style="font-weight: 500; color: var(--text-secondary);">3.00 x 0.35 x 0.05 ม.</div></td>
+                            <td style="text-align: center;">
+                                <span class="role-badge badge-plank">แผ่นพื้น</span>
+                            </td>
+                            <td style="text-align: center;"><span class="status-badge status-active">ใช้งานปกติ (Active)</span></td>
+                            <td style="text-align: center;">
+                                <div style="display: flex; justify-content: center; gap: 8px;">
+                                    <button onclick="openProductModal('edit', 'แผ่นพื้นสำเร็จรูป')" class="btn-action btn-action-edit" title="แก้ไข"><i class="fas fa-edit"></i></button>
+                                    <button class="btn-action btn-action-trash" title="ลบรายการ"><i class="fas fa-trash-alt"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Product 4 -->
+                        <tr>
+                            <td><div style="font-weight: 700; color: var(--text-primary);">FG-RW-T1</div></td>
+                            <td>
+                                <div style="font-weight: 700; color: var(--accent); transition: 0.15s; cursor: pointer;" onclick="openProductModal('edit', 'กำแพงกันดิน Type 1')" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">กำแพงกันดิน Type 1</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">WIP: WIP-RW-T1-MS</div>
+                            </td>
+                            <td><div style="font-weight: 500; color: var(--text-secondary);">L Shape: 2.0 x 1.5 ม.</div></td>
+                            <td style="text-align: center;">
+                                <span class="role-badge badge-wall">กำแพงกันดิน</span>
+                            </td>
+                            <td style="text-align: center;"><span class="status-badge status-active">ใช้งานปกติ (Active)</span></td>
+                            <td style="text-align: center;">
+                                <div style="display: flex; justify-content: center; gap: 8px;">
+                                    <button onclick="openProductModal('edit', 'กำแพงกันดิน Type 1')" class="btn-action btn-action-edit" title="แก้ไข"><i class="fas fa-edit"></i></button>
+                                    <button class="btn-action btn-action-trash" title="ลบรายการ"><i class="fas fa-trash-alt"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Product 5 -->
+                        <tr class="tr-inactive">
+                            <td><div style="font-weight: 700; color: var(--text-muted); text-decoration: line-through;">FG-IP18-OLD</div></td>
+                            <td>
+                                <div style="font-weight: 700; color: var(--text-muted); text-decoration: line-through;">เสาเข็ม I-18 (รุ่นเก่า)</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">ระงับการผลิต: 1 ม.ค. 2025</div>
+                            </td>
+                            <td><div style="font-weight: 500; color: var(--text-muted); text-decoration: line-through;">ยาว 8.00 ม.</div></td>
+                            <td style="text-align: center;">
+                                <span class="role-badge" style="background:#e2e8f0; border-color:#cbd5e1;">เสาเข็ม</span>
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="status-badge status-inactive"><i class="fas fa-ban" style="margin-right:4px;"></i> เลิกผลิต</span>
+                            </td>
+                            <td style="text-align: center;">
+                                <button class="btn-action btn-action-undo"><i class="fas fa-undo"></i> เปิดใช้งาน</button>
+                            </td>
+                        </tr>
+
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination">
+                <div class="pagination-info">แสดง 1 ถึง 5 จากทั้งหมด 48 รายการ</div>
+                <div class="pagination-controls" style="display: flex; gap: 4px;">
+                    <button class="page-btn" disabled>ก่อนหน้า</button>
+                    <button class="page-btn active-blue">1</button>
+                    <button class="page-btn">2</button>
+                    <button class="page-btn">ถัดไป</button>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+</main>
+
+<!-- ============================================== -->
+<!-- PRODUCT MODAL (POPUP FOR ADD / EDIT)           -->
+<!-- ============================================== -->
+<div id="productModal" class="modal-overlay">
+    <div class="modal-content">
+        
+        <button class="modal-close" onclick="closeProductModal()"><i class="fas fa-times"></i></button>
+
+        <div class="modal-header">
+            <i class="fas fa-box-open bg-icon"></i>
+            <div class="modal-title" id="modalTitle"><i class="fas fa-plus-circle"></i> เพิ่มรายการสินค้าใหม่</div>
+            <div class="modal-subtitle" id="modalSubtitle">ระบุข้อมูลสเปกและสูตร BOM เพื่อใช้ในการวางแผนการผลิต</div>
+        </div>
+
+        <div class="modal-body custom-scrollbar">
+            
+            <!-- Section: General Info -->
+            <div class="modal-section-title"><i class="fas fa-tag"></i> ข้อมูลทั่วไป (General Info)</div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">รหัสสินค้า (Item Code) <span>*</span></label>
+                    <input type="text" id="inpProductCode" class="form-input" placeholder="เช่น FG-IP22-10M" style="font-weight: 700; text-transform: uppercase;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">หมวดหมู่ (Category) <span>*</span></label>
+                    <select id="inpCategory" class="form-input" style="font-weight: 700; color: var(--accent); cursor: pointer;">
+                        <option value="" disabled selected>-- เลือกหมวดหมู่ --</option>
+                        <option value="i-pile">เสาเข็มไอ (I-Pile)</option>
+                        <option value="sq-pile">เสาเข็มเหลี่ยม (Square Pile)</option>
+                        <option value="plank">แผ่นพื้นสำเร็จรูป (Plank)</option>
+                        <option value="wall">กำแพงกันดิน (Retaining Wall)</option>
+                        <option value="col-beam">เสา-คาน (Column/Beam)</option>
+                        <option value="special">ชิ้นส่วนสั่งทำพิเศษ</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">ชื่อสินค้า (Product Name) <span>*</span></label>
+                    <input type="text" id="inpProductName" class="form-input" placeholder="เช่น เสาเข็ม I-22" style="font-weight: 600;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">ขนาดสินค้า (Dimensions)</label>
+                    <input type="text" id="inpProductSize" class="form-input" placeholder="เช่น ยาว 10.00 ม., 3 x 0.35 x 0.05 ม.">
+                </div>
+            </div>
+
+            <!-- Section: BOM -->
+            <div class="modal-section-title"><i class="fas fa-microchip"></i> สูตรการผลิต (Bill of Materials - BOM)</div>
+            <div style="background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px;">
+                <div class="form-grid" style="margin-bottom: 16px;">
+                    <div class="form-group">
+                        <label class="form-label">ปริมาตรคอนกรีตต่อ 1 ชิ้น (คิว / Q) <span>*</span></label>
+                        <div class="input-group">
+                            <input type="number" id="inpConcreteQty" placeholder="0.00" step="0.01" style="text-align: right; font-weight: 700; font-size: 16px;">
+                            <div class="input-group-append">Q (คิว)</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">เวลาการบ่มขั้นต่ำ (Curing Time)</label>
+                        <div class="input-group">
+                            <input type="number" id="inpCuringTime" value="18" style="text-align: right; font-weight: 700; font-size: 16px;">
+                            <div class="input-group-append">ชั่วโมง</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">รหัสโครงเหล็กที่ต้องใช้ (WIP Reference)</label>
+                    <select id="inpWipRef" class="form-input" style="cursor: pointer;">
+                        <option value="" selected>-- ไม่ต้องใช้โครงเหล็กผูกล่วงหน้า --</option>
+                        <option value="WIP-IP22-10M">WIP-IP22-10M : โครงเหล็กเสาเข็ม I-22</option>
+                        <option value="WIP-IP26-12M">WIP-IP26-12M : โครงเหล็กเสาเข็ม I-26</option>
+                        <option value="WIP-RW-T1-MS">WIP-RW-T1-MS : เมชกำแพงกันดิน Type 1</option>
+                    </select>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;"><i class="fas fa-info-circle" style="color: var(--accent);"></i> หากสินค้านี้ต้องใช้โครงเหล็กที่ฝ่าย WIP ผูกเตรียมไว้ ให้เลือกรหัสที่นี่ ระบบจะหักสต็อก WIP อัตโนมัติเมื่อสั่งผลิต</div>
+                </div>
+            </div>
+
+            <!-- Status Toggle -->
+            <div class="toggle-wrap">
+                <div>
+                    <div style="font-size: 14px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;"><i class="fas fa-power-off" style="color: #10b981;"></i> สถานะการผลิตสินค้า (Active Status)</div>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">หากปิดสวิตช์ สินค้านี้จะไม่แสดงให้เลือกในหน้าจอ "แผนการผลิต"</div>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="toggleStatus" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+        </div>
+
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closeProductModal()">ยกเลิก (Cancel)</button>
+            <button class="btn-save" onclick="closeProductModal()"><i class="fas fa-save"></i> บันทึกข้อมูล (Save)</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const productModal = document.getElementById('productModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalSubtitle = document.getElementById('modalSubtitle');
+    
+    // Form Inputs
+    const inpProductCode = document.getElementById('inpProductCode');
+    const inpProductName = document.getElementById('inpProductName');
+    const inpProductSize = document.getElementById('inpProductSize');
+    const inpCategory = document.getElementById('inpCategory');
+    const inpConcreteQty = document.getElementById('inpConcreteQty');
+    const inpCuringTime = document.getElementById('inpCuringTime');
+    const inpWipRef = document.getElementById('inpWipRef');
+    const toggleStatus = document.getElementById('toggleStatus');
+
+    function openProductModal(mode, productName = '') {
+        productModal.classList.add('show');
+        
+        if (mode === 'add') {
+            modalTitle.innerHTML = '<i class="fas fa-plus-circle"></i> เพิ่มรายการสินค้าใหม่';
+            modalSubtitle.innerHTML = 'ระบุข้อมูลสเปกและสูตร BOM เพื่อใช้ในการวางแผนการผลิต';
+            
+            // Clear Form
+            inpProductCode.value = '';
+            inpProductName.value = '';
+            inpProductSize.value = '';
+            inpCategory.value = '';
+            inpConcreteQty.value = '';
+            inpCuringTime.value = '18';
+            inpWipRef.value = '';
+            toggleStatus.checked = true;
+
+        } else if (mode === 'edit') {
+            modalTitle.innerHTML = '<i class="fas fa-edit" style="color: #f59e0b;"></i> แก้ไขข้อมูลสินค้า';
+            modalSubtitle.innerHTML = `กำลังแก้ไขข้อมูลของ: <span style="color: var(--accent); font-weight: 700;">${productName}</span>`;
+            
+            // Mock Populate Form 
+            if (productName.includes('เสาเข็ม I-22')) {
+                inpProductCode.value = 'FG-IP22-10M';
+                inpProductName.value = 'เสาเข็ม I-22';
+                inpProductSize.value = 'ยาว 10.00 ม.';
+                inpCategory.value = 'pile';
+                inpConcreteQty.value = '0.45';
+                inpCuringTime.value = '18';
+                inpWipRef.value = 'WIP-IP22-10M';
+                toggleStatus.checked = true;
+            } else if (productName.includes('เสาเข็ม I-26')) {
+                inpProductCode.value = 'FG-IP26-12M';
+                inpProductName.value = 'เสาเข็ม I-26';
+                inpProductSize.value = 'ยาว 12.00 ม.';
+                inpCategory.value = 'pile';
+                inpConcreteQty.value = '0.62';
+                inpCuringTime.value = '24';
+                inpWipRef.value = 'WIP-IP26-12M';
+                toggleStatus.checked = true;
+            } else if (productName.includes('แผ่นพื้น')) {
+                inpProductCode.value = 'FG-PLK-3M';
+                inpProductName.value = 'แผ่นพื้นสำเร็จรูป (Solid)';
+                inpProductSize.value = '3.00 x 0.35 x 0.05 ม.';
+                inpCategory.value = 'plank';
+                inpConcreteQty.value = '0.05';
+                inpCuringTime.value = '16';
+                inpWipRef.value = '';
+                toggleStatus.checked = true;
+            } else if (productName.includes('กำแพง')) {
+                inpProductCode.value = 'FG-RW-T1';
+                inpProductName.value = 'กำแพงกันดิน Type 1';
+                inpProductSize.value = 'L Shape: 2.0 x 1.5 ม.';
+                inpCategory.value = 'wall';
+                inpConcreteQty.value = '0.20';
+                inpCuringTime.value = '24';
+                inpWipRef.value = 'WIP-RW-T1-MS';
+                toggleStatus.checked = true;
+            }
+        }
+    }
+
+    function closeProductModal() {
+        productModal.classList.remove('show');
+    }
+
+    productModal.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeProductModal();
+        }
+    });
+</script>
+
+</body>
+</html>

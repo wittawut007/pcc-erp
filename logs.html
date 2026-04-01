@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precast ERP - System Activity Logs</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .tools-bar { display: flex; flex-direction: column; gap: 16px; padding: 20px; border-bottom: 1px solid var(--border); background: var(--bg); border-radius: var(--radius) var(--radius) 0 0; }
+        
+        .tools-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+        
+        .search-box { position: relative; flex: 1; min-width: 250px; }
+        .search-box i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+        .search-box input { width: 100%; padding: 10px 12px 10px 36px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; outline: none; }
+        .search-box input:focus { border-color: var(--accent); }
+        
+        .date-range-picker { display: flex; align-items: center; gap: 8px; background: white; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 12px; }
+        .date-range-picker i { color: var(--text-muted); font-size: 14px; margin-top: 4px; }
+        .date-range-picker input[type="date"] { border: none; outline: none; font-size: 13px; color: var(--text-secondary); background: transparent; font-family: inherit; }
+        .date-range-picker span { color: var(--text-muted); }
+
+        .filter-group { display: flex; gap: 12px; flex-wrap: wrap; width: 100%; }
+        .filter-select { flex: 1; min-width: 150px; padding: 10px 12px; border: 1px solid var(--border); background: white; border-radius: var(--radius-sm); font-size: 13px; color: var(--text-primary); cursor: pointer; outline: none; font-weight: 600; }
+        .filter-select:focus { border-color: var(--accent); }
+        
+        .btn-black { background: #1e293b; color: white; border: none; padding: 10px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; cursor: pointer; transition: 0.15s; }
+        .btn-black:hover { background: #334155; }
+
+        .btn-gray-outline { background: #f8fafc; border: 1px solid #e2e8f0; color: #334155; padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.15s; display: flex; align-items: center; gap: 8px; }
+        .btn-gray-outline:hover { background: #e2e8f0; }
+
+        .table-wrap { overflow-y: auto; flex: 1; }
+        .table-wrap table { width: 100%; border-collapse: collapse; min-width: 1000px; }
+        .table-wrap th { padding: 16px 20px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-muted); text-transform: uppercase; background: white; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 0 var(--border); font-weight: 600; }
+        .table-wrap td { padding: 16px 20px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+        .table-wrap tr { transition: background 0.15s; }
+        .table-wrap tr:hover td { background: var(--hover); }
+        
+        .table-wrap tr.alert-row-red { border-left: 4px solid #ef4444; background: rgba(239, 68, 68, 0.03); }
+        .table-wrap tr.alert-row-red:hover td { background: rgba(239, 68, 68, 0.08); }
+
+        .user-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+        .bg-blue-avatar { background: #dbeafe; color: #2563eb; border: 1px solid #bfdbfe; }
+        .bg-orange-avatar { background: #ffedd5; color: #ea580c; border: 1px solid #fed7aa; }
+        .bg-purple-avatar { background: #f3e8ff; color: #9333ea; border: 1px solid #e9d5ff; }
+        .bg-indigo-avatar { background: #e0e7ff; color: #4f46e5; border: 1px solid #c7d2fe; }
+        .bg-slate-avatar { background: #1e293b; color: white; border: 1px solid #334155; }
+
+        .time-text { color: var(--text-secondary); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+        .time-text i { color: #94a3b8; font-size: 12px; }
+        
+        .module-badge { background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+        
+        .impact-badge { font-weight: 700; padding: 4px 8px; border-radius: 4px; border: 1px solid transparent; font-size: 12px; display: inline-block; text-align: center; min-width: 80px; }
+        .impact-blue { color: #2563eb; background: #eff6ff; border-color: #dbeafe; }
+        .impact-red { color: #dc2626; background: #fef2f2; border-color: #fee2e2; }
+        .impact-green { color: #059669; background: #ecfdf5; border-color: #d1fae5; }
+        .impact-gray { color: #475569; background: #f8fafc; border-color: #e2e8f0; }
+
+        .json-btn { color: #94a3b8; cursor: pointer; transition: 0.15s; background: transparent; border: none; font-size: 14px; }
+        .json-btn:hover { color: var(--accent); }
+
+        .pagination { padding: 16px 20px; border-top: 1px solid var(--border); background: white; display: flex; align-items: center; justify-content: space-between; border-radius: 0 0 var(--radius) var(--radius); flex-shrink: 0; }
+        .pagination-info { font-size: 12px; color: var(--text-secondary); }
+        .pagination-controls { display: flex; gap: 4px; }
+        .page-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; color: var(--text-secondary); background: white; cursor: pointer; transition: 0.15s; }
+        .page-btn:hover:not(:disabled) { background: var(--hover); }
+        .page-btn:disabled { color: #cbd5e1; cursor: not-allowed; background: #f8fafc; }
+        .page-btn.active { background: var(--accent); color: white; border-color: var(--accent); font-weight: 700; }
+        .page-dots { padding: 6px 8px; color: #94a3b8; }
+    </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside>
+    <div class="logo">
+        <div class="logo-icon"><i class="fas fa-industry"></i></div>
+        <div class="logo-text">PCC <span>POSTENTION</span></div>
+    </div>
+
+        <nav>
+        <div class="nav-label">Main</div>
+        <a href="index.html"><i class="fas fa-chart-line"></i> Dashboard</a>
+
+        <div class="nav-label">Production</div>
+        <a href="planner.html"><i class="fas fa-calendar-alt"></i> แผนการผลิต</a>
+        <a href="job_orders.html"><i class="fas fa-clipboard-list"></i> คิวงานเทปูน</a>
+        <a href="demolding.html"><i class="fas fa-hammer"></i> งานถอดแบบ</a>
+
+        <div class="nav-label">Inventory</div>
+        <a href="inventory.html"><i class="fas fa-layer-group"></i> คลังวัตถุดิบ</a>
+        <a href="wip.html"><i class="fas fa-th-large"></i> โครงเหล็ก (WIP)</a>
+        <a href="fg.html"><i class="fas fa-cubes"></i> สินค้าพร้อมขาย</a>
+
+        <div class="nav-label">System</div>
+        <a href="products.html"><i class="fas fa-box-open"></i> ข้อมูลสินค้า</a>
+        <a href="users.html"><i class="fas fa-users-cog"></i> จัดการผู้ใช้งาน</a>
+        <a href="qc.html"><i class="fas fa-clipboard-check"></i> จัดการของเสีย (QC)</a>
+        <a href="logs.html" class="active"><i class="fas fa-history"></i> ประวัติการทำงาน</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+        <a href="#"><i class="fas fa-cog"></i> ตั้งค่า</a>
+        <a href="#" class="logout"><i class="fas fa-sign-out-alt"></i> ออกจากระบบ</a>
+    </div>
+</aside>
+
+<!-- MAIN -->
+<main>
+    <header>
+        <div class="header-left">
+            <h1 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 8px;">
+                <i class="fas fa-history" style="color: var(--accent);"></i> ประวัติการทำงานของระบบ (System Activity Logs)
+            </h1>
+        </div>
+        <div style="flex: 1;"></div>
+        <div class="header-right">
+            <button class="btn-gray-outline">
+                <i class="fas fa-download"></i> ส่งออกข้อมูล (Export CSV)
+            </button>
+            
+            <div class="notif-btn">
+                <i class="far fa-bell"></i>
+                <span class="notif-dot"></span>
+            </div>
+            <div class="user-profile">
+                <div class="avatar">
+                    <img src="https://i.pravatar.cc/150?img=11" alt="Profile">
+                </div>
+                <div class="user-details">
+                    <span class="user-name">วริศรา ผู้ดูแล</span>
+                    <span class="user-role">ผู้ดูแลระบบ (Admin)</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="content">
+        
+        <div class="card" style="padding: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden; box-shadow: var(--shadow-sm);">
+            
+            <!-- Advanced Filter Tools -->
+            <div class="tools-bar">
+                <div class="tools-row">
+                    <!-- Search Box -->
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="ค้นหา รหัสอ้างอิง, ชื่อผู้ใช้, รายละเอียด...">
+                    </div>
+                    
+                    <!-- Date Range Picker -->
+                    <div class="date-range-picker">
+                        <i class="far fa-calendar-alt"></i>
+                        <input type="date" value="2026-04-01">
+                        <span>-</span>
+                        <input type="date" value="2026-04-01">
+                    </div>
+                </div>
+                
+                <div class="filter-group">
+                    <select class="filter-select">
+                        <option value="">แผนก/ระบบ (ทั้งหมด)</option>
+                        <option value="production">ฝ่ายผลิต (Production)</option>
+                        <option value="inventory_rm">คลังวัตถุดิบ (Raw Material)</option>
+                        <option value="inventory_wip">คลังเตรียมเหล็ก (WIP)</option>
+                        <option value="inventory_fg">คลังสินค้าพร้อมขาย (FG)</option>
+                        <option value="qc">ตรวจสอบคุณภาพ (QC/Defect)</option>
+                    </select>
+                    
+                    <select class="filter-select">
+                        <option value="">ประเภทกิจกรรม (ทั้งหมด)</option>
+                        <option value="create">สร้าง/รับเข้า (Create/In)</option>
+                        <option value="update">อัปเดตสถานะ/เบิกจ่าย (Update/Out)</option>
+                        <option value="delete">ลบ/ยกเลิก (Delete/Cancel)</option>
+                        <option value="alert">แจ้งเตือน/ของเสีย (Alert/Defect)</option>
+                    </select>
+
+                    <select class="filter-select">
+                        <option value="">พนักงาน (ทุกคน)</option>
+                        <option value="user1">สมชาย ใจดี (ฝ่ายผลิต)</option>
+                        <option value="user2">สมหญิง คลังเป๊ะ (คลังสินค้า)</option>
+                        <option value="user3">มานะ ถอดเก่ง (ถอดแบบ/QC)</option>
+                        <option value="user4">วิชัย รักดี (คลังเตรียมเหล็ก)</option>
+                    </select>
+
+                    <button class="btn-black">กรองข้อมูล</button>
+                </div>
+            </div>
+
+            <!-- Comprehensive Log Table -->
+            <div class="table-wrap custom-scrollbar">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>วันเวลา (Date/Time)</th>
+                            <th>พนักงาน (User)</th>
+                            <th>แผนก/ระบบ (Module)</th>
+                            <th>กิจกรรม (Action)</th>
+                            <th>รายละเอียด / รหัสอ้างอิง (Details)</th>
+                            <th style="text-align: center;">ผลลัพธ์ (Impact)</th>
+                            <th style="text-align: center;">Data</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+                        <!-- Log 1: Sales / FG Dispatch (Blue) -->
+                        <tr>
+                            <td>
+                                <div class="time-text"><i class="far fa-clock" style="color: #60a5fa;"></i> วันนี้, 12:05 น.</div>
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+                                    <div class="user-avatar bg-blue-avatar">สญ</div>
+                                    สมหญิง คลังเป๊ะ
+                                </div>
+                            </td>
+                            <td><span class="module-badge">คลังสินค้าพร้อมขาย (FG)</span></td>
+                            <td style="font-weight: 700; color: var(--text-primary);">จัดส่งสินค้า (Dispatch)</td>
+                            <td>
+                                <div style="font-weight: 600; color: var(--text-secondary);">แผ่นพื้น Solid Plank (3m)</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Ref: SO-2603-15 | ทะเบียนรถ 65-8899</div>
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="impact-badge impact-blue">-120 แผ่น</span>
+                            </td>
+                            <td style="text-align: center;">
+                                <button class="json-btn" title="ดูข้อมูล JSON"><i class="fas fa-code"></i></button>
+                            </td>
+                        </tr>
+
+                        <!-- Log 2: QC / Demolding Defect (Red) -->
+                        <tr class="alert-row-red">
+                            <td>
+                                <div class="time-text"><i class="far fa-clock" style="color: #f87171;"></i> วันนี้, 11:30 น.</div>
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+                                    <div class="user-avatar bg-orange-avatar">มน</div>
+                                    มานะ ถอดเก่ง
+                                </div>
+                            </td>
+                            <td><span class="module-badge">ถอดแบบ (Demolding & QC)</span></td>
+                            <td style="font-weight: 700; color: var(--danger);">บันทึกพบของเสีย (Defect)</td>
+                            <td>
+                                <div style="font-weight: 600; color: var(--danger);">เสาเข็ม I-22 (10m)</div>
+                                <div style="font-size: 11px; color: #ef4444; margin-top: 2px;">Ref: JO-2602-098 | สาเหตุ: เป็นโพรง (Honeycomb)</div>
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="impact-badge impact-red">Defect: 2 ต้น</span>
+                            </td>
+                            <td style="text-align: center;">
+                                <button class="json-btn"><i class="fas fa-code"></i></button>
+                            </td>
+                        </tr>
+
+                        <!-- Log 3: Production / Demolding Good (Emerald) -->
+                        <tr>
+                            <td>
+                                <div class="time-text"><i class="far fa-clock" style="color: #34d399;"></i> วันนี้, 11:28 น.</div>
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+                                    <div class="user-avatar bg-orange-avatar">มน</div>
+                                    มานะ ถอดเก่ง
+                                </div>
+                            </td>
+                            <td><span class="module-badge">ถอดแบบ (Demolding & QC)</span></td>
+                            <td style="font-weight: 700; color: var(--text-primary);">นำเข้าสต็อกสำเร็จรูป (To FG)</td>
+                            <td>
+                                <div style="font-weight: 600; color: var(--text-secondary);">เสาเข็ม I-22 (10m)</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Ref: JO-2602-098 | แท่น A</div>
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="impact-badge impact-green">+48 ต้น</span>
+                            </td>
+                            <td style="text-align: center;">
+                                <button class="json-btn"><i class="fas fa-code"></i></button>
+                            </td>
+                        </tr>
+
+                        <!-- Log 4: WIP / Assembly (Emerald & Blue mix) -->
+                        <tr>
+                            <td>
+                                <div class="time-text"><i class="far fa-clock" style="color: #60a5fa;"></i> วันนี้, 10:15 น.</div>
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+                                    <div class="user-avatar bg-purple-avatar">วช</div>
+                                    วิชัย รักดี
+                                </div>
+                            </td>
+                            <td><span class="module-badge">คลังเตรียมเหล็ก (WIP)</span></td>
+                            <td style="font-weight: 700; color: var(--text-primary);">ประกอบชิ้นส่วน (Assemble WIP)</td>
+                            <td>
+                                <div style="font-weight: 600; color: var(--text-secondary);">เมชกำแพงกันดิน Type 1</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Ref: WIP-RW-T1-MS | ตัด RM-ST-002: 30 เส้น</div>
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="impact-badge impact-green">+15 แผง</span>
+                            </td>
+                            <td style="text-align: center;">
+                                <button class="json-btn"><i class="fas fa-code"></i></button>
+                            </td>
+                        </tr>
+
+                        <!-- Log 5: Production / Casting (Blue) -->
+                        <tr>
+                            <td>
+                                <div class="time-text"><i class="far fa-clock" style="color: #60a5fa;"></i> วันนี้, 09:30 น.</div>
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+                                    <div class="user-avatar bg-indigo-avatar">สช</div>
+                                    สมชาย ใจดี
+                                </div>
+                            </td>
+                            <td><span class="module-badge">คิวงานเทปูน (Casting)</span></td>
+                            <td style="font-weight: 700; color: var(--text-primary);">เริ่มเทคอนกรีต (Start Pouring)</td>
+                            <td>
+                                <div style="font-weight: 600; color: var(--text-secondary);">เสาเข็ม I-26 (12m)</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Ref: JO-2603-002 | แท่น D</div>
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="impact-badge impact-gray">Status: Casting</span>
+                            </td>
+                            <td style="text-align: center;">
+                                <button class="json-btn"><i class="fas fa-code"></i></button>
+                            </td>
+                        </tr>
+
+                        <!-- Log 6: RM / Receive (Emerald) -->
+                        <tr>
+                            <td>
+                                <div class="time-text"><i class="far fa-clock" style="color: #34d399;"></i> เมื่อวาน, 16:20 น.</div>
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+                                    <div class="user-avatar bg-blue-avatar">สญ</div>
+                                    สมหญิง คลังเป๊ะ
+                                </div>
+                            </td>
+                            <td><span class="module-badge">คลังวัตถุดิบ (Raw Material)</span></td>
+                            <td style="font-weight: 700; color: var(--text-primary);">รับเข้าวัตถุดิบ (Receive PO)</td>
+                            <td>
+                                <div style="font-weight: 600; color: var(--text-secondary);">ลวดอัดแรง PC Wire 4mm</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Ref: PO-2603-01 | บจก. ค้าเหล็กไทย</div>
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="impact-badge impact-green">+500 กก.</span>
+                            </td>
+                            <td style="text-align: center;">
+                                <button class="json-btn"><i class="fas fa-code"></i></button>
+                            </td>
+                        </tr>
+                        
+                        <!-- Log 7: Planner / Create Job Order (Blue) -->
+                        <tr>
+                            <td>
+                                <div class="time-text"><i class="far fa-clock" style="color: #60a5fa;"></i> เมื่อวาน, 15:00 น.</div>
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
+                                    <div class="user-avatar bg-slate-avatar">ผว</div>
+                                    แอดมิน วางแผน
+                                </div>
+                            </td>
+                            <td><span class="module-badge">แผนการผลิต (Planner)</span></td>
+                            <td style="font-weight: 700; color: var(--text-primary);">สร้างใบสั่งผลิต (Generate JO)</td>
+                            <td>
+                                <div style="font-weight: 600; color: var(--text-secondary);">สร้าง 3 ใบสั่งผลิตใหม่</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Ref: JO-2603-002, 003, 004</div>
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="impact-badge impact-blue">Generated</span>
+                            </td>
+                            <td style="text-align: center;">
+                                <button class="json-btn"><i class="fas fa-code"></i></button>
+                            </td>
+                        </tr>
+
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination">
+                <div class="pagination-info">แสดงรายการ 1 - 7 จากทั้งหมด 1,452 รายการ</div>
+                <div class="pagination-controls">
+                    <button class="page-btn" disabled><i class="fas fa-chevron-left"></i> ก่อนหน้า</button>
+                    <button class="page-btn active">1</button>
+                    <button class="page-btn">2</button>
+                    <button class="page-btn">3</button>
+                    <span class="page-dots">...</span>
+                    <button class="page-btn">ถัดไป <i class="fas fa-chevron-right"></i></button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</main>
+
+</body>
+</html>

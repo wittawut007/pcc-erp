@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precast ERP - Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside>
+    <div class="logo">
+        <div class="logo-icon"><i class="fas fa-industry"></i></div>
+        <div class="logo-text">PCC <span>POSTENTION</span></div>
+    </div>
+
+        <nav>
+        <div class="nav-label">Main</div>
+        <a href="index.html" class="active"><i class="fas fa-chart-line"></i> Dashboard</a>
+
+        <div class="nav-label">Production</div>
+        <a href="planner.html"><i class="fas fa-calendar-alt"></i> แผนการผลิต</a>
+        <a href="job_orders.html"><i class="fas fa-clipboard-list"></i> คิวงานเทปูน</a>
+        <a href="demolding.html"><i class="fas fa-hammer"></i> งานถอดแบบ</a>
+
+        <div class="nav-label">Inventory</div>
+        <a href="inventory.html"><i class="fas fa-layer-group"></i> คลังวัตถุดิบ</a>
+        <a href="wip.html"><i class="fas fa-th-large"></i> โครงเหล็ก (WIP)</a>
+        <a href="fg.html"><i class="fas fa-cubes"></i> สินค้าพร้อมขาย</a>
+
+        <div class="nav-label">System</div>
+        <a href="products.html"><i class="fas fa-box-open"></i> ข้อมูลสินค้า</a>
+        <a href="users.html"><i class="fas fa-users-cog"></i> จัดการผู้ใช้งาน</a>
+        <a href="qc.html"><i class="fas fa-clipboard-check"></i> จัดการของเสีย (QC)</a>
+        <a href="logs.html"><i class="fas fa-history"></i> ประวัติการทำงาน</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+        <a href="#"><i class="fas fa-cog"></i> ตั้งค่า</a>
+        <a href="#" class="logout"><i class="fas fa-sign-out-alt"></i> ออกจากระบบ</a>
+    </div>
+</aside>
+
+<!-- MAIN -->
+<main>
+    <header>
+        <div class="header-left">
+            <h1 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">Executive Dashboard</h1>
+            <p id="datetime-sub" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">กำลังโหลด...</p>
+        </div>
+        <div style="flex: 1;"></div>
+        <div class="header-right">
+            <div class="date-pill">
+                <i class="fas fa-calendar"></i>
+                <span id="date-display">วันนี้</span>
+                <input type="date" id="dp" style="position:absolute;opacity:0;pointer-events:none;">
+            </div>
+            <div class="notif-btn">
+                <i class="far fa-bell"></i>
+                <span class="notif-dot"></span>
+            </div>
+            <div class="user-profile">
+                <div class="avatar">
+                    <img src="https://i.pravatar.cc/150?img=11" alt="Profile">
+                </div>
+                <div class="user-details">
+                    <span class="user-name">วริศรา ผู้ดูแล</span>
+                    <span class="user-role">ผู้ดูแลระบบ (Admin)</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="content">
+
+        <!-- KPI -->
+        <div class="section-label">Production Overview</div>
+        <div class="kpi-grid">
+            <div class="kpi-card c-blue">
+                <div class="kpi-header">
+                    <div class="kpi-icon"><i class="fas fa-bullseye"></i></div>
+                    <span class="kpi-badge">Target</span>
+                </div>
+                <div class="kpi-value">850</div>
+                <div class="kpi-label">เป้าหมายวันนี้ (ชิ้น)</div>
+            </div>
+            <div class="kpi-card c-indigo">
+                <div class="kpi-header">
+                    <div class="kpi-icon"><i class="fas fa-truck-monster"></i></div>
+                    <span class="kpi-badge">Casting</span>
+                </div>
+                <div class="kpi-value">320</div>
+                <div class="kpi-label">เทคอนกรีตแล้ว</div>
+            </div>
+            <div class="kpi-card c-amber">
+                <div class="kpi-header">
+                    <div class="kpi-icon"><i class="fas fa-clock"></i></div>
+                    <span class="kpi-badge">Curing</span>
+                </div>
+                <div class="kpi-value">415</div>
+                <div class="kpi-label">กำลังบ่ม / รอถอดแบบ</div>
+            </div>
+            <div class="kpi-card c-green">
+                <div class="kpi-header">
+                    <div class="kpi-icon"><i class="fas fa-cubes"></i></div>
+                    <span class="kpi-badge">Demolded</span>
+                </div>
+                <div class="kpi-value">115</div>
+                <div class="kpi-label">ถอดแบบแล้ว (FG)</div>
+            </div>
+            <div class="kpi-card c-red">
+                <div class="kpi-header">
+                    <div class="kpi-icon"><i class="fas fa-exclamation-circle"></i></div>
+                    <span class="kpi-badge">Defect</span>
+                </div>
+                <div class="kpi-value">2.4<span style="font-size:14px;font-weight:500">%</span></div>
+                <div class="kpi-label">อัตราของเสียวันนี้</div>
+            </div>
+        </div>
+
+        <!-- MID GRID -->
+        <div class="mid-grid">
+            <div class="mid-left-col" style="display: flex; flex-direction: column; gap: 16px;">
+                <!-- Today Plan vs Actual by Category -->
+                <div class="card">
+                    <div class="card-header" style="margin-bottom: 0;">
+                        <span class="card-title">แผนการผลิตรายวัน วันนี้ (แยกตามหมวดหมู่)</span>
+                    </div>
+                    <div style="height: 200px; width: 100%; margin-top: 10px;">
+                        <canvas id="dailyChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Plan vs Actual Chart -->
+                <div class="card">
+                    <div class="card-header" style="margin-bottom: 0;">
+                        <span class="card-title">ผลการผลิตย้อนหลัง 6 วัน (แยกตามหมวดหมู่)</span>
+                        <select class="select-sm">
+                            <option>สัปดาห์นี้</option>
+                            <option>เดือนนี้</option>
+                        </select>
+                    </div>
+                    <div style="height: 250px; width: 100%; margin-top: 10px;">
+                        <canvas id="weeklyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mid-right-col">
+                <!-- Inventory Summary -->
+                <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Inventory Summary</span>
+                </div>
+                <div class="inv-grid">
+                    <div class="inv-item">
+                        <div class="inv-icon" style="background:#FFF7ED;color:#EA580C"><i class="fas fa-layer-group"></i></div>
+                        <div>
+                            <div class="inv-val">12.5 <span>ตัน</span></div>
+                            <div class="inv-lbl">วัตถุดิบหลัก (RM)</div>
+                        </div>
+                    </div>
+                    <div class="inv-item">
+                        <div class="inv-icon" style="background:var(--indigo-light);color:var(--indigo)"><i class="fas fa-th-large"></i></div>
+                        <div>
+                            <div class="inv-val">450 <span>ชุด</span></div>
+                            <div class="inv-lbl">โครงเหล็กพร้อมผลิต</div>
+                        </div>
+                    </div>
+                    <div class="inv-item">
+                        <div class="inv-icon" style="background:var(--green-light);color:var(--green)"><i class="fas fa-cubes"></i></div>
+                        <div>
+                            <div class="inv-val">1,205 <span>ชิ้น</span></div>
+                            <div class="inv-lbl">สินค้าพร้อมขาย (FG)</div>
+                        </div>
+                    </div>
+                    <div class="inv-item" style="border:1px solid #FEE2E2;background:#FEF2F2">
+                        <div class="inv-icon" style="background:white;color:var(--red)"><i class="fas fa-exclamation-triangle"></i></div>
+                        <div>
+                            <div class="inv-val" style="color:var(--red)">3 <span style="color:var(--red)">รายการ</span></div>
+                            <div class="inv-lbl">สต็อกใกล้หมด</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Defect Reasons -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Defect Reasons</span>
+                </div>
+                <div class="donut-wrap" style="margin-bottom:12px">
+                    <div class="donut">
+                        <div class="donut-hole">
+                            <span>85</span>
+                            <span>Total</span>
+                        </div>
+                    </div>
+                    <div class="defect-list" style="flex:1">
+                        <div class="defect-row">
+                            <div class="defect-left"><div class="defect-dot" style="background:#EF4444"></div><div class="defect-name">แตก/ร้าว</div></div>
+                            <div class="defect-pct">45%</div>
+                        </div>
+                        <div class="defect-row">
+                            <div class="defect-left"><div class="defect-dot" style="background:#F59E0B"></div><div class="defect-name">บิ่น/มุมหัก</div></div>
+                            <div class="defect-pct">30%</div>
+                        </div>
+                        <div class="defect-row">
+                            <div class="defect-left"><div class="defect-dot" style="background:#3B82F6"></div><div class="defect-name">Honeycomb</div></div>
+                            <div class="defect-pct">15%</div>
+                        </div>
+                        <div class="defect-row">
+                            <div class="defect-left"><div class="defect-dot" style="background:#8B5CF6"></div><div class="defect-name">อื่นๆ</div></div>
+                            <div class="defect-pct">10%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            </div> <!-- End mid-right-col -->
+        </div>
+
+        <!-- BOTTOM GRID -->
+        <div class="bottom-grid">
+
+            <!-- Production Jobs Table -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">สถานะงานเทคอนกรีตวันนี้</span>
+                    <a href="#" class="card-action">ดูทั้งหมด →</a>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>รายการสินค้า</th>
+                            <th>แท่น</th>
+                            <th>ความคืบหน้า</th>
+                            <th style="text-align:right">สำเร็จ</th>
+                            <th style="text-align:center">สถานะ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="td-main">แผ่นพื้นสำเร็จรูป (Solid)</td>
+                            <td>แท่น B</td>
+                            <td>
+                                <div class="progress-wrap">
+                                    <div class="progress-bar"><div class="progress-fill" style="width:80%"></div></div>
+                                    <span class="progress-pct">80%</span>
+                                </div>
+                            </td>
+                            <td style="text-align:right" class="td-mono">120 / 150</td>
+                            <td style="text-align:center"><span class="badge badge-blue">ดำเนินการ</span></td>
+                        </tr>
+                        <tr>
+                            <td class="td-main">เสาเข็ม I-22 (10m)</td>
+                            <td>แท่น A</td>
+                            <td>
+                                <div class="progress-wrap">
+                                    <div class="progress-bar"><div class="progress-fill" style="width:100%;background:var(--green)"></div></div>
+                                    <span class="progress-pct">100%</span>
+                                </div>
+                            </td>
+                            <td style="text-align:right" class="td-mono">50 / 50</td>
+                            <td style="text-align:center"><span class="badge badge-green">บ่ม</span></td>
+                        </tr>
+                        <tr>
+                            <td class="td-main">กำแพงกันดิน Type 1</td>
+                            <td>แท่น C</td>
+                            <td>
+                                <div class="progress-wrap">
+                                    <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+                                    <span class="progress-pct">0%</span>
+                                </div>
+                            </td>
+                            <td style="text-align:right" class="td-mono">0 / 25</td>
+                            <td style="text-align:center"><span class="badge badge-amber">รอเริ่ม</span></td>
+                        </tr>
+                        <tr>
+                            <td class="td-main">เสาเข็ม I-26 (12m)</td>
+                            <td>แท่น D</td>
+                            <td>
+                                <div class="progress-wrap">
+                                    <div class="progress-bar"><div class="progress-fill" style="width:45%"></div></div>
+                                    <span class="progress-pct">45%</span>
+                                </div>
+                            </td>
+                            <td style="text-align:right" class="td-mono">18 / 40</td>
+                            <td style="text-align:center"><span class="badge badge-blue">ดำเนินการ</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Low Stock -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">สต็อกวัตถุดิบใกล้หมด</span>
+                    <a href="#" class="card-action">See All →</a>
+                </div>
+                <div>
+                    <div class="stock-item">
+                        <div class="stock-left">
+                            <div class="stock-icon"><i class="fas fa-boxes"></i></div>
+                            <div>
+                                <div class="stock-name">เหล็กเส้น DB12 (10m)</div>
+                                <div class="stock-qty">คงเหลือ: 45 เส้น</div>
+                            </div>
+                        </div>
+                        <span class="badge badge-red">Low</span>
+                    </div>
+                    <div class="stock-item">
+                        <div class="stock-left">
+                            <div class="stock-icon"><i class="fas fa-cubes"></i></div>
+                            <div>
+                                <div class="stock-name">น้ำยาทาแบบ</div>
+                                <div class="stock-qty">คงเหลือ: 2 ถัง (40L)</div>
+                            </div>
+                        </div>
+                        <span class="badge badge-red">Low</span>
+                    </div>
+                    <div class="stock-item">
+                        <div class="stock-left">
+                            <div class="stock-icon"><i class="fas fa-th"></i></div>
+                            <div>
+                                <div class="stock-name">เมชกำแพงกันดิน A</div>
+                                <div class="stock-qty">WIP คงเหลือ: 5 แผง</div>
+                            </div>
+                        </div>
+                        <span class="badge badge-orange">Warning</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ACTIVITY LOGS -->
+        <div class="activity-card">
+            <div class="card-header">
+                <div>
+                    <span class="card-title">Today's Activity Logs</span>
+                    <p style="font-size:11px;color:var(--text-muted);margin-top:2px">บันทึกการทำงานของพนักงานหน้างานและคลังสินค้า</p>
+                </div>
+                <button class="select-sm" style="cursor:pointer;display:flex;align-items:center;gap:6px">
+                    <i class="fas fa-filter" style="font-size:10px"></i> ตัวกรอง
+                </button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>เวลา</th>
+                        <th>พนักงาน</th>
+                        <th>แท่น / แผนก</th>
+                        <th>กิจกรรม</th>
+                        <th>รายละเอียด</th>
+                        <th style="text-align:center">สถานะ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="td-mono"><div class="time-cell"><i class="far fa-clock"></i>11:25</div></td>
+                        <td>
+                            <div class="user-cell">
+                                <div class="user-ava" style="background:var(--accent-light);color:var(--accent)">ส</div>
+                                สมชาย ใจดี
+                            </div>
+                        </td>
+                        <td>แท่น A</td>
+                        <td class="td-main" style="font-size:12px">เทคอนกรีตเสร็จสิ้น</td>
+                        <td style="color:var(--text-muted);font-size:11px">เสาเข็ม I-22 (เป้าหมาย 50 ต้น)</td>
+                        <td style="text-align:center"><span class="badge badge-green">สำเร็จ</span></td>
+                    </tr>
+                    <tr>
+                        <td class="td-mono"><div class="time-cell"><i class="far fa-clock"></i>11:10</div></td>
+                        <td>
+                            <div class="user-cell">
+                                <div class="user-ava" style="background:var(--indigo-light);color:var(--indigo)">ว</div>
+                                วิชัย รักดี
+                            </div>
+                        </td>
+                        <td>คลังเตรียมเหล็ก</td>
+                        <td class="td-main" style="font-size:12px">บันทึกยอด WIP</td>
+                        <td style="color:var(--text-muted);font-size:11px">โครงเสาเข็ม I-22 (+50 ชุด)</td>
+                        <td style="text-align:center"><span class="badge badge-green">สำเร็จ</span></td>
+                    </tr>
+                    <tr>
+                        <td class="td-mono"><div class="time-cell"><i class="far fa-clock"></i>10:45</div></td>
+                        <td>
+                            <div class="user-cell">
+                                <div class="user-ava" style="background:var(--amber-light);color:#B45309">ญ</div>
+                                สมหญิง คลังเป๊ะ
+                            </div>
+                        </td>
+                        <td>คลังวัตถุดิบ</td>
+                        <td class="td-main" style="font-size:12px">เบิกวัตถุดิบ</td>
+                        <td style="color:var(--text-muted);font-size:11px">เหล็ก DB12 (40 เส้น), ลวดผูก (2 ม้วน)</td>
+                        <td style="text-align:center"><span class="badge badge-green">สำเร็จ</span></td>
+                    </tr>
+                    <tr class="alert-row">
+                        <td class="td-mono"><div class="time-cell"><i class="far fa-clock"></i>09:30</div></td>
+                        <td>
+                            <div class="user-cell">
+                                <div class="user-ava" style="background:#F3F4F6;color:#6B7280">ม</div>
+                                <span style="color:var(--text-secondary)">มานะ ถอดเก่ง</span>
+                            </div>
+                        </td>
+                        <td style="color:var(--text-secondary)">แท่น B</td>
+                        <td style="font-size:12px">ถอดแบบ / จบงาน</td>
+                        <td style="font-size:11px"><i class="fas fa-exclamation-circle" style="margin-right:4px"></i>แผ่นพื้น 2 แผ่น — บิ่น</td>
+                        <td style="text-align:center"><span class="badge badge-amber">ของเสีย</span></td>
+                    </tr>
+                    <tr>
+                        <td class="td-mono"><div class="time-cell"><i class="far fa-clock"></i>08:15</div></td>
+                        <td>
+                            <div class="user-cell">
+                                <div class="user-ava" style="background:var(--accent-light);color:var(--accent)">ส</div>
+                                สมชาย ใจดี
+                            </div>
+                        </td>
+                        <td>แท่น A</td>
+                        <td class="td-main" style="font-size:12px">เริ่มงาน (สแกน QR)</td>
+                        <td style="color:var(--text-muted);font-size:11px">Job: #JO-2610-042 (เสาเข็ม I-22)</td>
+                        <td style="text-align:center"><span class="badge badge-blue">เริ่มระบบ</span></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div style="text-align:center;margin-top:14px">
+                <a href="logs.html" class="card-action" style="font-size:12px">ดูประวัติทั้งหมด (View All Logs) →</a>
+            </div>
+        </div>
+
+    </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const sub = document.getElementById('datetime-sub');
+    const dateDisplay = document.getElementById('date-display');
+    const dp = document.getElementById('dp');
+
+    const thDays = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+    const thMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+    const fmt = (d) => {
+        const h = String(d.getHours()).padStart(2,'0');
+        const m = String(d.getMinutes()).padStart(2,'0');
+        return `อัปเดต: วัน${thDays[d.getDay()]}ที่ ${d.getDate()} ${thMonths[d.getMonth()]} ${d.getFullYear()}, ${h}:${m} น.`;
+    };
+
+    const now = new Date();
+    sub.textContent = fmt(now);
+    dateDisplay.textContent = `${now.getDate()} ${thMonths[now.getMonth()]} ${now.getFullYear()}`;
+
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    dp.value = todayStr;
+    dp.max = todayStr;
+
+    document.querySelector('.date-pill').addEventListener('click', () => dp.showPicker && dp.showPicker());
+    dp.addEventListener('change', e => {
+        const d = new Date(e.target.value);
+        if (!isNaN(d)) {
+            dateDisplay.textContent = `${d.getDate()} ${thMonths[d.getMonth()]} ${d.getFullYear()}`;
+            const disp = new Date(d);
+            disp.setHours(e.target.value === todayStr ? now.getHours() : 23);
+            disp.setMinutes(e.target.value === todayStr ? now.getMinutes() : 59);
+            sub.textContent = fmt(disp);
+        }
+    });
+
+    // Chart.js Configuration
+    Chart.defaults.font.family = "'IBM Plex Sans Thai', sans-serif";
+    Chart.defaults.color = '#6B6E85';
+
+    // Daily Bar Chart
+    const ctx1 = document.getElementById('dailyChart');
+    if (ctx1) {
+        new Chart(ctx1.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: ['แผ่นพื้น', 'เสาเข็ม', 'กำแพงกันดิน', 'คาน/เสา', 'อื่นๆ'],
+                datasets: [
+                    {
+                        label: 'แผนการผลิต (Plan)',
+                        data: [120, 90, 50, 70, 30],
+                        backgroundColor: '#DBEAFE',
+                        borderRadius: 4
+                    },
+                    {
+                        label: 'ผลิตได้จริง (Actual)',
+                        data: [100, 90, 10, 60, 25],
+                        backgroundColor: '#2563EB',
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } }
+                },
+                scales: {
+                    y: { beginAtZero: true, border: { display: false }, grid: { color: '#EBEBF0' } },
+                    x: { border: { display: false }, grid: { display: false } }
+                }
+            }
+        });
+    }
+
+    // Weekly Line Chart
+    const ctx2 = document.getElementById('weeklyChart');
+    if (ctx2) {
+        new Chart(ctx2.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'],
+                datasets: [
+                    {
+                        label: 'แผ่นพื้น',
+                        data: [80, 85, 90, 85, 95, 100],
+                        borderColor: '#2563EB',
+                        backgroundColor: '#2563EB',
+                        tension: 0.3,
+                        borderWidth: 2,
+                        pointRadius: 3
+                    },
+                    {
+                        label: 'เสาเข็ม',
+                        data: [60, 65, 60, 70, 65, 90],
+                        borderColor: '#10B981',
+                        backgroundColor: '#10B981',
+                        tension: 0.3,
+                        borderWidth: 2,
+                        pointRadius: 3
+                    },
+                    {
+                        label: 'กำแพงกันดิน',
+                        data: [20, 25, 20, 30, 25, 10],
+                        borderColor: '#F59E0B',
+                        backgroundColor: '#F59E0B',
+                        tension: 0.3,
+                        borderWidth: 2,
+                        pointRadius: 3
+                    },
+                    {
+                        label: 'คาน/เสา',
+                        data: [40, 45, 50, 45, 55, 60],
+                        borderColor: '#8B5CF6',
+                        backgroundColor: '#8B5CF6',
+                        tension: 0.3,
+                        borderWidth: 2,
+                        pointRadius: 3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    y: { beginAtZero: true, border: { display: false }, grid: { color: '#EBEBF0' } },
+                    x: { border: { display: false }, grid: { display: false } }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+    }
+});
+</script>
+</body>
+</html>

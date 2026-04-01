@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precast ERP - Demolding & QC</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; align-items: center; justify-content: space-between; border-left: 4px solid var(--border); box-shadow: var(--shadow-sm); }
+        .stat-card.blue { border-left-color: var(--accent); }
+        .stat-card.orange { border-left-color: #f97316; } 
+        .stat-card.emerald { border-left-color: var(--green); }
+        .stat-card.red { border-left-color: var(--red); }
+        
+        .stat-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .stat-card.blue .stat-icon { background: var(--accent-light); color: var(--accent); }
+        .stat-card.orange .stat-icon { background: #fff7ed; color: #f97316; }
+        .stat-card.emerald .stat-icon { background: #f0fdf4; color: var(--green); }
+        .stat-card.red .stat-icon { background: var(--red-light); color: var(--red); }
+
+        .stat-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
+        .stat-value { font-size: 24px; font-weight: 700; color: var(--text-primary); }
+        .stat-unit { font-size: 13px; font-weight: 400; color: var(--text-muted); }
+
+        .table-wrap { overflow-y: auto; max-height: 500px; }
+        .table-wrap table { width: 100%; border-collapse: collapse; }
+        .table-wrap th { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-muted); text-transform: uppercase; background: var(--bg); position: sticky; top: 0; z-index: 10; }
+        .table-wrap td { padding: 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .table-wrap tr { transition: background 0.15s; cursor: pointer; }
+        .table-wrap tr:hover td { background: var(--hover); }
+        .table-wrap tr.active-row td { background: var(--accent-light); }
+        .table-wrap tr.active-row { border-left: 4px solid var(--accent); }
+        .table-wrap tr.disabled { opacity: 0.6; cursor: not-allowed; }
+        .table-wrap tr.disabled:hover td { background: transparent; }
+
+        .badge { padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; white-space: nowrap; border: 1px solid transparent; display: inline-flex; align-items: center; gap: 4px; }
+        .badge-gray { background: #f1f5f9; color: #475569; }
+        .badge-orange-outline { background: #fff7ed; color: #ea580c; border-color: #ffedd5; }
+        .badge-blue-outline { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
+        .badge-green-outline { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+
+        .progress-bar-wrap { width: 100%; background: #e2e8f0; border-radius: 4px; height: 8px; overflow: hidden; }
+        .progress-bar-fill { height: 100%; border-radius: 4px; }
+
+        .form-panel { display: flex; flex-direction: column; height: 100%; }
+        .form-header { padding: 20px; border-bottom: 1px solid var(--border); background: var(--bg); display: flex; justify-content: space-between; align-items: center; border-radius: var(--radius) var(--radius) 0 0; }
+        .form-body { flex: 1; overflow-y: auto; padding: 20px; }
+        .form-footer { padding: 20px; border-top: 1px solid var(--border); background: white; border-radius: 0 0 var(--radius) var(--radius); }
+
+        .job-card { background: var(--accent-light); border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: 16px; margin-bottom: 20px; }
+        .job-card .meta { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; }
+        .job-card .title { font-size: 18px; font-weight: 700; color: var(--accent); margin-bottom: 12px; }
+        .job-card .footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(59, 130, 246, 0.2); padding-top: 12px; }
+
+        .input-group { background: white; border: 2px solid transparent; border-radius: var(--radius); padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow-sm); transition: 0.15s; }
+        .input-group.success { border-color: #d1fae5; }
+        .input-group.success:hover { border-color: #6ee7b7; }
+        .input-group.danger { border-color: #fee2e2; }
+        .input-group.danger:hover { border-color: #fca5a5; }
+
+        .input-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+        .input-group.success label { color: var(--green); }
+        .input-group.danger label { color: var(--red); }
+
+        .input-field { display: flex; align-items: stretch; border-radius: var(--radius-sm); overflow: hidden; }
+        .input-field input { flex: 1; border: none; font-size: 24px; font-weight: 700; padding: 12px; text-align: right; outline: none; }
+        .input-group.success .input-field input { background: #f0fdf4; color: #064e3b; }
+        .input-group.danger .input-field input { background: #fef2f2; color: #7f1d1d; }
+        .input-field span { display: flex; align-items: center; padding: 0 16px; font-weight: 700; font-size: 16px; }
+        .input-group.success .input-field span { background: #d1fae5; color: var(--green); }
+        .input-group.danger .input-field span { background: #fee2e2; color: var(--red); }
+
+        .info-text { font-size: 10px; color: var(--text-muted); margin-top: 8px; display: flex; align-items: center; gap: 4px; }
+        
+        .defect-reason { margin-top: 12px; padding: 12px; background: rgba(239, 68, 68, 0.05); border-radius: var(--radius-sm); border: 1px solid rgba(239, 68, 68, 0.1); }
+        .defect-reason select { width: 100%; padding: 8px; border: 1px solid #fca5a5; border-radius: 4px; font-size: 13px; color: var(--text-primary); outline: none; }
+        .defect-reason select:focus { border-color: var(--red); }
+
+        .btn-submit { width: 100%; background: var(--text-primary); color: white; border: none; padding: 16px; border-radius: var(--radius); font-size: 14px; font-weight: 700; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; transition: 0.15s; }
+        .btn-submit:hover { opacity: 0.9; transform: scale(0.98); }
+        
+        @keyframes pulse-anim { 0%, 100% {opacity: 1;} 50% {opacity: .5;} }
+        .anim-pulse { animation: pulse-anim 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside>
+    <div class="logo">
+        <div class="logo-icon"><i class="fas fa-industry"></i></div>
+        <div class="logo-text">PCC <span>POSTENTION</span></div>
+    </div>
+
+        <nav>
+        <div class="nav-label">Main</div>
+        <a href="index.html"><i class="fas fa-chart-line"></i> Dashboard</a>
+
+        <div class="nav-label">Production</div>
+        <a href="planner.html"><i class="fas fa-calendar-alt"></i> แผนการผลิต</a>
+        <a href="job_orders.html"><i class="fas fa-clipboard-list"></i> คิวงานเทปูน</a>
+        <a href="demolding.html" class="active"><i class="fas fa-hammer"></i> งานถอดแบบ</a>
+
+        <div class="nav-label">Inventory</div>
+        <a href="inventory.html"><i class="fas fa-layer-group"></i> คลังวัตถุดิบ</a>
+        <a href="wip.html"><i class="fas fa-th-large"></i> โครงเหล็ก (WIP)</a>
+        <a href="fg.html"><i class="fas fa-cubes"></i> สินค้าพร้อมขาย</a>
+
+        <div class="nav-label">System</div>
+        <a href="products.html"><i class="fas fa-box-open"></i> ข้อมูลสินค้า</a>
+        <a href="users.html"><i class="fas fa-users-cog"></i> จัดการผู้ใช้งาน</a>
+        <a href="qc.html"><i class="fas fa-clipboard-check"></i> จัดการของเสีย (QC)</a>
+        <a href="logs.html"><i class="fas fa-history"></i> ประวัติการทำงาน</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+        <a href="#"><i class="fas fa-cog"></i> ตั้งค่า</a>
+        <a href="#" class="logout"><i class="fas fa-sign-out-alt"></i> ออกจากระบบ</a>
+    </div>
+</aside>
+
+<!-- MAIN -->
+<main>
+    <header>
+        <div class="header-left">
+            <h1 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0; display: flex; flex-direction: column;">
+                <span style="display: flex; align-items: center; gap: 8px;"><i class="fas fa-hammer" style="color: var(--accent);"></i> จัดการงานถอดแบบและ QC (Demolding & QC)</span>
+            </h1>
+        </div>
+        <div style="flex: 1;"></div>
+        <div class="header-right">
+            <div class="date-pill" style="background: var(--bg); border-color: var(--border); color: var(--text-muted); font-weight: 500;">
+                <i class="far fa-clock" style="color: var(--accent);"></i>
+                <span style="color: var(--text-primary);">เวลาปัจจุบัน: <span id="clock" style="font-weight: 700; margin-left: 4px;">08:30 น.</span></span>
+            </div>
+
+            <div class="notif-btn">
+                <i class="far fa-bell"></i>
+                <span class="notif-dot"></span>
+            </div>
+            <div class="user-profile">
+                <div class="avatar">
+                    <img src="https://i.pravatar.cc/150?img=11" alt="Profile">
+                </div>
+                <div class="user-details">
+                    <span class="user-name">วริศรา ผู้ดูแล</span>
+                    <span class="user-role">ผู้ดูแลระบบ (Admin)</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="content">
+        
+        <!-- Summary Mini-Cards -->
+        <div class="stats-grid">
+            <div class="stat-card orange">
+                <div class="stat-info">
+                    <div class="stat-label">กำลังบ่ม (Curing)</div>
+                    <div class="stat-value">3 <span class="stat-unit">งาน</span></div>
+                </div>
+                <div class="stat-icon"><i class="fas fa-temperature-high"></i></div>
+            </div>
+            <div class="stat-card blue">
+                <div class="stat-info">
+                    <div class="stat-label">พร้อมถอดแบบ</div>
+                    <div class="stat-value" style="color: var(--accent);">2 <span class="stat-unit">งาน</span></div>
+                </div>
+                <div class="stat-icon anim-pulse"><i class="fas fa-bell"></i></div>
+            </div>
+            <div class="stat-card emerald">
+                <div class="stat-info">
+                    <div class="stat-label">จบงานแล้ววันนี้ (FG)</div>
+                    <div class="stat-value">115 <span class="stat-unit">ชิ้น</span></div>
+                </div>
+                <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+            </div>
+            <div class="stat-card red">
+                <div class="stat-info">
+                    <div class="stat-label">พบของเสีย (Defect)</div>
+                    <div class="stat-value" style="color: var(--red);">2 <span class="stat-unit" style="color: #fca5a5;">ชิ้น</span></div>
+                </div>
+                <div class="stat-icon"><i class="fas fa-heart-broken"></i></div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; min-height: 0; align-items: start;">
+            
+            <!-- Left Column: Curing Queue Table -->
+            <div class="card" style="padding: 0; display: flex; flex-direction: column; overflow: hidden;">
+                <div style="padding: 20px; border-bottom: 1px solid var(--border); background: var(--bg); display: flex; justify-content: space-between; align-items: center;">
+                    <h2 style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-layer-group" style="color: var(--accent);"></i> คิวงานที่กำลังบ่ม (Curing Queue)
+                    </h2>
+                    <span class="badge badge-blue-outline" style="border: none; background: var(--accent-light); color: var(--accent);">รอตรวจสอบ 5 รายการ</span>
+                </div>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>รหัสงาน / สินค้า</th>
+                                <th style="text-align: center;">แท่นผลิต</th>
+                                <th style="text-align: center;">เวลาเทเสร็จ</th>
+                                <th>ระยะเวลาบ่ม (Curing Time)</th>
+                                <th style="text-align: center;">สถานะ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            
+                            <!-- Active Selection Row (Ready) -->
+                            <tr class="active-row">
+                                <td>
+                                    <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace;">#JO-2602-098</div>
+                                    <div style="font-size: 14px; font-weight: 700; color: var(--accent); margin: 2px 0;">เสาเข็ม I-22 (10m)</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">เป้าหมาย: 50 ต้น</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-gray" style="border: 1px solid var(--border); background: white;">แท่น A</span>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; color: var(--text-primary);">เมื่อวาน</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">10:30 น.</div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                                        <span style="font-weight: 700; color: var(--green);">22 ชม.</span>
+                                        <span style="color: var(--text-muted);">เป้า: 18 ชม.</span>
+                                    </div>
+                                    <div class="progress-bar-wrap">
+                                        <div class="progress-bar-fill" style="width: 100%; background: var(--green);"></div>
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-green-outline"><i class="fas fa-check-circle"></i> พร้อมถอด</span>
+                                </td>
+                            </tr>
+
+                            <!-- Ready Row 2 -->
+                            <tr>
+                                <td>
+                                    <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace;">#JO-2602-099</div>
+                                    <div style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 2px 0;">แผ่นพื้นสำเร็จรูป Solid Plank</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">เป้าหมาย: 150 แผ่น</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-gray" style="border: 1px solid var(--border); background: white;">แท่น B</span>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; color: var(--text-primary);">เมื่อวาน</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">14:00 น.</div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                                        <span style="font-weight: 700; color: var(--green);">18.5 ชม.</span>
+                                        <span style="color: var(--text-muted);">เป้า: 18 ชม.</span>
+                                    </div>
+                                    <div class="progress-bar-wrap">
+                                        <div class="progress-bar-fill" style="width: 100%; background: var(--green);"></div>
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-green-outline"><i class="fas fa-check-circle"></i> พร้อมถอด</span>
+                                </td>
+                            </tr>
+
+                            <!-- Not Ready Row 1 -->
+                            <tr class="disabled">
+                                <td>
+                                    <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace;">#JO-2603-001</div>
+                                    <div style="font-size: 14px; font-weight: 700; color: var(--text-muted); margin: 2px 0;">กำแพงกันดิน Type 1</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">เป้าหมาย: 25 ชิ้น</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-gray" style="border: 1px solid var(--border); background: white;">แท่น C</span>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; color: var(--text-muted);">เมื่อวาน</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">16:45 น.</div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                                        <span style="font-weight: 700; color: #f97316;">15 ชม. 45 นาที</span>
+                                        <span style="color: var(--text-muted);">เป้า: 24 ชม.</span>
+                                    </div>
+                                    <div class="progress-bar-wrap">
+                                        <div class="progress-bar-fill" style="width: 65%; background: #fca5a5;"></div>
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-orange-outline"><i class="fas fa-hourglass-half"></i> กำลังบ่ม</span>
+                                </td>
+                            </tr>
+
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right Column: QC Form -->
+            <div class="card" style="padding: 0; box-shadow: var(--shadow-sm); overflow: hidden; position: relative; border-top: 4px solid var(--accent);">
+                <div class="form-panel">
+                    
+                    <div class="form-header">
+                        <h2 style="margin: 0; font-size: 14px; font-weight: 700; color: var(--text-primary);">บันทึกผลการถอดแบบ</h2>
+                        <span style="font-size: 10px; font-weight: 700; background: var(--accent-light); color: var(--accent); padding: 4px 8px; border-radius: 4px; text-transform: uppercase;">QC Form</span>
+                    </div>
+
+                    <div class="form-body custom-scrollbar">
+                        
+                        <!-- Selected Job Info -->
+                        <div class="job-card">
+                            <div class="meta">งานที่เลือก: #JO-2602-098</div>
+                            <div class="title">เสาเข็ม I-22 (10m)</div>
+                            <div class="footer">
+                                <span style="font-size: 12px; color: var(--text-secondary);">เป้าหมายการผลิต:</span>
+                                <div>
+                                    <span style="font-size: 18px; font-weight: 700; color: var(--text-primary);">50</span>
+                                    <span style="font-size: 12px; color: var(--text-muted);">ต้น</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Data Entry -->
+                        <div class="input-group success">
+                            <label><i class="fas fa-check-circle"></i> 1. ยอดงานดี (ผ่าน QC)</label>
+                            <div class="input-field">
+                                <input type="number" value="48">
+                                <span>ต้น</span>
+                            </div>
+                            <div class="info-text"><i class="fas fa-info-circle" style="color: var(--green);"></i> ยอดนี้จะถูกนำเข้าคลังสินค้าสำเร็จรูป (FG) อัตโนมัติ</div>
+                        </div>
+
+                        <div class="input-group danger">
+                            <label><i class="fas fa-heart-broken"></i> 2. ยอดของเสีย (Defect)</label>
+                            <div class="input-field">
+                                <input type="number" value="2">
+                                <span>ต้น</span>
+                            </div>
+                            
+                            <div class="defect-reason">
+                                <label style="font-size: 11px; margin-bottom: 4px; display: block; color: var(--red);">ระบุสาเหตุของเสีย <span style="color: #fca5a5;">*</span></label>
+                                <select>
+                                    <option value="" disabled>-- เลือกสาเหตุหลัก --</option>
+                                    <option value="crack">คอนกรีตแตก/ร้าว (Cracking)</option>
+                                    <option value="honeycomb" selected>คอนกรีตเป็นโพรง (Honeycomb)</option>
+                                    <option value="chip">บิ่น/มุมหักตอนถอดแบบ (Chipping)</option>
+                                    <option value="dimension">มิติ/ขนาดไม่ได้ตามแบบ (Dimension)</option>
+                                    <option value="other">อื่นๆ (ระบุในหมายเหตุ)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="info-text" style="margin-top: 12px;"><i class="fas fa-chart-pie" style="color: #fca5a5;"></i> ข้อมูลนี้จะถูกส่งไปวิเคราะห์ใน Dashboard ของผู้บริหาร</div>
+                        </div>
+                        
+                    </div>
+
+                    <div class="form-footer">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-size: 13px;">
+                            <span style="font-weight: 600; color: var(--text-muted);">ยอดรวมทั้งหมด:</span>
+                            <span style="font-weight: 700; color: var(--text-primary); background: var(--bg); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border);">50 / 50 ต้น</span>
+                        </div>
+                        <button class="btn-submit">
+                            <i class="fas fa-save"></i> ยืนยันจบงาน (Send to FG)
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+</main>
+
+</body>
+</html>

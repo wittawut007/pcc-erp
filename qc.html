@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precast ERP - QC & Defect Management</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .month-selector {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fee2e2;
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .month-selector select {
+            background: transparent;
+            border: none;
+            outline: none;
+            font-family: inherit;
+            font-weight: 700;
+            color: inherit;
+            cursor: pointer;
+        }
+
+        .kpi-card {
+            padding: 20px;
+            border-radius: var(--radius);
+            background: white;
+            box-shadow: var(--shadow-sm);
+            border-bottom: 4px solid transparent;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border: 1px solid var(--border);
+        }
+
+        .kpi-info-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .kpi-info-val {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .kpi-icon-wrap {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .kpi-qc-red {
+            border-bottom-color: #ef4444;
+        }
+
+        .kpi-qc-red .kpi-icon-wrap {
+            background: #fef2f2;
+            color: #ef4444;
+        }
+
+        .kpi-qc-orange {
+            border-bottom-color: #f97316;
+        }
+
+        .kpi-qc-orange .kpi-info-val {
+            color: #ea580c;
+        }
+
+        .kpi-qc-orange .kpi-icon-wrap {
+            background: #fff7ed;
+            color: #f97316;
+        }
+
+        .kpi-qc-purple {
+            border-bottom-color: #a855f7;
+        }
+
+        .kpi-qc-purple .kpi-icon-wrap {
+            background: #faf5ff;
+            color: #a855f7;
+        }
+
+        .kpi-qc-slate {
+            border-bottom-color: #1e293b;
+        }
+
+        .kpi-qc-slate .kpi-info-val {
+            color: #dc2626;
+        }
+
+        .kpi-qc-slate .kpi-icon-wrap {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 1024px) {
+            .chart-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Progress Bar Styles */
+        .reason-row {
+            margin-bottom: 16px;
+        }
+
+        .reason-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .reason-label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 6px;
+        }
+
+        .reason-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .reason-val {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .reason-val span {
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--text-muted);
+        }
+
+        .reason-bg {
+            background: #f1f5f9;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .reason-fill {
+            height: 100%;
+            border-radius: 4px;
+        }
+
+        /* Action Boxes */
+        .action-box-grid {
+            display: flex;
+            gap: 16px;
+            height: 100%;
+        }
+
+        .action-box-left {
+            flex: 1;
+            background: #fff7ed;
+            border: 1px solid #ffedd5;
+            border-radius: var(--radius);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .action-box-right {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .action-subbox {
+            flex: 1;
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .action-subbox-blue {
+            background: #eff6ff;
+            border: 1px solid #dbeafe;
+        }
+
+        .action-subbox-gray {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+        }
+
+        .btn-action-main {
+            background: #f97316;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            font-size: 11px;
+            font-weight: 700;
+            width: 100%;
+            margin-top: 12px;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+
+        .btn-action-main:hover {
+            background: #ea580c;
+        }
+
+        /* Table Tools Bar */
+        .tools-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--hover);
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .tools-title {
+            font-size: 14px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-primary);
+        }
+
+        .tools-filters {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filter-select {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            background: white;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            color: var(--text-primary);
+            cursor: pointer;
+            outline: none;
+            font-weight: 600;
+            min-width: 150px;
+        }
+
+        .filter-select:focus {
+            border-color: var(--accent);
+        }
+
+        .search-box {
+            position: relative;
+            width: 250px;
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 8px 12px 8px 36px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            outline: none;
+        }
+
+        .search-box input:focus {
+            border-color: var(--accent);
+        }
+
+        /* Table specifics */
+        .table-wrap {
+            overflow-x: auto;
+            flex: 1;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 900px;
+        }
+
+        th {
+            padding: 20px 20px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            background: #f8fafc;
+            font-weight: 600;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+
+        td {
+            padding: 16px 10px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            vertical-align: middle;
+        }
+
+        tr:hover td {
+            background: var(--hover);
+        }
+
+        .tr-pending {
+            background: rgba(249, 115, 22, 0.05);
+        }
+
+        .tr-pending:hover td {
+            background: rgba(249, 115, 22, 0.1);
+        }
+
+        .tr-opacity-80 {
+            opacity: 0.8;
+        }
+
+        .tr-opacity-60 {
+            opacity: 0.6;
+        }
+
+        .btn-mini-blue {
+            background: #eff6ff;
+            color: #2563eb;
+            border: 1px solid #bfdbfe;
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-mini-blue:hover {
+            background: #dbeafe;
+        }
+
+        .btn-mini-gray {
+            background: #f8fafc;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-mini-gray:hover {
+            background: #e2e8f0;
+        }
+
+        .badge-pending {
+            background: #ffedd5;
+            color: #c2410c;
+            border: 1px solid #fed7aa;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+
+        .badge-rework {
+            background: #eff6ff;
+            color: #2563eb;
+            border: 1px solid #bfdbfe;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+
+        .badge-scrap {
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+
+        .text-link {
+            color: var(--accent);
+            cursor: pointer;
+            transition: 0.15s;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .text-link:hover {
+            text-decoration: underline;
+        }
+
+        .pagination {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-radius: 0 0 var(--radius) var(--radius);
+            flex-shrink: 0;
+        }
+
+        .pagination-info {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .pagination-controls {
+            display: flex;
+            gap: 4px;
+        }
+
+        .page-btn {
+            padding: 6px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            background: white;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+
+        .page-btn:hover:not(:disabled) {
+            background: var(--hover);
+        }
+
+        .page-btn:disabled {
+            color: #cbd5e1;
+            cursor: not-allowed;
+            background: #f8fafc;
+        }
+
+        .page-btn.active-red {
+            background: #dc2626;
+            color: white;
+            border-color: #dc2626;
+            font-weight: 700;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- SIDEBAR -->
+    <aside>
+        <div class="logo">
+            <div class="logo-icon"><i class="fas fa-industry"></i></div>
+            <div class="logo-text">PCC <span>POSTENTION</span></div>
+        </div>
+
+        <nav>
+            <div class="nav-label">Main</div>
+            <a href="index.html"><i class="fas fa-chart-line"></i> Dashboard</a>
+
+            <div class="nav-label">Production</div>
+            <a href="planner.html"><i class="fas fa-calendar-alt"></i> แผนการผลิต</a>
+            <a href="job_orders.html"><i class="fas fa-clipboard-list"></i> คิวงานเทปูน</a>
+            <a href="demolding.html"><i class="fas fa-hammer"></i> งานถอดแบบ</a>
+
+            <div class="nav-label">Inventory</div>
+            <a href="inventory.html"><i class="fas fa-layer-group"></i> คลังวัตถุดิบ</a>
+            <a href="wip.html"><i class="fas fa-th-large"></i> โครงเหล็ก (WIP)</a>
+            <a href="fg.html"><i class="fas fa-cubes"></i> สินค้าพร้อมขาย</a>
+
+            <div class="nav-label">System</div>
+            <a href="products.html"><i class="fas fa-box-open"></i> ข้อมูลสินค้า</a>
+            <a href="users.html"><i class="fas fa-users-cog"></i> จัดการผู้ใช้งาน</a>
+            <a href="qc.html" class="active"><i class="fas fa-clipboard-check"></i> จัดการของเสีย (QC)</a>
+            <a href="logs.html"><i class="fas fa-history"></i> ประวัติการทำงาน</a>
+        </nav>
+
+        <div class="sidebar-bottom">
+            <a href="#"><i class="fas fa-cog"></i> ตั้งค่า</a>
+            <a href="#" class="logout"><i class="fas fa-sign-out-alt"></i> ออกจากระบบ</a>
+        </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main>
+        <header>
+            <div class="header-left">
+                <h1
+                    style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <i class="fas fa-search-minus" style="color: #ef4444;"></i> จัดการของเสียและควบคุมคุณภาพ (QC &
+                    Defect)
+                </h1>
+            </div>
+            <div style="flex: 1;"></div>
+            <div class="header-right">
+
+                <div class="month-selector">
+                    <i class="far fa-calendar-alt"></i> เดือน:
+                    <select>
+                        <option>เมษายน 2026</option>
+                        <option>มีนาคม 2026</option>
+                    </select>
+                </div>
+
+                <div class="notif-btn">
+                    <i class="far fa-bell"></i>
+                    <span class="notif-dot"></span>
+                </div>
+                <div class="user-profile">
+                    <div class="avatar">
+                        <img src="https://i.pravatar.cc/150?img=11" alt="Profile">
+                    </div>
+                    <div class="user-details">
+                        <span class="user-name">วริศรา ผู้ดูแล</span>
+                        <span class="user-role">ผู้ดูแลระบบ (Admin)</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="content">
+
+            <!-- KPI Cards -->
+            <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
+                <!-- KPI 1 -->
+                <div class="kpi-card kpi-qc-red">
+                    <div>
+                        <div class="kpi-info-label">ยอดของเสียเดือนนี้</div>
+                        <div class="kpi-info-val">45 <span
+                                style="font-size: 13px; font-weight: 400; color: var(--text-muted);">ชิ้น</span></div>
+                    </div>
+                    <div class="kpi-icon-wrap"><i class="fas fa-heart-broken"></i></div>
+                </div>
+                <!-- KPI 2 -->
+                <div class="kpi-card kpi-qc-orange">
+                    <div>
+                        <div class="kpi-info-label">อัตราของเสีย (Defect Rate)</div>
+                        <div class="kpi-info-val">2.1<span style="font-size: 18px; margin-left: 4px;">%</span></div>
+                        <div style="font-size: 10px; font-weight: 700; color: #10b981; margin-top: 4px;"><i
+                                class="fas fa-arrow-down"></i> ลดลง 0.4% จากเดือนก่อน</div>
+                    </div>
+                    <div class="kpi-icon-wrap"><i class="fas fa-percentage"></i></div>
+                </div>
+                <!-- KPI 3 -->
+                <div class="kpi-card kpi-qc-purple">
+                    <div>
+                        <div class="kpi-info-label">สาเหตุอันดับ 1 (Top Issue)</div>
+                        <div class="kpi-info-val" style="font-size: 18px;">คอนกรีตเป็นโพรง</div>
+                        <div style="font-size: 10px; font-weight: 700; color: var(--text-muted); margin-top: 4px;">พบ 18
+                            ชิ้น (40% ของทั้งหมด)</div>
+                    </div>
+                    <div class="kpi-icon-wrap"><i class="fas fa-exclamation-circle"></i></div>
+                </div>
+                <!-- KPI 4 -->
+                <div class="kpi-card kpi-qc-slate">
+                    <div>
+                        <div class="kpi-info-label">มูลค่าความเสียหาย (Est. Loss)</div>
+                        <div class="kpi-info-val">฿ 52.4<span
+                                style="font-size: 14px; font-weight: 400; color: #f87171;">k</span></div>
+                    </div>
+                    <div class="kpi-icon-wrap"><i class="fas fa-file-invoice-dollar"></i></div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="chart-grid">
+
+                <!-- Chart 1: Defect Reasons Breakdown -->
+                <div class="card" style="box-shadow: var(--shadow-sm);">
+                    <div class="card-header">
+                        <span class="card-title" style="display:flex; align-items:center; gap:8px;">
+                            <i class="fas fa-chart-pie" style="color:var(--accent);"></i> สัดส่วนสาเหตุของเสีย (Defect
+                            Reasons)
+                        </span>
+                    </div>
+                    <div>
+                        <div class="reason-row">
+                            <div class="reason-label-row">
+                                <span class="reason-label">คอนกรีตเป็นโพรง (Honeycomb)</span>
+                                <span class="reason-val">40% <span>(18 ชิ้น)</span></span>
+                            </div>
+                            <div class="reason-bg">
+                                <div class="reason-fill" style="width: 40%; background: #ef4444;"></div>
+                            </div>
+                        </div>
+
+                        <div class="reason-row">
+                            <div class="reason-label-row">
+                                <span class="reason-label">แตก/ร้าว (Cracking)</span>
+                                <span class="reason-val">31% <span>(14 ชิ้น)</span></span>
+                            </div>
+                            <div class="reason-bg">
+                                <div class="reason-fill" style="width: 31%; background: #f97316;"></div>
+                            </div>
+                        </div>
+
+                        <div class="reason-row">
+                            <div class="reason-label-row">
+                                <span class="reason-label">บิ่น/มุมหักตอนถอดแบบ (Chipping)</span>
+                                <span class="reason-val">20% <span>(9 ชิ้น)</span></span>
+                            </div>
+                            <div class="reason-bg">
+                                <div class="reason-fill" style="width: 20%; background: #f59e0b;"></div>
+                            </div>
+                        </div>
+
+                        <div class="reason-row">
+                            <div class="reason-label-row">
+                                <span class="reason-label">มิติ/ขนาดไม่ได้ตามแบบ</span>
+                                <span class="reason-val">9% <span>(4 ชิ้น)</span></span>
+                            </div>
+                            <div class="reason-bg">
+                                <div class="reason-fill" style="width: 9%; background: #60a5fa;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chart 2: Status Breakdown & Actions needed -->
+                <div class="card" style="box-shadow: var(--shadow-sm); display: flex; flex-direction: column;">
+                    <div class="card-header">
+                        <span class="card-title" style="display:flex; align-items:center; gap:8px;">
+                            <i class="fas fa-tasks" style="color:#6366f1;"></i> สถานะการจัดการของเสีย
+                        </span>
+                    </div>
+                    <div class="action-box-grid">
+
+                        <!-- Pending Action -->
+                        <div class="action-box-left">
+                            <i class="fas fa-clock" style="font-size: 28px; color: #fb923c; margin-bottom: 8px;"></i>
+                            <div style="font-size: 28px; font-weight: 700; color: #ea580c;">5</div>
+                            <div
+                                style="font-size: 11px; font-weight: 700; color: #9a3412; text-transform: uppercase; margin-top: 4px;">
+                                รอตรวจสอบ (Pending)</div>
+                            <button class="btn-action-main">ดำเนินการทันที</button>
+                        </div>
+
+                        <div class="action-box-right">
+                            <!-- Rework -->
+                            <div class="action-subbox action-subbox-blue">
+                                <div>
+                                    <div
+                                        style="font-size: 11px; font-weight: 700; color: #1e40af; text-transform: uppercase;">
+                                        สั่งซ่อมแซม (Rework)</div>
+                                    <div style="font-size: 20px; font-weight: 700; color: #2563eb; margin-top: 4px;">12
+                                        <span style="font-size: 10px; font-weight: 400; color: #3b82f6;">ชิ้น</span>
+                                    </div>
+                                </div>
+                                <i class="fas fa-tools" style="font-size: 24px; color: #93c5fd;"></i>
+                            </div>
+
+                            <!-- Scrap -->
+                            <div class="action-subbox action-subbox-gray">
+                                <div>
+                                    <div
+                                        style="font-size: 11px; font-weight: 700; color: #334155; text-transform: uppercase;">
+                                        ทำลาย/ทิ้ง (Scrap)</div>
+                                    <div style="font-size: 20px; font-weight: 700; color: #1e293b; margin-top: 4px;">28
+                                        <span style="font-size: 10px; font-weight: 400; color: #64748b;">ชิ้น</span>
+                                    </div>
+                                </div>
+                                <i class="fas fa-trash" style="font-size: 24px; color: #cbd5e1;"></i>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Defect List Table -->
+            <div class="card"
+                style="padding: 0; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-sm); margin-bottom: 24px;">
+
+                <div class="tools-bar">
+                    <div class="tools-title">
+                        <i class="fas fa-list" style="color: var(--text-muted);"></i> รายการของเสียรอจัดการ (Defect Log)
+                    </div>
+                    <div class="tools-filters">
+                        <select class="filter-select">
+                            <option value="">สถานะ: ทั้งหมด</option>
+                            <option value="pending" selected>รอตรวจสอบ (Pending)</option>
+                            <option value="rework">สั่งซ่อมแซม (Rework)</option>
+                            <option value="scrap">ทิ้ง/ทำลาย (Scrap)</option>
+                        </select>
+                        <select class="filter-select">
+                            <option value="">สาเหตุ: ทั้งหมด</option>
+                            <option value="honeycomb">คอนกรีตเป็นโพรง</option>
+                            <option value="crack">แตก/ร้าว</option>
+                            <option value="chip">บิ่น/มุมหัก</option>
+                        </select>
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" placeholder="ค้นหา รหัสงาน...">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-wrap custom-scrollbar">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>วัน/เวลาแจ้ง</th>
+                                <th>รหัสงาน (Job Ref) / สินค้า</th>
+                                <th style="text-align: center;">แท่นผลิต</th>
+                                <th>สาเหตุที่พบ (Reason)</th>
+                                <th style="text-align: center;">จำนวนเสีย</th>
+                                <th style="text-align: center;">สถานะ</th>
+                                <th style="text-align: center;">การตัดสินใจ (Action)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+
+                            <!-- Defect Item 1 -->
+                            <tr class="tr-pending">
+                                <td>
+                                    <div style="font-weight: 600; color: var(--text-primary);">วันนี้</div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">11:30 น.
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 700; color: #111827;">เสาเข็ม I-22 (10m)</div>
+                                    <a href="#" class="text-link"
+                                        style="font-size: 12px; display: inline-block; margin-top: 2px;">#JO-2604-001</a>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span
+                                        style="background:var(--bg); color:var(--text-secondary); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">แท่น
+                                        A</span>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 700; color: #dc2626;"><i
+                                            class="fas fa-exclamation-circle"></i> คอนกรีตเป็นโพรง</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">แจ้งโดย:
+                                        มานะ ถอดเก่ง</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-size: 16px; font-weight: 700; color: #dc2626;">2</div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">ต้น</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge-pending">รอตรวจสอบ</span>
+                                </td>
+                                <td>
+                                    <div style="display: flex; justify-content: center; gap: 8px;">
+                                        <button class="btn-mini-blue"><i class="fas fa-tools"></i> สั่งซ่อม</button>
+                                        <button class="btn-mini-gray"><i class="fas fa-trash"></i> ทิ้ง/ทำลาย</button>
+                                    </div>
+                                </td>
+                            </tr>
+
+                            <!-- Defect Item 2 -->
+                            <tr class="tr-pending">
+                                <td>
+                                    <div style="font-weight: 600; color: var(--text-primary);">เมื่อวาน</div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">16:45 น.
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 700; color: #111827;">แผ่นพื้นสำเร็จรูป Solid Plank</div>
+                                    <a href="#" class="text-link"
+                                        style="font-size: 12px; display: inline-block; margin-top: 2px;">#JO-2603-095</a>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span
+                                        style="background:var(--bg); color:var(--text-secondary); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">แท่น
+                                        B</span>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 700; color: #dc2626;"><i
+                                            class="fas fa-exclamation-circle"></i> บิ่น/มุมหัก</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">แจ้งโดย:
+                                        สมชาย ใจดี</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-size: 16px; font-weight: 700; color: #dc2626;">3</div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">แผ่น</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge-pending">รอตรวจสอบ</span>
+                                </td>
+                                <td>
+                                    <div style="display: flex; justify-content: center; gap: 8px;">
+                                        <button class="btn-mini-blue"><i class="fas fa-tools"></i> สั่งซ่อม</button>
+                                        <button class="btn-mini-gray"><i class="fas fa-trash"></i> ทิ้ง/ทำลาย</button>
+                                    </div>
+                                </td>
+                            </tr>
+
+                            <!-- Defect Item 3 -->
+                            <tr class="tr-opacity-80">
+                                <td>
+                                    <div style="font-weight: 600; color: var(--text-secondary);">29 มี.ค.</div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">09:15 น.
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 700; color: var(--text-secondary);">กำแพงกันดิน Type 1
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                                        #JO-2603-080</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span
+                                        style="background:white; border:1px solid var(--border); color:var(--text-muted); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">แท่น
+                                        C</span>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 700; color: var(--text-secondary);"><i
+                                            class="fas fa-exclamation-circle"></i> แตก/ร้าว (รอยตื้น)</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-size: 16px; font-weight: 700; color: var(--text-secondary);">1
+                                    </div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">ชิ้น</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge-rework">กำลังซ่อมแซม</span>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-size: 10px; color: var(--text-muted);"><i
+                                            class="fas fa-user-cog"></i> ส่งซ่อมโดย Admin</div>
+                                </td>
+                            </tr>
+
+                            <!-- Defect Item 4 -->
+                            <tr class="tr-opacity-60">
+                                <td>
+                                    <div style="font-weight: 600; color: var(--text-muted);">28 มี.ค.</div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">14:20 น.
+                                    </div>
+                                </td>
+                                <td>
+                                    <div
+                                        style="font-weight: 700; color: var(--text-muted); text-decoration: line-through;">
+                                        เสาเข็ม I-26 (12m)</div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                                        #JO-2603-072</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span
+                                        style="background:white; border:1px solid var(--border); color:var(--text-muted); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">แท่น
+                                        D</span>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 700; color: var(--text-muted);"><i
+                                            class="fas fa-exclamation-circle"></i> เหล็กโผล่ / หักกลาง</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-size: 16px; font-weight: 700; color: var(--text-muted);">1</div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">ต้น</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge-scrap">ทำลาย (Scrapped)</span>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-size: 10px; color: var(--text-muted);">ตัดสต็อกสูญเสียแล้ว</div>
+                                </td>
+                            </tr>
+
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination">
+                    <div class="pagination-info">แสดงรายการ 1 - 4 จากของเสียทั้งหมด 45 รายการ</div>
+                    <div class="pagination-controls">
+                        <button class="page-btn" disabled><i class="fas fa-chevron-left"></i> ก่อนหน้า</button>
+                        <button class="page-btn active-red">1</button>
+                        <button class="page-btn">2</button>
+                        <button class="page-btn">ถัดไป <i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+</body>
+
+</html>
