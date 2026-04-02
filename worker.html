@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PCC POSTENTION - Worker App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'IBM Plex Sans Thai', sans-serif; }
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+
+        @keyframes scanline {
+            0% { top: 5%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 95%; opacity: 0; }
+        }
+        .animate-scan { animation: scanline 2.5s linear infinite; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+
+        .custom-checkbox {
+            appearance: none;
+            width: 1.5em; height: 1.5em;
+            border: 2px solid #cbd5e1;
+            border-radius: 0.35em;
+            display: grid; place-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .custom-checkbox::before {
+            content: "";
+            width: 0.8em; height: 0.8em;
+            transform: scale(0);
+            transition: 120ms transform ease-in-out;
+            box-shadow: inset 1em 1em white;
+            clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+        }
+        .custom-checkbox:checked { background-color: #10b981; border-color: #10b981; }
+        .custom-checkbox:checked::before { transform: scale(1); }
+    </style>
+</head>
+<body class="bg-slate-100 h-[100dvh] w-screen overflow-hidden flex justify-center">
+
+<div class="w-full h-full max-w-md bg-slate-100 flex flex-col relative sm:shadow-2xl sm:border-x border-gray-200 overflow-hidden">
+
+    <!-- App Header -->
+    <header class="bg-white px-5 pt-8 pb-4 flex items-center gap-3 shadow-sm border-b border-gray-100 flex-shrink-0">
+        <!-- Logo (far left) -->
+        <div class="flex items-center gap-1.5">
+            <div class="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
+                <i class="fas fa-industry text-white text-xs"></i>
+            </div>
+            <span class="font-bold text-xs text-blue-900">PCC<span class="text-blue-500">ERP</span></span>
+        </div>
+        <!-- Spacer -->
+        <div class="flex-1"></div>
+        <!-- Notification Bell -->
+        <button class="w-11 h-11 rounded-[12px] bg-slate-50 border border-gray-200 flex items-center justify-center relative flex-shrink-0">
+            <i class="far fa-bell text-gray-500 text-lg"></i>
+            <span class="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+        </button>
+        <!-- User Profile (far right) -->
+        <div class="flex items-center gap-3 flex-shrink-0">
+            <div class="w-11 h-11 rounded-full border-2 border-blue-100 p-[2px]">
+                <img src="https://i.pravatar.cc/150?img=8" alt="Profile" class="w-full h-full rounded-full object-cover">
+            </div>
+            <div>
+                <div class="font-bold text-base text-gray-900 leading-tight">สมชาย ใจดี</div>
+                <div class="text-xs text-gray-400 font-medium mt-0.5">พนักงานผลิต (Operator)</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-y-auto pb-24 bg-slate-100">
+
+        <!-- SCANNER SCREEN -->
+        <div id="scannerSection" class="p-5 h-full flex flex-col justify-center">
+            <div class="text-center mb-6">
+                <h2 class="font-bold text-xl text-gray-800 mb-1">สแกนใบสั่งผลิต</h2>
+                <p class="text-sm text-gray-500">นำกล้องสแกน QR Code เพื่อดึงข้อมูลงาน</p>
+            </div>
+            <!-- Camera Mockup -->
+            <div class="relative w-full aspect-square max-w-[260px] mx-auto bg-slate-900 rounded-3xl overflow-hidden shadow-xl mb-8 border-4 border-slate-200">
+                <div class="absolute inset-0 bg-black/40"></div>
+                <div class="absolute top-6 left-6 w-10 h-10 border-t-4 border-l-4 border-blue-400 rounded-tl-xl"></div>
+                <div class="absolute top-6 right-6 w-10 h-10 border-t-4 border-r-4 border-blue-400 rounded-tr-xl"></div>
+                <div class="absolute bottom-6 left-6 w-10 h-10 border-b-4 border-l-4 border-blue-400 rounded-bl-xl"></div>
+                <div class="absolute bottom-6 right-6 w-10 h-10 border-b-4 border-r-4 border-blue-400 rounded-br-xl"></div>
+                <div class="absolute left-6 right-6 h-0.5 bg-emerald-400 shadow-[0_0_10px_#34d399] animate-scan z-10"></div>
+                <div class="absolute inset-0 flex items-center justify-center opacity-20">
+                    <i class="fas fa-qrcode text-6xl text-white"></i>
+                </div>
+            </div>
+            <!-- Sim Buttons -->
+            <div class="flex flex-col gap-3 max-w-[260px] mx-auto w-full">
+                <p class="text-[10px] text-center font-bold text-gray-400 uppercase tracking-widest">จำลองการสแกน</p>
+                <button onclick="simulateScan('phase1')" class="w-full bg-blue-600 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-blue-600/30 hover:bg-blue-700 transition text-sm active:scale-95 flex items-center justify-center gap-2">
+                    <i class="fas fa-play-circle"></i> สแกนเริ่มงาน (ขั้น 1-2)
+                </button>
+                <button onclick="simulateScan('phase3')" class="w-full bg-emerald-600 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-emerald-600/30 hover:bg-emerald-700 transition text-sm active:scale-95 flex items-center justify-center gap-2">
+                    <i class="fas fa-hammer"></i> สแกนถอดแบบ (ขั้น 3)
+                </button>
+            </div>
+        </div>
+
+        <!-- PHASE 1: เตรียมแบบ -->
+        <div id="phase1Section" class="p-4 hidden pb-10">
+            <div class="flex items-center justify-between mb-4">
+                <button onclick="resetScanner()" class="text-blue-600 font-semibold text-sm flex items-center px-3 py-1.5 bg-blue-50 rounded-xl active:bg-blue-100">
+                    <i class="fas fa-chevron-left mr-1"></i> สแกนใหม่
+                </button>
+                <span class="bg-blue-100 text-blue-700 text-[10px] font-bold px-3 py-1 rounded-full border border-blue-200">ขั้นที่ 1: เตรียมแบบ</span>
+            </div>
+
+            <!-- Job Card -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4 relative overflow-hidden fade-in">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-blue-500 rounded-l-2xl"></div>
+                <div class="pl-3">
+                    <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Ref: #JO-2604-015</p>
+                    <h2 class="text-xl font-bold text-gray-900 mt-0.5">เสาเข็ม I-22 (10m)</h2>
+                    <div class="bg-blue-50 rounded-xl p-3 mt-3 flex justify-between items-center border border-blue-100">
+                        <span class="text-sm font-semibold text-blue-800">เป้าหมายวันนี้</span>
+                        <span class="text-xl font-bold text-blue-700">50 <span class="text-sm font-normal text-blue-500">ต้น</span></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Checklist -->
+            <h3 class="font-bold text-gray-600 mb-2 text-xs uppercase tracking-wide px-1 mt-4">ตรวจสอบความพร้อม</h3>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-2 mb-4 fade-in">
+                <label class="flex items-start p-3 hover:bg-gray-50 rounded-xl cursor-pointer border-b border-gray-100">
+                    <input type="checkbox" class="custom-checkbox mt-0.5 mr-3 flex-shrink-0" onchange="checkPhase1Ready()">
+                    <div>
+                        <p class="font-bold text-gray-800 text-sm">ทำความสะอาดและทาน้ำยาแม่พิมพ์</p>
+                        <p class="text-[11px] text-gray-400 mt-0.5">ตรวจสอบความสะอาดของแท่นเทปูน</p>
+                    </div>
+                </label>
+                <label class="flex items-start p-3 hover:bg-gray-50 rounded-xl cursor-pointer">
+                    <input type="checkbox" class="custom-checkbox mt-0.5 mr-3 flex-shrink-0" onchange="checkPhase1Ready()">
+                    <div>
+                        <p class="font-bold text-gray-800 text-sm">จัดวางโครงเหล็ก (WIP) ครบถ้วน</p>
+                        <p class="text-[11px] text-gray-400 mt-0.5">รหัส WIP-IP22-10M จำนวน 50 ชุด</p>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Concrete Specs -->
+            <h3 class="font-bold text-gray-600 mb-2 text-xs uppercase tracking-wide px-1">รายการสั่งคอนกรีต</h3>
+            <div class="bg-slate-800 rounded-2xl p-4 mb-4 fade-in text-white">
+                <div class="flex justify-between items-center border-b border-slate-600 pb-3 mb-3">
+                    <p class="text-sm text-slate-300">สเปกปูน</p>
+                    <p class="font-bold text-white">ST 400</p>
+                </div>
+                <div class="flex justify-between items-center">
+                    <p class="text-sm text-slate-300">ปริมาณรวม</p>
+                    <p class="font-bold text-2xl text-blue-400">22.5 <span class="text-sm font-normal text-slate-300">คิว</span></p>
+                </div>
+            </div>
+
+            <!-- Photo -->
+            <h3 class="font-bold text-gray-600 mb-2 text-xs uppercase tracking-wide px-1">ถ่ายภาพยืนยัน <span class="text-red-500">*</span></h3>
+            <div class="bg-white rounded-2xl border border-gray-100 p-2 mb-5 relative fade-in">
+                <input type="file" accept="image/*" capture="environment" id="cameraInput1" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onchange="handlePhotoUpload(this, 'preview1', checkPhase1Ready)">
+                <div id="preview1" class="w-full h-24 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400">
+                    <i class="fas fa-camera text-2xl mb-1"></i>
+                    <span class="text-[10px] font-bold">แตะเพื่อถ่ายภาพ</span>
+                </div>
+            </div>
+
+            <button id="btnOrderConcrete" disabled onclick="showConcreteSummary()" class="w-full bg-blue-100 text-blue-300 py-4 rounded-2xl font-bold text-base flex justify-center items-center gap-2 transition cursor-not-allowed">
+                <i class="fas fa-truck-loading text-lg"></i> สั่งคอนกรีตผสมเสร็จ
+            </button>
+            <p id="msgOrderConcrete" class="text-center text-[10px] text-red-400 mt-2 font-semibold">* กรุณาติ๊กตรวจสอบและถ่ายภาพให้ครบก่อนสั่ง</p>
+        </div>
+
+        <!-- PHASE 1.5: Concrete Summary -->
+        <div id="concreteSummarySection" class="p-4 hidden pb-10">
+            <div id="captureArea" class="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 relative overflow-hidden fade-in">
+                <div class="absolute top-0 left-0 w-full h-2 bg-blue-600 rounded-t-2xl"></div>
+                <div class="text-center mb-5 mt-2">
+                    <div class="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <i class="fas fa-receipt text-2xl text-blue-500"></i>
+                    </div>
+                    <h2 class="text-lg font-bold text-gray-900">ใบสั่งคอนกรีตผสมเสร็จ</h2>
+                    <p class="text-[11px] text-gray-400 mt-1">ส่งให้คนขับรถโม่</p>
+                </div>
+                <div class="border-t-2 border-dashed border-gray-200 pt-4 mb-4 space-y-3">
+                    <div class="flex justify-between"><span class="text-sm text-gray-500">อ้างอิงงาน:</span><span class="font-bold text-gray-800">#JO-2604-015</span></div>
+                    <div class="flex justify-between"><span class="text-sm text-gray-500">แท่นผลิต:</span><span class="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-sm">แท่น A</span></div>
+                    <div class="flex justify-between"><span class="text-sm text-gray-500">สเปค:</span><span class="font-bold text-gray-800">ST 400</span></div>
+                    <div class="flex justify-between items-center bg-blue-50 p-3 rounded-xl border border-blue-100">
+                        <span class="text-sm font-bold text-blue-800">ปริมาณสั่ง:</span>
+                        <span class="text-2xl font-bold text-blue-600">22.5 <span class="text-sm font-normal text-blue-400">คิว</span></span>
+                    </div>
+                </div>
+                <div class="border-t-2 border-dashed border-gray-200 pt-4 text-sm text-gray-500 space-y-2">
+                    <div class="flex justify-between"><span>วันที่:</span><span id="summaryDate" class="font-medium text-gray-800">--</span></div>
+                    <div class="flex justify-between"><span>เวลา:</span><span id="summaryTime" class="font-bold text-red-500">--</span></div>
+                    <div class="flex justify-between"><span>ผู้สั่ง:</span><span class="font-bold text-gray-800">สมชาย ใจดี</span></div>
+                </div>
+                <div class="mt-5 bg-yellow-50 border border-yellow-200 p-2.5 rounded-xl text-center">
+                    <p class="text-xs text-yellow-700 font-bold animate-pulse flex justify-center items-center gap-2"><i class="fas fa-camera"></i> แคปหน้าจอนี้เพื่อส่งต่อ</p>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-5">
+                <button onclick="cancelConcreteOrder()" class="flex-1 bg-white border border-gray-200 text-gray-600 py-3.5 rounded-2xl font-bold shadow-sm text-sm active:scale-95">แก้ไข</button>
+                <button onclick="confirmConcreteOrder()" class="flex-[2] bg-blue-600 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-blue-600/30 text-sm flex items-center justify-center gap-2 active:scale-95">ส่งคำสั่งปูน <i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+
+        <!-- PHASE 2: เทคอนกรีต -->
+        <div id="phase2Section" class="p-4 hidden pb-10">
+            <div class="mb-4">
+                <span class="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-3 py-1 rounded-full border border-indigo-200">ขั้นที่ 2: เทคอนกรีต</span>
+            </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center mb-4 fade-in">
+                <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-blue-100">
+                    <i class="fas fa-truck-monster text-3xl text-blue-500 animate-bounce"></i>
+                </div>
+                <h2 class="text-xl font-bold text-gray-900 mb-1">ส่งคำสั่งปูนเรียบร้อยแล้ว</h2>
+                <p class="text-sm text-gray-400 mb-4">รถโม่กำลังจัดส่ง 22.5 คิว</p>
+                <div class="bg-amber-50 border border-amber-100 rounded-xl p-4 text-left">
+                    <p class="font-bold text-amber-800 text-sm mb-2"><i class="fas fa-exclamation-triangle mr-1"></i> งานที่ต้องทำ:</p>
+                    <ul class="text-xs text-amber-700 space-y-1 list-disc pl-4">
+                        <li>ควบคุมการเทคอนกรีตลงแบบ</li>
+                        <li>ใช้เครื่องจี้ปูน (Vibrator) ไล่ฟองอากาศ</li>
+                        <li>ปาดหน้าคอนกรีตให้เรียบ</li>
+                    </ul>
+                </div>
+            </div>
+            <h3 class="font-bold text-gray-600 mb-2 text-xs uppercase tracking-wide px-1">ถ่ายภาพยืนยัน <span class="text-red-500">*</span></h3>
+            <div class="bg-white rounded-2xl border border-gray-100 p-2 mb-5 relative fade-in">
+                <input type="file" accept="image/*" capture="environment" id="cameraInput2" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onchange="handlePhotoUpload(this, 'preview2', checkPhase2Ready)">
+                <div id="preview2" class="w-full h-24 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400">
+                    <i class="fas fa-camera text-2xl mb-1"></i>
+                    <span class="text-[10px] font-bold">แตะเพื่อถ่ายภาพหน้างาน</span>
+                </div>
+            </div>
+            <button id="btnSubmitPhase2" disabled onclick="submitPhase2()" class="w-full bg-slate-300 text-slate-500 py-4 rounded-2xl font-bold text-base flex justify-center items-center gap-2 cursor-not-allowed transition">
+                <i class="fas fa-check-double text-lg"></i> ยืนยันการเทคอนกรีตเสร็จสิ้น
+            </button>
+            <p class="text-center text-[10px] text-gray-400 mt-2 font-semibold">* ถ่ายภาพเพื่อปลดล็อก ระบบจะเริ่มนับเวลาบ่มทันที</p>
+        </div>
+
+        <!-- PHASE 3: ถอดแบบ -->
+        <div id="phase3Section" class="p-4 hidden pb-10">
+            <div class="flex items-center justify-between mb-4">
+                <button onclick="resetScanner()" class="text-blue-600 font-semibold text-sm flex items-center px-3 py-1.5 bg-blue-50 rounded-xl active:bg-blue-100">
+                    <i class="fas fa-chevron-left mr-1"></i> สแกนใหม่
+                </button>
+                <span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-3 py-1 rounded-full border border-emerald-200">ขั้นที่ 3: ถอดแบบ</span>
+            </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4 relative overflow-hidden fade-in">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-emerald-500 rounded-l-2xl"></div>
+                <div class="pl-3">
+                    <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Ref: #JO-2604-015</p>
+                    <h2 class="text-xl font-bold text-gray-900 mt-0.5">เสาเข็ม I-22 (10m)</h2>
+                    <p class="text-xs text-emerald-600 font-bold mt-2"><i class="fas fa-clock mr-1"></i> บ่มครบ 18 ชม. แล้ว (พร้อมถอดแบบ)</p>
+                </div>
+            </div>
+
+            <h3 class="font-bold text-gray-600 mb-3 text-xs uppercase tracking-wide px-1">บันทึกผลการถอดแบบ (QC)</h3>
+
+            <!-- Good Yield -->
+            <div class="bg-white rounded-2xl shadow-sm border-2 border-emerald-100 p-4 mb-3 fade-in">
+                <div class="flex justify-between items-center mb-3">
+                    <label class="font-bold text-emerald-700 flex items-center gap-2 text-sm"><i class="fas fa-check-circle text-lg"></i> ยอดงานดี (ผ่าน QC)</label>
+                    <span class="text-xs text-gray-400 font-semibold">เป้า: 50</span>
+                </div>
+                <div class="flex items-center justify-between bg-emerald-50 rounded-xl p-2 border border-emerald-100">
+                    <button type="button" onclick="adjustValue('goodYield', -1)" class="w-12 h-12 bg-white rounded-xl shadow-sm text-emerald-600 text-xl active:bg-emerald-100 flex items-center justify-center"><i class="fas fa-minus"></i></button>
+                    <input type="number" id="goodYield" value="48" class="w-20 bg-transparent text-center text-3xl font-bold text-emerald-800 outline-none" readonly>
+                    <button type="button" onclick="adjustValue('goodYield', 1)" class="w-12 h-12 bg-white rounded-xl shadow-sm text-emerald-600 text-xl active:bg-emerald-100 flex items-center justify-center"><i class="fas fa-plus"></i></button>
+                </div>
+            </div>
+
+            <!-- Defect Yield -->
+            <div class="bg-white rounded-2xl shadow-sm border-2 border-red-100 p-4 mb-4 fade-in">
+                <label class="font-bold text-red-600 flex items-center gap-2 text-sm mb-3"><i class="fas fa-heart-broken text-lg"></i> ยอดของเสีย (Defect)</label>
+                <div class="flex items-center justify-between bg-red-50 rounded-xl p-2 border border-red-100 mb-3">
+                    <button type="button" onclick="adjustValue('defectYield', -1)" class="w-12 h-12 bg-white rounded-xl shadow-sm text-red-500 text-xl active:bg-red-100 flex items-center justify-center"><i class="fas fa-minus"></i></button>
+                    <input type="number" id="defectYield" value="2" class="w-20 bg-transparent text-center text-3xl font-bold text-red-700 outline-none" readonly>
+                    <button type="button" onclick="adjustValue('defectYield', 1)" class="w-12 h-12 bg-white rounded-xl shadow-sm text-red-500 text-xl active:bg-red-100 flex items-center justify-center"><i class="fas fa-plus"></i></button>
+                </div>
+                <div id="defectReasonContainer">
+                    <label class="block text-xs font-bold text-red-800 mb-1.5">ระบุสาเหตุ <span class="text-red-500">*</span></label>
+                    <select class="w-full bg-white border border-red-200 text-gray-800 rounded-xl p-3 outline-none text-sm font-semibold">
+                        <option value="" disabled>-- เลือกสาเหตุ --</option>
+                        <option value="honeycomb" selected>คอนกรีตเป็นโพรง (Honeycomb)</option>
+                        <option value="crack">คอนกรีตแตก/ร้าว</option>
+                        <option value="chip">บิ่น/มุมหักตอนถอดแบบ</option>
+                    </select>
+                </div>
+            </div>
+
+            <h3 class="font-bold text-gray-600 mb-2 text-xs uppercase tracking-wide px-1">ถ่ายภาพยืนยัน <span class="text-red-500">*</span></h3>
+            <div class="bg-white rounded-2xl border border-gray-100 p-2 mb-5 relative fade-in">
+                <input type="file" accept="image/*" capture="environment" id="cameraInput3" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onchange="handlePhotoUpload(this, 'preview3', checkPhase3Ready)">
+                <div id="preview3" class="w-full h-24 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400">
+                    <i class="fas fa-camera text-2xl mb-1"></i>
+                    <span class="text-[10px] font-bold">แตะเพื่อถ่ายภาพสินค้า (FG / Defect)</span>
+                </div>
+            </div>
+            <button id="btnSubmitPhase3" disabled onclick="submitPhase3()" class="w-full bg-slate-300 text-slate-500 py-4 rounded-2xl font-bold text-base flex justify-center items-center gap-2 cursor-not-allowed transition">
+                <i class="fas fa-save text-lg"></i> บันทึกเข้าระบบ
+            </button>
+            <p class="text-center text-[10px] text-gray-400 mt-2 font-semibold">ต้องถ่ายรูปก่อนบันทึก ยอดงานดีจะส่งเข้าคลัง FG ทันที</p>
+        </div>
+
+        <!-- SUCCESS SCREEN -->
+        <div id="successSection" class="p-5 h-full flex flex-col justify-center items-center text-center hidden pb-20">
+            <div class="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mb-6 border-4 border-white shadow-lg fade-in">
+                <i class="fas fa-check text-5xl text-emerald-500"></i>
+            </div>
+            <h2 id="successTitle" class="text-2xl font-bold text-gray-800 mb-2 fade-in">สำเร็จ!</h2>
+            <p id="successDesc" class="text-sm text-gray-500 mb-8 fade-in">ระบบบันทึกข้อมูลเรียบร้อยแล้ว</p>
+            <button onclick="resetScanner()" class="bg-blue-600 text-white py-3.5 px-10 rounded-2xl font-bold shadow-lg shadow-blue-600/30 hover:bg-blue-700 transition active:scale-95 fade-in">
+                กลับหน้าสแกนงาน
+            </button>
+        </div>
+
+        <!-- DAILY JOBS SCREEN -->
+        <div id="dailyJobsSection" class="p-4 hidden pb-10 fade-in">
+            <div class="mb-5 flex justify-between items-center">
+                <div>
+                    <h2 class="font-bold text-xl text-gray-800">งานวันนี้</h2>
+                    <p id="currentDateDisplay" class="text-sm text-gray-400"></p>
+                </div>
+                <div class="bg-blue-100 text-blue-700 w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm">1/3</div>
+            </div>
+
+            <!-- Active Job Timeline -->
+            <div class="bg-white rounded-2xl shadow-sm border-2 border-blue-400 p-4 mb-5 relative">
+                <div class="absolute top-0 right-0 bg-blue-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl rounded-tr-xl">กำลังทำอยู่</div>
+                <div class="mb-3 mt-1">
+                    <p class="text-[10px] text-gray-400 font-bold">#JO-2604-015</p>
+                    <h3 class="text-lg font-bold text-gray-900">เสาเข็ม I-22 (10m)</h3>
+                    <p class="text-xs text-gray-400"><i class="fas fa-map-marker-alt mr-1"></i> แท่น A | เป้า: 50 ต้น</p>
+                </div>
+                <div class="relative border-l-2 border-gray-200 ml-3 pl-4 space-y-4 mt-4 mb-2">
+                    <div class="relative">
+                        <div class="absolute -left-[1.35rem] w-4 h-4 bg-emerald-500 rounded-full border-2 border-white ring-2 ring-emerald-200"></div>
+                        <p class="text-sm font-bold text-gray-800">1. เตรียมแบบ & สั่งปูน</p>
+                        <p class="text-[11px] text-emerald-600 font-semibold mt-0.5"><i class="fas fa-check mr-1"></i> เสร็จสิ้น (09:15 น.)</p>
+                    </div>
+                    <div class="relative">
+                        <div class="absolute -left-[1.35rem] w-4 h-4 bg-emerald-500 rounded-full border-2 border-white ring-2 ring-emerald-200"></div>
+                        <p class="text-sm font-bold text-gray-800">2. เทคอนกรีต</p>
+                        <p class="text-[11px] text-emerald-600 font-semibold mt-0.5"><i class="fas fa-check mr-1"></i> เสร็จสิ้น (10:30 น.)</p>
+                    </div>
+                    <div class="relative">
+                        <div class="absolute -left-[1.35rem] w-4 h-4 bg-amber-400 rounded-full border-2 border-white ring-4 ring-amber-100 animate-pulse"></div>
+                        <p class="text-sm font-bold text-gray-800">3. กำลังบ่ม (Curing)</p>
+                        <p class="text-[11px] text-amber-600 font-semibold mt-0.5"><i class="fas fa-hourglass-half mr-1"></i> เหลือ ~19 ชม.</p>
+                    </div>
+                    <div class="relative">
+                        <div class="absolute -left-[1.35rem] w-4 h-4 bg-gray-300 rounded-full border-2 border-white"></div>
+                        <p class="text-sm font-bold text-gray-400">4. ถอดแบบ (รอคิว)</p>
+                    </div>
+                </div>
+                <button onclick="switchTab('scanner')" class="w-full mt-4 bg-blue-50 text-blue-600 py-2.5 rounded-xl font-bold text-sm hover:bg-blue-100 transition active:scale-95">
+                    กลับไปหน้าสแกน
+                </button>
+            </div>
+
+            <h3 class="font-bold text-gray-600 mb-3 text-xs uppercase tracking-wide px-1">คิวงานอื่นๆ</h3>
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-3 flex items-center justify-between">
+                <div>
+                    <p class="text-[10px] text-gray-400 font-bold">#JO-2604-010</p>
+                    <h4 class="font-bold text-sm text-gray-800">แผ่นพื้น Solid Plank</h4>
+                    <p class="text-[10px] text-gray-400 mt-0.5"><i class="fas fa-map-marker-alt mr-1"></i> แท่น B | เป้า: 120 แผ่น</p>
+                </div>
+                <span class="bg-emerald-100 text-emerald-700 text-[10px] px-2.5 py-1 rounded-full font-bold border border-emerald-200 flex-shrink-0"><i class="fas fa-bell mr-1"></i> พร้อมถอดแบบ</span>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-3 flex items-center justify-between opacity-70">
+                <div>
+                    <p class="text-[10px] text-gray-400 font-bold">#JO-2604-016</p>
+                    <h4 class="font-bold text-sm text-gray-800">กำแพงกันดิน Type 1</h4>
+                    <p class="text-[10px] text-gray-400 mt-0.5"><i class="fas fa-map-marker-alt mr-1"></i> แท่น C | เป้า: 15 ชิ้น</p>
+                </div>
+                <span class="bg-gray-100 text-gray-500 text-[10px] px-2.5 py-1 rounded-full font-bold border border-gray-200 flex-shrink-0">รอเริ่มงาน</span>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Bottom Nav -->
+    <nav id="bottomNav" class="absolute bottom-0 left-0 w-full bg-white border-t border-gray-200 flex justify-around items-center p-3 pb-8 z-20 shadow-[0_-10px_25px_rgba(0,0,0,0.08)]">
+        <button id="navScanner" onclick="switchTab('scanner')" class="flex flex-col items-center p-3 text-blue-600 flex-1 relative group transition-all">
+            <div class="absolute -top-7 bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/40 border-4 border-slate-100 transition group-active:scale-90 scale-110">
+                <i class="fas fa-qrcode text-2xl"></i>
+            </div>
+            <span class="text-xs font-bold mt-7">สแกนงาน</span>
+        </button>
+        <button id="navDailyJobs" onclick="switchTab('dailyJobs')" class="flex flex-col items-center p-3 text-gray-400 hover:text-slate-700 transition-all flex-1 mt-1">
+            <i class="fas fa-clipboard-list text-2xl mb-1"></i>
+            <span class="text-xs font-bold">งานวันนี้</span>
+        </button>
+        <button id="navHistory" onclick="switchTab('history')" class="flex flex-col items-center p-3 text-gray-400 hover:text-slate-700 transition-all flex-1 mt-1">
+            <i class="fas fa-history text-2xl mb-1"></i>
+            <span class="text-xs font-bold">ประวัติ</span>
+        </button>
+    </nav>
+</div>
+
+<script>
+    const sections = {
+        scanner: document.getElementById('scannerSection'),
+        phase1: document.getElementById('phase1Section'),
+        summary: document.getElementById('concreteSummarySection'),
+        phase2: document.getElementById('phase2Section'),
+        phase3: document.getElementById('phase3Section'),
+        success: document.getElementById('successSection'),
+        dailyJobs: document.getElementById('dailyJobsSection'),
+        history: document.getElementById('dailyJobsSection'), // Placeholder
+    };
+    const navScanner = document.getElementById('navScanner');
+    const navDailyJobs = document.getElementById('navDailyJobs');
+    const navHistory = document.getElementById('navHistory');
+
+    function hideAll() {
+        Object.values(sections).forEach(s => s.classList.add('hidden'));
+    }
+
+    function simulateScan(phase) {
+        sections.scanner.style.opacity = '0.5';
+        setTimeout(() => {
+            sections.scanner.style.opacity = '1';
+            hideAll();
+            if (phase === 'phase1') {
+                document.querySelectorAll('#phase1Section input[type="checkbox"]').forEach(cb => cb.checked = false);
+                checkPhase1Ready();
+                sections.phase1.classList.remove('hidden');
+            } else {
+                document.getElementById('goodYield').value = 48;
+                document.getElementById('defectYield').value = 2;
+                checkDefectReason();
+                checkPhase3Ready();
+                sections.phase3.classList.remove('hidden');
+            }
+        }, 300);
+    }
+
+    function handlePhotoUpload(input, previewId, callback) {
+        const preview = document.getElementById(previewId);
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = e => {
+                preview.style.backgroundImage = `url('${e.target.result}')`;
+                preview.className = 'w-full h-24 rounded-xl border-2 border-emerald-400 flex flex-col items-center justify-center bg-cover bg-center';
+                preview.innerHTML = '<div class="bg-black/50 w-full h-full flex flex-col items-center justify-center text-white rounded-xl"><i class="fas fa-check-circle text-2xl mb-1 text-emerald-400"></i><span class="text-[10px] font-bold">ถ่ายภาพสำเร็จ</span></div>';
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+        setTimeout(callback, 100);
+    }
+
+    function checkPhase1Ready() {
+        const checks = document.querySelectorAll('#phase1Section input[type="checkbox"].custom-checkbox');
+        const allChecked = Array.from(checks).every(cb => cb.checked);
+        const hasPhoto = document.getElementById('cameraInput1').files.length > 0;
+        const btn = document.getElementById('btnOrderConcrete');
+        const ok = allChecked && hasPhoto;
+        btn.disabled = !ok;
+        btn.className = ok
+            ? 'w-full bg-blue-900 text-white py-4 rounded-2xl font-bold text-base flex justify-center items-center gap-2 transition shadow-xl shadow-blue-900/30 active:scale-95'
+            : 'w-full bg-blue-100 text-blue-300 py-4 rounded-2xl font-bold text-base flex justify-center items-center gap-2 transition cursor-not-allowed';
+        document.getElementById('msgOrderConcrete').style.visibility = ok ? 'hidden' : 'visible';
+    }
+
+    function checkPhase2Ready() {
+        const hasPhoto = document.getElementById('cameraInput2').files.length > 0;
+        const btn = document.getElementById('btnSubmitPhase2');
+        btn.disabled = !hasPhoto;
+        btn.className = hasPhoto
+            ? 'w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-base flex justify-center items-center gap-2 transition shadow-xl shadow-blue-600/30 active:scale-95'
+            : 'w-full bg-slate-300 text-slate-500 py-4 rounded-2xl font-bold text-base flex justify-center items-center gap-2 cursor-not-allowed transition';
+    }
+
+    function checkPhase3Ready() {
+        const hasPhoto = document.getElementById('cameraInput3').files.length > 0;
+        const btn = document.getElementById('btnSubmitPhase3');
+        btn.disabled = !hasPhoto;
+        btn.className = hasPhoto
+            ? 'w-full bg-slate-800 text-white py-4 rounded-2xl font-bold text-base flex justify-center items-center gap-2 transition shadow-xl shadow-slate-800/30 active:scale-95'
+            : 'w-full bg-slate-300 text-slate-500 py-4 rounded-2xl font-bold text-base flex justify-center items-center gap-2 cursor-not-allowed transition';
+    }
+
+    function showConcreteSummary() {
+        hideAll();
+        sections.summary.classList.remove('hidden');
+        const now = new Date();
+        document.getElementById('summaryDate').textContent = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+        document.getElementById('summaryTime').textContent = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} น.`;
+    }
+
+    function cancelConcreteOrder() { hideAll(); sections.phase1.classList.remove('hidden'); }
+    function confirmConcreteOrder() { hideAll(); sections.phase2.classList.remove('hidden'); }
+
+    function submitPhase2() {
+        hideAll();
+        document.getElementById('successTitle').textContent = 'เทคอนกรีตเสร็จสิ้น';
+        document.getElementById('successDesc').textContent = 'ระบบเริ่มนับเวลาบ่ม 24 ชั่วโมงแล้ว';
+        sections.success.classList.remove('hidden');
+    }
+
+    function submitPhase3() {
+        hideAll();
+        document.getElementById('successTitle').textContent = 'ถอดแบบสำเร็จ!';
+        document.getElementById('successDesc').textContent = 'ยอดงานดีถูกส่งไปยังคลัง FG เรียบร้อยแล้ว';
+        sections.success.classList.remove('hidden');
+    }
+
+    function switchTab(tabId) {
+        hideAll();
+        
+        // Reset all with larger icons/text
+        [navScanner, navDailyJobs, navHistory].forEach(nav => {
+            nav.className = 'flex flex-col items-center p-3 text-gray-400 hover:text-slate-700 transition-all flex-1 mt-1';
+        });
+        
+        navScanner.innerHTML = '<i class="fas fa-qrcode text-2xl mb-1"></i><span class="text-xs font-bold">สแกนงาน</span>';
+        navDailyJobs.innerHTML = '<i class="fas fa-clipboard-list text-2xl mb-1"></i><span class="text-xs font-bold">งานวันนี้</span>';
+        navHistory.innerHTML = '<i class="fas fa-history text-2xl mb-1"></i><span class="text-xs font-bold">ประวัติ</span>';
+
+        if (tabId === 'scanner') {
+            sections.scanner.classList.remove('hidden');
+            navScanner.className = 'flex flex-col items-center p-3 text-blue-600 flex-1 relative group transition-all';
+            navScanner.innerHTML = '<div class="absolute -top-7 bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/40 border-4 border-slate-100 transition group-active:scale-90 scale-110"><i class="fas fa-qrcode text-2xl"></i></div><span class="text-xs font-bold mt-7">สแกนงาน</span>';
+        } else if (tabId === 'dailyJobs') {
+            sections.dailyJobs.classList.remove('hidden');
+            document.getElementById('currentDateDisplay').textContent = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+            navDailyJobs.className = 'flex flex-col items-center p-3 text-blue-600 flex-1 relative group transition-all';
+            navDailyJobs.innerHTML = '<div class="absolute -top-7 bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/40 border-4 border-slate-100 transition group-active:scale-90 scale-110"><i class="fas fa-clipboard-list text-2xl"></i></div><span class="text-xs font-bold mt-7">งานวันนี้</span>';
+        } else if (tabId === 'history') {
+            // For now, redirect to daily jobs as placeholder or handle history
+            sections.dailyJobs.classList.remove('hidden'); 
+            navHistory.className = 'flex flex-col items-center p-3 text-blue-600 flex-1 relative group transition-all';
+            navHistory.innerHTML = '<div class="absolute -top-7 bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/40 border-4 border-slate-100 transition group-active:scale-90 scale-110"><i class="fas fa-history text-2xl"></i></div><span class="text-xs font-bold mt-7">ประวัติ</span>';
+        }
+    }
+
+    function resetScanner() {
+        [1,2,3].forEach(n => {
+            const inp = document.getElementById(`cameraInput${n}`);
+            const prev = document.getElementById(`preview${n}`);
+            if (inp) inp.value = '';
+            if (prev) {
+                prev.style.backgroundImage = '';
+                prev.className = 'w-full h-24 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400';
+                prev.innerHTML = '<i class="fas fa-camera text-2xl mb-1"></i><span class="text-[10px] font-bold">แตะเพื่อถ่ายภาพ</span>';
+            }
+        });
+        checkPhase1Ready(); checkPhase2Ready(); checkPhase3Ready();
+        switchTab('scanner');
+    }
+
+    function adjustValue(id, change) {
+        const input = document.getElementById(id);
+        let val = parseInt(input.value) || 0;
+        val = Math.max(0, val + change);
+        const target = 50;
+        let good = parseInt(document.getElementById('goodYield').value) || 0;
+        let defect = parseInt(document.getElementById('defectYield').value) || 0;
+        if (id === 'goodYield') good = val;
+        if (id === 'defectYield') defect = val;
+        if ((good + defect) > target) {
+            if (id === 'goodYield') defect = Math.max(0, target - good);
+            if (id === 'defectYield') good = Math.max(0, target - defect);
+        }
+        document.getElementById('goodYield').value = good;
+        document.getElementById('defectYield').value = defect;
+        checkDefectReason();
+    }
+
+    function checkDefectReason() {
+        document.getElementById('defectReasonContainer').style.display =
+            parseInt(document.getElementById('defectYield').value) > 0 ? 'block' : 'none';
+    }
+</script>
+</body>
+</html>

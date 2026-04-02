@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ใบสั่งผลิต PO-20260331-001</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- QR Code Generator -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <!-- html2canvas for PNG -->
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <!-- html2pdf for PDF -->
+    <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'IBM Plex Sans Thai', sans-serif;
+            background: #E8ECF0;
+            color: #1A1B23;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 32px 16px;
+        }
+
+        /* ─── Floating Action Bar ─── */
+        .action-bar {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #1A1B23;
+            padding: 10px 16px;
+            border-radius: 14px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+            z-index: 100;
+        }
+
+        .action-bar .ab-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            border: none;
+            transition: all 0.15s;
+            text-decoration: none;
+        }
+
+        .ab-btn.pdf { background: #EF4444; color: white; }
+        .ab-btn.pdf:hover { background: #DC2626; }
+        .ab-btn.png { background: #10B981; color: white; }
+        .ab-btn.png:hover { background: #059669; }
+        .ab-btn.print { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.15); }
+        .ab-btn.print:hover { background: rgba(255,255,255,0.2); }
+        .ab-btn.back { background: rgba(255,255,255,0.05); color: #A8ABBE; border: 1px solid rgba(255,255,255,0.1); }
+        .ab-btn.back:hover { color: white; background: rgba(255,255,255,0.1); }
+
+        .ab-divider {
+            width: 1px;
+            height: 24px;
+            background: rgba(255,255,255,0.15);
+            margin: 0 4px;
+        }
+
+        /* ─── A4 Page ─── */
+        .a4-page {
+            width: 210mm;
+            min-height: 297mm;
+            max-height: 297mm;
+            background: white;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+            border-radius: 4px;
+            padding: 14mm 16mm;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            margin-bottom: 80px;
+        }
+
+        /* Header */
+        .doc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding-bottom: 14px;
+            border-bottom: 3px solid #1A1B23;
+            margin-bottom: 18px;
+        }
+
+        .doc-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .doc-brand-icon {
+            width: 42px; height: 42px;
+            background: #2563EB;
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            color: white;
+            font-size: 17px;
+        }
+
+        .doc-brand-name {
+            font-size: 17px;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+        }
+
+        .doc-brand-name span { color: #2563EB; }
+
+        .doc-brand-sub {
+            font-size: 10px;
+            color: #6B6E85;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-top: 2px;
+        }
+
+        .doc-order-info { text-align: right; }
+
+        .doc-order-label {
+            font-size: 10px;
+            color: #6B6E85;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .doc-order-id {
+            font-size: 20px;
+            font-weight: 800;
+            font-family: 'IBM Plex Mono', monospace;
+            letter-spacing: 0.05em;
+            margin-top: 2px;
+        }
+
+        .doc-order-date {
+            font-size: 10px;
+            color: #6B6E85;
+            margin-top: 4px;
+        }
+
+        /* Title */
+        .doc-title {
+            text-align: center;
+            font-size: 18px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+        }
+
+        /* Info Row */
+        .info-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .info-cell {
+            padding: 10px 14px;
+            border-right: 1px solid #ddd;
+        }
+
+        .info-cell:last-child { border-right: none; }
+
+        .info-cell .il {
+            font-size: 9px;
+            font-weight: 700;
+            color: #6B6E85;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+        }
+
+        .info-cell .iv {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1A1B23;
+        }
+
+        .info-cell .iv.blue { color: #2563EB; }
+        .info-cell .iv.green { color: #10B981; }
+
+        /* Table */
+        .doc-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+            font-size: 11px;
+        }
+
+        .doc-table thead th {
+            background: #F7F8FA;
+            padding: 9px 10px;
+            font-size: 9.5px;
+            font-weight: 700;
+            color: #6B6E85;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+
+        .doc-table tbody td {
+            padding: 9px 10px;
+            border: 1px solid #ddd;
+            color: #1A1B23;
+        }
+
+        .doc-table tfoot td {
+            padding: 9px 10px;
+            border: 1px solid #ddd;
+            font-weight: 800;
+            background: #F7F8FA;
+        }
+
+        .td-sub {
+            font-size: 9px;
+            color: #6B6E85;
+            margin-top: 2px;
+        }
+
+        .td-bold { font-weight: 700; }
+
+        .td-accent {
+            color: #2563EB;
+            font-weight: 800;
+            font-size: 14px;
+        }
+
+        /* QR Section */
+        .qr-section {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            border: 2px solid #1A1B23;
+            border-radius: 8px;
+            padding: 18px 22px;
+            flex: 1;
+        }
+
+        .qr-wrap {
+            flex-shrink: 0;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: white;
+        }
+
+        .qr-details { flex: 1; }
+
+        .qr-details .qr-t {
+            font-size: 15px;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .qr-details .qr-id {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 18px;
+            font-weight: 800;
+            color: #2563EB;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+        }
+
+        .qr-details .qr-url {
+            font-size: 9px;
+            color: #6B6E85;
+            word-break: break-all;
+            margin-bottom: 10px;
+        }
+
+        .qr-details .qr-instr {
+            font-size: 11px;
+            color: #1A1B23;
+            background: #F7F8FA;
+            padding: 10px 14px;
+            border-radius: 6px;
+            line-height: 1.6;
+        }
+
+        /* Footer */
+        .doc-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding-top: 14px;
+            border-top: 1px solid #ddd;
+            font-size: 9px;
+            color: #6B6E85;
+            margin-top: auto;
+        }
+
+        .doc-footer .stamp { text-align: right; }
+        .doc-footer .stamp .sn {
+            font-weight: 700;
+            color: #1A1B23;
+            font-size: 12px;
+        }
+
+        .sig-line {
+            width: 160px;
+            border-bottom: 1px solid #1A1B23;
+            margin-bottom: 6px;
+            margin-left: auto;
+            height: 28px;
+        }
+
+        /* ─── Print Styles ─── */
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+
+            .action-bar { display: none !important; }
+
+            .a4-page {
+                box-shadow: none;
+                border-radius: 0;
+                margin: 0;
+                width: 100%;
+                padding: 12mm 15mm;
+            }
+
+            @page {
+                size: A4 portrait;
+                margin: 0;
+            }
+
+            .doc-brand-icon,
+            .info-cell .iv.blue,
+            .info-cell .iv.green,
+            .td-accent,
+            .qr-details .qr-id,
+            .doc-brand-name span,
+            .doc-table thead th,
+            .doc-table tfoot td,
+            .qr-details .qr-instr {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ═══ A4 PAGE ═══ -->
+<div class="a4-page" id="a4-page">
+
+    <!-- Header -->
+    <div class="doc-header">
+        <div class="doc-brand">
+            <div class="doc-brand-icon"><i class="fas fa-industry"></i></div>
+            <div>
+                <div class="doc-brand-name">PCC <span>POSTENTION</span></div>
+                <div class="doc-brand-sub">ERP Production System</div>
+            </div>
+        </div>
+        <div class="doc-order-info">
+            <div class="doc-order-label">เลขที่ใบสั่งผลิต</div>
+            <div class="doc-order-id">PO-20260331-001</div>
+            <div class="doc-order-date">วันที่สร้าง: 31 มีนาคม 2569 เวลา 08:30 น.</div>
+        </div>
+    </div>
+
+    <!-- Title -->
+    <div class="doc-title">ใบสั่งผลิต (Production Order)</div>
+
+    <!-- Info Row -->
+    <div class="info-row">
+        <div class="info-cell">
+            <div class="il">สถานะ</div>
+            <div class="iv green">✔ ยืนยันแล้ว</div>
+        </div>
+        <div class="info-cell">
+            <div class="il">ผู้อนุมัติ</div>
+            <div class="iv">วริศรา ผู้ดูแล</div>
+        </div>
+        <div class="info-cell">
+            <div class="il">จำนวนรายการ</div>
+            <div class="iv blue">3 รายการ</div>
+        </div>
+        <div class="info-cell">
+            <div class="il">ชิ้นงานรวม</div>
+            <div class="iv green">195 ชิ้น</div>
+        </div>
+    </div>
+
+    <!-- Production Items Table -->
+    <table class="doc-table">
+        <thead>
+            <tr>
+                <th style="width: 36px; text-align: center;">No.</th>
+                <th>รายการสินค้า</th>
+                <th>รหัส BOM</th>
+                <th>แท่นผลิต</th>
+                <th style="text-align: center;">จำนวน</th>
+                <th style="text-align: center;">หน่วย</th>
+                <th style="text-align: center;">คอนกรีต (Q)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td style="text-align: center;">1</td>
+                <td>
+                    <div class="td-bold">เสาเข็ม I-22 (10m)</div>
+                    <div class="td-sub">เสาเข็มไอ (I-Pile)</div>
+                </td>
+                <td style="font-family: 'IBM Plex Mono', monospace;">BOM-IP22-10</td>
+                <td>แท่น A</td>
+                <td style="text-align: center;" class="td-accent">50</td>
+                <td style="text-align: center;">ต้น</td>
+                <td style="text-align: center;">~ 22.5</td>
+            </tr>
+            <tr>
+                <td style="text-align: center;">2</td>
+                <td>
+                    <div class="td-bold">แผ่นพื้นสำเร็จรูป Solid Plank</div>
+                    <div class="td-sub">แผ่นพื้น (Plank)</div>
+                </td>
+                <td style="font-family: 'IBM Plex Mono', monospace;">BOM-PLK-3M</td>
+                <td>แท่น B</td>
+                <td style="text-align: center;" class="td-accent">120</td>
+                <td style="text-align: center;">แผ่น</td>
+                <td style="text-align: center;">~ 6.0</td>
+            </tr>
+            <tr>
+                <td style="text-align: center;">3</td>
+                <td>
+                    <div class="td-bold">กำแพงกันดิน Type 1</div>
+                    <div class="td-sub">กำแพงกันดิน</div>
+                </td>
+                <td style="font-family: 'IBM Plex Mono', monospace;">BOM-RW-T1</td>
+                <td>แท่น C</td>
+                <td style="text-align: center;" class="td-accent">25</td>
+                <td style="text-align: center;">ชิ้น</td>
+                <td style="text-align: center;">~ 5.0</td>
+            </tr>
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="4" style="text-align: right;">รวมทั้งหมด</td>
+                <td style="text-align: center; color: #2563EB;">195</td>
+                <td style="text-align: center;">ชิ้น</td>
+                <td style="text-align: center; color: #2563EB;">~ 33.5 Q</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <!-- QR Code Section -->
+    <div class="qr-section">
+        <div class="qr-wrap">
+            <div id="qrcode"></div>
+        </div>
+        <div class="qr-details">
+            <div class="qr-t">QR Code สำหรับพนักงานหน้างาน</div>
+            <div class="qr-id">PO-20260331-001</div>
+            <div class="qr-url">URL: https://pcc-erp.app/orders/PO-20260331-001</div>
+            <div class="qr-instr">
+                <strong>วิธีใช้:</strong> ใช้กล้องมือถือสแกน QR Code นี้เพื่อเปิดรายละเอียดใบสั่งผลิต ดูแผนงานและอัปเดตสถานะการผลิตได้ทันทีผ่านระบบ
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <div>
+            <div>เอกสารนี้สร้างโดยระบบ PCC POSTENTION ERP อัตโนมัติ</div>
+            <div style="margin-top: 2px;">สร้างเมื่อ: 31 มี.ค. 2569 เวลา 08:30:15 น. | Ref: SYS-AUTO-GEN</div>
+        </div>
+        <div class="stamp">
+            <div class="sig-line"></div>
+            <div class="sn">วริศรา ผู้ดูแล</div>
+            <div>ผู้ดูแลระบบ (Admin)</div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Floating Action Bar -->
+<div class="action-bar">
+    <button class="ab-btn pdf" onclick="downloadPDF()"><i class="fas fa-file-pdf"></i> ดาวน์โหลด PDF</button>
+    <button class="ab-btn png" onclick="downloadPNG()"><i class="fas fa-image"></i> ดาวน์โหลด PNG</button>
+    <button class="ab-btn print" onclick="window.print()"><i class="fas fa-print"></i> พิมพ์</button>
+    <div class="ab-divider"></div>
+    <a href="planner.html" class="ab-btn back"><i class="fas fa-arrow-left"></i> กลับ</a>
+</div>
+
+<script>
+    // Generate QR Code
+    new QRCode(document.getElementById('qrcode'), {
+        text: 'https://pcc-erp.app/orders/PO-20260331-001',
+        width: 180,
+        height: 180,
+        colorDark: '#1A1B23',
+        colorLight: '#FFFFFF',
+        correctLevel: QRCode.CorrectLevel.H
+    });
+
+    // Download PDF
+    function downloadPDF() {
+        const el = document.getElementById('a4-page');
+        html2pdf().set({
+            margin: 0,
+            filename: 'PO-20260331-001.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, backgroundColor: '#FFFFFF' },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        }).from(el).save();
+    }
+
+    // Download PNG
+    function downloadPNG() {
+        const el = document.getElementById('a4-page');
+        html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#FFFFFF' }).then(function(canvas) {
+            const link = document.createElement('a');
+            link.download = 'PO-20260331-001.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+    }
+</script>
+</body>
+</html>
