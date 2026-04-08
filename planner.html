@@ -124,37 +124,75 @@
                         </span>
                     </div>
                     
+                    <div class="form-row" style="margin-bottom: 16px;">
+                        <div class="form-group">
+                            <label>หมวดหมู่</label>
+                            <select id="selCategory" style="font-weight: 600; color: var(--text-primary);">
+                                <option value="">-- เลือกหมวดหมู่ --</option>
+                                <option value="A13 แผ่นพื้นตัน">A13 แผ่นพื้นตัน</option>
+                                <option value="A30 ผนังรั้วสำเร็จรูป">A30 ผนังรั้วสำเร็จรูป</option>
+                                <option value="A35 รั้วสำเร็จรูป">A35 รั้วสำเร็จรูป</option>
+                                <option value="A36 เสา คาน บันได">A36 เสา คาน บันได</option>
+                                <option value="A41 เสาเข็ม">A41 เสาเข็ม</option>
+                                <option value="A42 กำแพงกันดิน">A42 กำแพงกันดิน</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>ชื่อสินค้า</label>
+                            <select id="selProductName" style="font-weight: 600; color: var(--text-primary);">
+                                <option value="">-- เลือกชื่อสินค้า --</option>
+                                <option value="แผ่นพื้น PL50 4@4">แผ่นพื้น PL50 4@4</option>
+                                <option value="ผนังรั้วสำเร็จรูป ขนาด 0.50x2.90 m. หนา 6 cm.">ผนังรั้วสำเร็จรูป ขนาด 0.50x2.90 m. หนา 6 cm.</option>
+                                <option value="เสารั้ว 0.15x0.15 1.60 ม.">เสารั้ว 0.15x0.15 1.60 ม.</option>
+                                <option value="คานคอนกรีตสำเร็จรูป ขนาด 0.20x0.30 ม.">คานคอนกรีตสำเร็จรูป ขนาด 0.20x0.30 ม.</option>
+                                <option value="เสาเข็ม .15x.15 2.00 ม.">เสาเข็ม .15x.15 2.00 ม.</option>
+                                <option value="กำแพงกันดิน Type 1">กำแพงกันดิน Type 1</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>ขนาดสินค้า</label>
+                            <select id="selProductSize" style="font-weight: 600; color: var(--text-primary);">
+                                <option value="">-- เลือกขนาด --</option>
+                                <option value="0.35X1.55 ม.">0.35X1.55 ม.</option>
+                                <option value="0.50x2.90 ม.">0.50x2.90 ม.</option>
+                                <option value="0.15x0.15 1.60 ม.">0.15x0.15 1.60 ม.</option>
+                                <option value="1X2.58 ม.">1X2.58 ม.</option>
+                                <option value="0.15x0.15 2.00 ม.">0.15x0.15 2.00 ม.</option>
+                                <option value="2.0x1.5 ม.">2.0x1.5 ม.</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>รหัสสินค้า</label>
+                            <select id="selProductCode" style="font-weight: 600; color: var(--text-primary);">
+                                <option value="">-- เลือกรหัสสินค้า --</option>
+                                <option value="A13-050-0404">A13-050-0404</option>
+                                <option value="A30-PL-0.50x2.90m.">A30-PL-0.50x2.90m.</option>
+                                <option value="A35-FZC-C160">A35-FZC-C160</option>
+                                <option value="A36-PAB2030-A">A36-PAB2030-A</option>
+                                <option value="A41-015-0200">A41-015-0200</option>
+                                <option value="A42-RW-T1">A42-RW-T1</option>
+                            </select>
+                        </div>
+                    </div>
+                    
                     <div class="form-row">
                         <div class="form-group">
-                            <label>กลุ่มสินค้า</label>
-                            <select>
-                                <option>เสาเข็มไอ (I-Pile)</option>
-                                <option>แผ่นพื้น (Plank)</option>
-                                <option>กำแพงกันดิน</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>รุ่น/สเปกสินค้า</label>
-                            <select>
-                                <option>I-22 (ความยาว 10m)</option>
-                                <option>I-26 (ความยาว 12m)</option>
-                                <option>I-30 (ความยาว 12m)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
                             <label>แท่นผลิตเป้าหมาย</label>
-                            <select>
-                                <option>แท่น A (ว่าง: 50)</option>
-                                <option>แท่น B (ว่าง: 20)</option>
-                                <option disabled>แท่น C (ไม่ว่าง)</option>
+                            <select id="selBed" style="font-weight: 600; color: var(--text-primary);">
+                                <option value="แท่น A">แท่น A (ว่าง: 50)</option>
+                                <option value="แท่น B">แท่น B (ว่าง: 20)</option>
+                                <option value="แท่น C">แท่น C (ว่าง: 30)</option>
+                                <option value="แท่น D" disabled>แท่น D (ไม่ว่าง)</option>
                             </select>
                         </div>
                         <div class="form-group small" style="display: flex; gap: 8px; align-items: flex-end;">
                             <div style="flex: 1;">
-                                <label>จำนวน</label>
-                                <input type="number" value="0" style="text-align: center; font-weight: 700;">
+                                <label>จำนวนเป้าหมาย</label>
+                                <input type="number" id="inpQty" value="1" min="1" style="text-align: center; font-weight: 700; font-size: 15px; color: var(--accent);">
                             </div>
-                            <button class="btn-primary" style="width: 36px; padding: 0;"><i class="fas fa-plus"></i></button>
+                            <button class="btn-primary" onclick="addToPlan()" style="height: 42px; display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 140px; border-radius: var(--radius-sm);">
+                                <i class="fas fa-plus"></i> เพิ่มลงแผน
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -164,72 +202,28 @@
                     <div class="draft-header">
                         <div>
                             <div class="card-title">สรุปแผนการผลิตวันนี้ (Draft)</div>
-                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">รวมทั้งหมด: <span style="font-weight: 700; color: var(--accent);">3</span> รายการ | <span style="font-weight: 700; color: var(--accent);">195</span> ชิ้นงาน</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">รวมทั้งหมด: <span id="totalTypes" style="font-weight: 700; color: var(--accent);">3</span> รายการ | <span id="totalQty" style="font-weight: 700; color: var(--accent);">195</span> ชิ้นงาน</div>
                         </div>
                         <span class="status-pill"><i class="fas fa-pen" style="font-size: 9px; margin-right: 4px;"></i> สถานะ: กำลังร่างแผน</span>
                     </div>
                     
                     <div class="table-wrap">
-                        <table>
+                        <table style="min-width: 800px;">
                             <thead style="background: var(--bg);">
                                 <tr>
                                     <th style="padding: 12px 16px; width: 40px; text-align: center; border-bottom: 1px solid var(--border);">No.</th>
-                                    <th style="padding: 12px 16px; border-bottom: 1px solid var(--border);">รายการสินค้า</th>
-                                    <th style="padding: 12px 16px; border-bottom: 1px solid var(--border);">แท่นผลิต</th>
-                                    <th style="padding: 12px 16px; text-align: center; border-bottom: 1px solid var(--border);">เป้าหมาย</th>
+                                    <th style="padding: 12px 16px; border-bottom: 1px solid var(--border);">รหัสสินค้า</th>
+                                    <th style="padding: 12px 16px; border-bottom: 1px solid var(--border);">ชื่อสินค้า</th>
+                                    <th style="padding: 12px 16px; border-bottom: 1px solid var(--border);">ขนาดสินค้า</th>
+                                    <th style="padding: 12px 16px; text-align: center; border-bottom: 1px solid var(--border);">หมวดหมู่</th>
+                                    <th style="padding: 12px 16px; text-align: center; border-bottom: 1px solid var(--border);">แท่นผลิต</th>
+                                    <th style="padding: 12px 16px; text-align: center; border-bottom: 1px solid var(--border);">จำนวน</th>
                                     <th style="padding: 12px 16px; text-align: center; border-bottom: 1px solid var(--border);">คอนกรีต (Q)</th>
                                     <th style="padding: 12px 16px; text-align: center; border-bottom: 1px solid var(--border);">จัดการ</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <tr>
-                                    <td style="text-align: center; color: var(--text-muted);">1</td>
-                                    <td>
-                                        <div class="td-main">เสาเข็ม I-22 (10m)</div>
-                                        <div class="td-mono" style="color: var(--text-muted); margin-top: 2px;">BOM-IP22-10</div>
-                                    </td>
-                                    <td><span class="badge badge-blue" style="background: var(--bg); color: var(--text-secondary); border: 1px solid var(--border);">แท่น A</span></td>
-                                    <td style="text-align: center;">
-                                        <span style="font-size: 16px; font-weight: 700; color: var(--accent);">50</span> 
-                                        <span style="font-size: 10px; color: var(--text-muted);">ต้น</span>
-                                    </td>
-                                    <td style="text-align: center; font-weight: 600; color: var(--text-secondary);">~ 22.5</td>
-                                    <td style="text-align: center;">
-                                        <button style="background: none; border: none; color: var(--text-muted); cursor: pointer;"><i class="fas fa-trash-alt"></i></button>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td style="text-align: center; color: var(--text-muted);">2</td>
-                                    <td>
-                                        <div class="td-main">แผ่นพื้นสำเร็จรูป Solid Plank</div>
-                                        <div class="td-mono" style="color: var(--text-muted); margin-top: 2px;">BOM-PLK-3M</div>
-                                    </td>
-                                    <td><span class="badge badge-blue" style="background: var(--bg); color: var(--text-secondary); border: 1px solid var(--border);">แท่น B</span></td>
-                                    <td style="text-align: center;">
-                                        <span style="font-size: 16px; font-weight: 700; color: var(--accent);">120</span> 
-                                        <span style="font-size: 10px; color: var(--text-muted);">แผ่น</span>
-                                    </td>
-                                    <td style="text-align: center; font-weight: 600; color: var(--text-secondary);">~ 6.0</td>
-                                    <td style="text-align: center;">
-                                        <button style="background: none; border: none; color: var(--text-muted); cursor: pointer;"><i class="fas fa-trash-alt"></i></button>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td style="text-align: center; color: var(--text-muted);">3</td>
-                                    <td>
-                                        <div class="td-main">กำแพงกันดิน Type 1</div>
-                                        <div class="td-mono" style="color: var(--text-muted); margin-top: 2px;">BOM-RW-T1</div>
-                                    </td>
-                                    <td><span class="badge badge-blue" style="background: var(--bg); color: var(--text-secondary); border: 1px solid var(--border);">แท่น C</span></td>
-                                    <td style="text-align: center;">
-                                        <span style="font-size: 16px; font-weight: 700; color: var(--accent);">25</span> 
-                                        <span style="font-size: 10px; color: var(--text-muted);">ชิ้น</span>
-                                    </td>
-                                    <td style="text-align: center; font-weight: 600; color: var(--text-secondary);">~ 5.0</td>
-                                    <td style="text-align: center;">
-                                        <button style="background: none; border: none; color: var(--text-muted); cursor: pointer;"><i class="fas fa-trash-alt"></i></button>
-                                    </td>
-                                </tr>
+                            <tbody id="planTableBody">
+                                <!-- Rendered by JS -->
                             </tbody>
                         </table>
                     </div>
@@ -253,7 +247,7 @@
                     <div class="bom-item">
                         <div class="bom-item-header">
                             <span class="bom-title">คอนกรีตผสมเสร็จ (รวม)</span>
-                            <span class="bom-val">33.5 Q</span>
+                            <span class="bom-val" id="totalConcreteBom">33.5 Q</span>
                         </div>
                         <div class="progress-container"><div class="progress-bar" style="width: 100%; background: var(--accent);"></div></div>
                         <div class="bom-meta"><span></span> <span>สั่งจากแพลนท์ปูนเมื่อเริ่มงาน</span></div>
@@ -266,7 +260,7 @@
                         </div>
                         <div class="progress-container"><div class="progress-bar" style="width: 100%; background: var(--green);"></div></div>
                         <div style="background: var(--bg); padding: 8px 12px; border-radius: var(--radius-sm); margin-top: 8px;">
-                            <div class="bom-meta" style="margin-top: 0; margin-bottom: 4px;"><span>โครงเสาเข็ม I-22</span> <span>ต้องการ 50 / มี 50 ชุด</span></div>
+                            <div class="bom-meta" style="margin-top: 0; margin-bottom: 4px;"><span>โครงเสาเข็ม .15x.15 2.00 ม.</span> <span>ต้องการ 50 / มี 50 ชุด</span></div>
                             <div class="bom-meta" style="margin-top: 0;"><span>เมชกำแพงกันดิน</span> <span>ต้องการ 25 / มี 40 แผง</span></div>
                         </div>
                     </div>
@@ -316,6 +310,110 @@
         const dp = document.getElementById('dp');
         if (dp.showPicker) dp.showPicker();
     });
+
+    let planItems = [];
+
+    function renderTable() {
+        const tbody = document.getElementById('planTableBody');
+        tbody.innerHTML = '';
+        let totalItems = 0;
+        let totalConcrete = 0;
+
+        if (planItems.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 24px; color: var(--text-muted);">ไม่มีรายการลงแผน กรุณาเพิ่มรายการผลิตข้างต้น</td></tr>`;
+            document.getElementById('totalTypes').innerText = 0;
+            document.getElementById('totalQty').innerText = 0;
+            document.getElementById('totalConcreteBom').innerText = '0.00 Q';
+            return;
+        }
+
+        planItems.forEach((item, index) => {
+            totalItems += item.qty;
+            const concreteRow = item.qty * item.concretePerUnit;
+            totalConcrete += concreteRow;
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="text-align: center; color: var(--text-muted);">${index + 1}</td>
+                <td><div style="font-weight: 700; color: var(--text-primary); font-size: 13px;">${item.code}</div></td>
+                <td><div style="font-weight: 600; font-size: 13px; color: var(--accent);">${item.name}</div></td>
+                <td><div style="font-size: 12px; color: var(--text-secondary);">${item.size}</div></td>
+                <td style="text-align: center;">
+                    <span style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 700; white-space: nowrap;">${item.cat}</span>
+                </td>
+                <td style="text-align: center;"><span class="badge badge-blue" style="background: var(--bg); color: var(--text-secondary); border: 1px solid var(--border);">${item.bed}</span></td>
+                <td style="text-align: center;">
+                    <span style="font-size: 16px; font-weight: 700; color: var(--text-primary);">${item.qty}</span> 
+                </td>
+                <td style="text-align: center; font-weight: 600; color: var(--text-secondary);">~ ${concreteRow.toFixed(2)}</td>
+                <td style="text-align: center;">
+                    <button onclick="removePlan(${index})" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; border-radius: 4px; padding: 4px 8px; cursor: pointer; transition: 0.15s;" title="ลบ"><i class="fas fa-trash-alt"></i></button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('totalTypes').innerText = planItems.length;
+        document.getElementById('totalQty').innerText = totalItems;
+        document.getElementById('totalConcreteBom').innerText = totalConcrete.toFixed(2) + ' Q';
+    }
+
+    function removePlan(index) {
+        planItems.splice(index, 1);
+        renderTable();
+    }
+
+    function addToPlan() {
+        const cat = document.getElementById('selCategory').value;
+        const name = document.getElementById('selProductName').value;
+        const size = document.getElementById('selProductSize').value;
+        const code = document.getElementById('selProductCode').value;
+        
+        if (!cat || !name || !size || !code) {
+            alert('กรุณาเลือกข้อมูลสินค้าให้ครบถ้วน');
+            return;
+        }
+
+        const qty = parseInt(document.getElementById('inpQty').value);
+        const bed = document.getElementById('selBed').value;
+
+        if (isNaN(qty) || qty <= 0) {
+            alert('กรุณาระบุจำนวนเป้าหมายให้ถูกต้อง');
+            return;
+        }
+
+        // Default or mock concrete quantity mapping
+        let concretePerUnit = 0.5;
+        if (code === 'A13-050-0404') concretePerUnit = 0.05;
+        if (code === 'A30-PL-0.50x2.90m.') concretePerUnit = 0.18;
+        if (code === 'A35-FZC-C160') concretePerUnit = 0.04;
+        if (code === 'A36-PAB2030-A') concretePerUnit = 0.15;
+        if (code === 'A41-015-0200') concretePerUnit = 0.05;
+        if (code === 'A42-RW-T1') concretePerUnit = 0.20;
+
+        planItems.push({
+            code: code,
+            name: name,
+            size: size,
+            cat: cat,
+            bed: bed,
+            qty: qty,
+            concretePerUnit: concretePerUnit
+        });
+
+        renderTable();
+        
+        // Reset Inputs
+        document.getElementById('selCategory').value = '';
+        document.getElementById('selProductName').value = '';
+        document.getElementById('selProductSize').value = '';
+        document.getElementById('selProductCode').value = '';
+        document.getElementById('inpQty').value = '1';
+        document.getElementById('selBed').selectedIndex = 0;
+    }
+
+    // Initial render
+    renderTable();
 </script>
 </body>
 </html>

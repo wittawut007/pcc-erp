@@ -244,7 +244,7 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td class="td-main">แผ่นพื้นสำเร็จรูป (Solid)</td>
+                            <td class="td-main">แผ่นพื้น PL50 4@4</td>
                             <td>แท่น B</td>
                             <td>
                                 <div class="progress-wrap">
@@ -256,7 +256,7 @@
                             <td style="text-align:center"><span class="badge badge-blue">ดำเนินการ</span></td>
                         </tr>
                         <tr>
-                            <td class="td-main">เสาเข็ม I-22 (10m)</td>
+                            <td class="td-main">เสาเข็ม .15x.15 2.00 ม. (10m)</td>
                             <td>แท่น A</td>
                             <td>
                                 <div class="progress-wrap">
@@ -280,7 +280,7 @@
                             <td style="text-align:center"><span class="badge badge-amber">รอเริ่ม</span></td>
                         </tr>
                         <tr>
-                            <td class="td-main">เสาเข็ม I-26 (12m)</td>
+                            <td class="td-main">ผนังรั้วสำเร็จรูป ขนาด 0.50x2.90 m. (12m)</td>
                             <td>แท่น D</td>
                             <td>
                                 <div class="progress-wrap">
@@ -369,7 +369,7 @@
                         </td>
                         <td>แท่น A</td>
                         <td class="td-main" style="font-size:12px">เทคอนกรีตเสร็จสิ้น</td>
-                        <td style="color:var(--text-muted);font-size:11px">เสาเข็ม I-22 (เป้าหมาย 50 ต้น)</td>
+                        <td style="color:var(--text-muted);font-size:11px">เสาเข็ม .15x.15 2.00 ม. (เป้าหมาย 50 ต้น)</td>
                         <td style="text-align:center"><span class="badge badge-green">สำเร็จ</span></td>
                     </tr>
                     <tr>
@@ -382,7 +382,7 @@
                         </td>
                         <td>คลังเตรียมเหล็ก</td>
                         <td class="td-main" style="font-size:12px">บันทึกยอด WIP</td>
-                        <td style="color:var(--text-muted);font-size:11px">โครงเสาเข็ม I-22 (+50 ชุด)</td>
+                        <td style="color:var(--text-muted);font-size:11px">โครงเสาเข็ม .15x.15 2.00 ม. (+50 ชุด)</td>
                         <td style="text-align:center"><span class="badge badge-green">สำเร็จ</span></td>
                     </tr>
                     <tr>
@@ -421,7 +421,7 @@
                         </td>
                         <td>แท่น A</td>
                         <td class="td-main" style="font-size:12px">เริ่มงาน (สแกน QR)</td>
-                        <td style="color:var(--text-muted);font-size:11px">Job: #JO-2610-042 (เสาเข็ม I-22)</td>
+                        <td style="color:var(--text-muted);font-size:11px">Job: #JO-2610-042 (เสาเข็ม .15x.15 2.00 ม.)</td>
                         <td style="text-align:center"><span class="badge badge-blue">เริ่มระบบ</span></td>
                     </tr>
                 </tbody>
@@ -480,17 +480,17 @@ document.addEventListener('DOMContentLoaded', () => {
         new Chart(ctx1.getContext('2d'), {
             type: 'bar',
             data: {
-                labels: ['แผ่นพื้น', 'เสาเข็ม', 'กำแพงกันดิน', 'คาน/เสา', 'อื่นๆ'],
+                labels: ['A13 แผ่นพื้นตัน', 'A30 ผนังรั้วสำเร็จรูป', 'A35 รั้วสำเร็จรูป', 'A36 เสา คาน บันได', 'A41 เสาเข็ม', 'A42 กำแพงกันดิน'],
                 datasets: [
                     {
                         label: 'แผนการผลิต (Plan)',
-                        data: [120, 90, 50, 70, 30],
+                        data: [120, 90, 50, 70, 30, 20],
                         backgroundColor: '#DBEAFE',
                         borderRadius: 4
                     },
                     {
                         label: 'ผลิตได้จริง (Actual)',
-                        data: [100, 90, 10, 60, 25],
+                        data: [100, 90, 10, 60, 25, 10],
                         backgroundColor: '#2563EB',
                         borderRadius: 4
                     }
@@ -519,7 +519,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 labels: ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'],
                 datasets: [
                     {
-                        label: 'แผ่นพื้น',
+                        label: 'A13 แผ่นพื้นตัน',
                         data: [80, 85, 90, 85, 95, 100],
                         borderColor: '#2563EB',
                         backgroundColor: '#2563EB',
@@ -528,7 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         pointRadius: 3
                     },
                     {
-                        label: 'เสาเข็ม',
+                        label: 'A30 ผนังรั้วสำเร็จรูป',
                         data: [60, 65, 60, 70, 65, 90],
                         borderColor: '#10B981',
                         backgroundColor: '#10B981',
@@ -537,7 +537,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         pointRadius: 3
                     },
                     {
-                        label: 'กำแพงกันดิน',
+                        label: 'A35 รั้วสำเร็จรูป',
                         data: [20, 25, 20, 30, 25, 10],
                         borderColor: '#F59E0B',
                         backgroundColor: '#F59E0B',
@@ -546,7 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         pointRadius: 3
                     },
                     {
-                        label: 'คาน/เสา',
+                        label: 'A41 เสาเข็ม',
                         data: [40, 45, 50, 45, 55, 60],
                         borderColor: '#8B5CF6',
                         backgroundColor: '#8B5CF6',
