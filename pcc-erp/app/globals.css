@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+/* ─── PCC ERP Design Tokens (migrated from style.css) ─── */
+:root {
+  /* Backgrounds */
+  --bg: #F7F8FA;
+  --surface: #FFFFFF;
+  --border: #EBEBF0;
+
+  /* Text */
+  --text-primary: #1A1B23;
+  --text-secondary: #6B6E85;
+  --text-muted: #A8ABBE;
+
+  /* Brand */
+  --accent: #2563EB;
+  --accent-light: #EFF4FF;
+  --accent-soft: #DBEAFE;
+
+  /* Status Colors */
+  --green: #10B981;
+  --green-light: #ECFDF5;
+  --amber: #F59E0B;
+  --amber-light: #FFFBEB;
+  --red: #EF4444;
+  --red-light: #FEF2F2;
+  --indigo: #6366F1;
+  --indigo-light: #EEF2FF;
+  --purple: #8B5CF6;
+
+  /* Layout */
+  --sidebar-width: 220px;
+  --header-height: 60px;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.07);
+}
+
+@theme inline {
+  /* Expose ERP tokens to Tailwind */
+  --color-erp-bg: var(--bg);
+  --color-erp-surface: var(--surface);
+  --color-erp-border: var(--border);
+  --color-erp-text-primary: var(--text-primary);
+  --color-erp-text-secondary: var(--text-secondary);
+  --color-erp-text-muted: var(--text-muted);
+  --color-erp-accent: var(--accent);
+  --color-erp-accent-light: var(--accent-light);
+  --color-erp-green: var(--green);
+  --color-erp-green-light: var(--green-light);
+  --color-erp-amber: var(--amber);
+  --color-erp-amber-light: var(--amber-light);
+  --color-erp-red: var(--red);
+  --color-erp-red-light: var(--red-light);
+  --color-erp-indigo: var(--indigo);
+  --color-erp-indigo-light: var(--indigo-light);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'IBM Plex Sans Thai', sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* ─── Custom Animations and Utilities for Worker App ─── */
+@keyframes scanline {
+  0% { top: 5%; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 95%; opacity: 0; }
+}
+.animate-scan {
+  animation: scanline 2.5s linear infinite;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.custom-checkbox {
+  appearance: none;
+  width: 1.5em;
+  height: 1.5em;
+  border: 2px solid #cbd5e1;
+  border-radius: 0.35em;
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.custom-checkbox::before {
+  content: "";
+  width: 0.8em;
+  height: 0.8em;
+  transform: scale(0);
+  transition: 120ms transform ease-in-out;
+  box-shadow: inset 1em 1em white;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+.custom-checkbox:checked {
+  background-color: #10b981;
+  border-color: #10b981;
+}
+.custom-checkbox:checked::before {
+  transform: scale(1);
+}
