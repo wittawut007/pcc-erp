@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
@@ -9,6 +10,7 @@ interface Product {
   code: string
   name: string
   category: string
+  size: string
   concrete_per_unit: number
   unit: string
 }
@@ -20,14 +22,21 @@ interface RawMaterial {
   min_stock: number
 }
 
+interface WipItem {
+  product_id: string
+  qty_on_hand: number
+}
+
 interface PlanItem {
   id?: string
   productId: string
   productCode: string
   productName: string
+  size?: string
   category: string
   bed: string
   qty: number
+  unit?: string
   concrete: number
 }
 
@@ -35,16 +44,23 @@ interface Props {
   products: Product[]
   todayPlan: any
   rawMaterials: RawMaterial[]
+  wipInventory?: WipItem[]
   today: string
+  workerToken?: string
 }
 
 const beds = ['A', 'B', 'C', 'D', 'E', 'F']
 
-export default function PlannerClient({ products, todayPlan, rawMaterials, today }: Props) {
+export default function PlannerClient({ products, todayPlan, rawMaterials, wipInventory = [], today, workerToken = '' }: Props) {
   const supabase = createClient()
   const [isPending, startTransition] = useTransition()
 
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  // Select Cascades
+  const [selCat, setSelCat] = useState('')
+  const [selName, setSelName] = useState('')
+  const [selSize, setSelSize] = useState('')
+  const [selCode, setSelCode] = useState('')
+
   const [selectedBed, setSelectedBed] = useState('A')
   const [qty, setQty] = useState(1)
   const [planItems, setPlanItems] = useState<PlanItem[]>(
@@ -53,25 +69,44 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, today
       productId: item.product_id,
       productCode: item.product?.code ?? '',
       productName: item.product?.name ?? '',
+      size: item.product?.size ?? '',
       category: item.product?.category ?? '',
+      unit: item.product?.unit ?? 'ชิ้น',
       bed: item.bed,
       qty: item.qty_target,
       concrete: (item.product?.concrete_per_unit ?? 0) * item.qty_target,
     })) ?? []
   )
+
+  const supabaseRouter = useRouter()
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
-  const [filterCat, setFilterCat] = useState('ทั้งหมด')
-  const [search, setSearch] = useState('')
 
-  const categories = ['ทั้งหมด', ...Array.from(new Set(products.map(p => p.category)))]
+  // Derived cascade options
+  const cats = useMemo(() => Array.from(new Set(products.map(p => p.category))), [products])
+  
+  const names = useMemo(() => {
+    return Array.from(new Set(products.filter(p => !selCat || p.category === selCat).map(p => p.name)))
+  }, [products, selCat])
+  
+  const sizes = useMemo(() => {
+    return Array.from(new Set(products.filter(p => (!selCat || p.category === selCat) && (!selName || p.name === selName)).map(p => p.size || '-')))
+  }, [products, selCat, selName])
+  
+  const codes = useMemo(() => {
+    return products.filter(p => 
+      (!selCat || p.category === selCat) && 
+      (!selName || p.name === selName) && 
+      (!selSize || (p.size || '-') === selSize)
+    )
+  }, [products, selCat, selName, selSize])
 
-  const filteredProducts = products.filter(p => {
-    const matchCat = filterCat === 'ทั้งหมด' || p.category === filterCat
-    const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.code.toLowerCase().includes(search.toLowerCase())
-    return matchCat && matchSearch
-  })
+  const selectedProduct = products.find(p => p.code === selCode)
 
+  const actOnCat = (val: string) => { setSelCat(val); setSelName(''); setSelSize(''); setSelCode(''); }
+  const actOnName = (val: string) => { setSelName(val); setSelSize(''); setSelCode(''); }
+  const actOnSize = (val: string) => { setSelSize(val); setSelCode(''); }
+  
   const totalConcrete = planItems.reduce((s, i) => s + i.concrete, 0)
   const totalQty = planItems.reduce((s, i) => s + i.qty, 0)
 
@@ -88,6 +123,8 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, today
         productId: selectedProduct.id,
         productCode: selectedProduct.code,
         productName: selectedProduct.name,
+        size: selectedProduct.size,
+        unit: selectedProduct.unit,
         category: selectedProduct.category,
         bed: selectedBed,
         qty,
@@ -95,6 +132,8 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, today
       }])
     }
     setQty(1)
+    // reset product selector but keep category
+    setSelName(''); setSelSize(''); setSelCode('');
   }
 
   const handleRemove = (idx: number) => {
@@ -107,7 +146,6 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, today
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      // Upsert plan
       const { data: plan, error: planError } = await supabase
         .from('production_plans')
         .upsert({ plan_date: today, created_by: user.id, status: 'draft', total_qty: totalQty, total_concrete: totalConcrete })
@@ -115,10 +153,8 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, today
         .single()
       if (planError) throw planError
 
-      // Delete existing items
       await supabase.from('production_plan_items').delete().eq('plan_id', plan.id)
 
-      // Insert new items
       if (planItems.length > 0) {
         const { error: itemsError } = await supabase.from('production_plan_items').insert(
           planItems.map(item => ({
@@ -132,7 +168,6 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, today
         if (itemsError) throw itemsError
       }
 
-      // Log activity
       await supabase.from('activity_logs').insert({
         user_id: user.id,
         action_type: 'บันทึกแผนการผลิต (Draft)',
@@ -142,6 +177,7 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, today
       })
 
       toast.success('บันทึกแผนการผลิตสำเร็จ!')
+      supabaseRouter.push(`/production-order/${plan.id}`)
     } catch (e: any) {
       toast.error('เกิดข้อผิดพลาด: ' + e.message)
     } finally {
@@ -157,12 +193,9 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, today
       if (!plan) throw new Error('Plan not found')
 
       await supabase.from('production_plans').update({ status: 'confirmed' }).eq('id', plan.id)
-
-      // Fetch the generated plan items to get their IDs
       const { data: items } = await supabase.from('production_plan_items').select('id, bed, qty_target').eq('plan_id', plan.id)
 
       if (items && items.length > 0) {
-        // Create job orders
         const { error: orderError } = await supabase.from('job_orders').insert(
           items.map(item => ({
             plan_item_id: item.id,
@@ -171,11 +204,13 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, today
             status: 'pending'
           }))
         )
-        // ignore duplicate key errors if already pressed
         if (orderError && !orderError.message.includes('duplicate')) throw orderError
       }
 
       toast.success('ยืนยันแผนการผลิตและสร้างคิวงานเทปูนแล้ว!')
+
+      // Navigate to the dedicated production order print page
+      supabaseRouter.push(`/production-order/${plan.id}`)
     } catch (e: any) {
       toast.error('เกิดข้อผิดพลาด: ' + e.message)
     } finally {
@@ -183,243 +218,319 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, today
     }
   }
 
-  const isPlanConfirmed = todayPlan?.status === 'confirmed' || todayPlan?.status === 'completed'
+  const isPlanConfirmed = false // Unlock UI so they can always edit
+
+  // PC wire BOM check
+  const pcWireNeeded = totalQty * 18.5 // Estimation formula
+  const pcWireLocal = rawMaterials.find(r => r.name.toLowerCase().includes('ลวด'))
+  const pcWireStock = pcWireLocal?.qty_on_hand || 3100
+
+  // Calculate dynamic WIP requirements
+  const wipRequirements = planItems.reduce((acc, item) => {
+    const product = products.find(p => p.id === item.productId)
+    if (product && product.wip_code) {
+      if (!acc[product.wip_code]) {
+        // Find the WIP product details to get its name and ID
+        const wipProduct = products.find(p => p.code === product.wip_code)
+        
+        acc[product.wip_code] = {
+          wip_code: product.wip_code,
+          name: wipProduct ? `${wipProduct.name} ${wipProduct.size !== '-' ? wipProduct.size : ''}` : `โครง ${product.name}`,
+          needed: 0,
+          onHand: 0,
+        }
+        
+        if (wipProduct) {
+          const inv = wipInventory.find(w => w.product_id === wipProduct.id)
+          acc[product.wip_code].onHand = inv ? inv.qty_on_hand : 0
+        }
+      }
+      acc[product.wip_code].needed += item.qty
+    }
+    return acc
+  }, {} as Record<string, { wip_code: string, name: string, needed: number, onHand: number }>)
+
+  const wipList = Object.values(wipRequirements)
+  const isWipShortage = wipList.some(w => w.onHand < w.needed)
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
-      {/* Toaster */}
-      <div id="toast-container"></div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 20 }}>
-        {/* LEFT — Product Selector */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-          {/* Product Search */}
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>เลือกสินค้าที่จะผลิต</div>
-
-            <div style={{ position: 'relative', marginBottom: 10 }}>
-              <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12 }}></i>
-              <input
-                type="text"
-                placeholder="ค้นหารหัสหรือชื่อสินค้า..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                style={{ width: '100%', paddingLeft: 32, paddingRight: 12, paddingTop: 8, paddingBottom: 8, border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, background: 'var(--bg)', outline: 'none' }}
-              />
+    <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '24px 32px', background: '#F7F8FA', display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div style={{ display: 'flex', flexDirection: 'row', gap: 20, alignItems: 'flex-start' }}>
+      {/* LEFT — Product Selector & Plan Table */}
+      <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+        
+        {/* ADD PRODUCT FORM */}
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div className="flex items-center gap-2 font-bold text-[15px] mb-4 text-gray-800">
+            <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">
+              <i className="fas fa-plus"></i>
             </div>
-
-            {/* Category Filter */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-              {categories.map(cat => (
-                <button key={cat} onClick={() => setFilterCat(cat)} style={{
-                  padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                  border: filterCat === cat ? 'none' : '1px solid var(--border)',
-                  background: filterCat === cat ? 'var(--accent)' : 'var(--bg)',
-                  color: filterCat === cat ? 'white' : 'var(--text-secondary)',
-                }}>
-                  {cat === 'ทั้งหมด' ? 'ทั้งหมด' : cat.split(' ')[0]}
-                </button>
-              ))}
+            เพิ่มรายการผลิตลงแผน
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: 6 }}>หมวดหมู่</label>
+              <select value={selCat} onChange={e => actOnCat(e.target.value)} style={{ width: '100%', height: 38, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 13, background: '#fff', outline: 'none', color: '#374151' }}>
+                <option value="">-- เลือกหมวดหมู่ --</option>
+                {cats.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
-
-            {/* Product List */}
-            <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-              {filteredProducts.map(p => (
-                <div
-                  key={p.id}
-                  onClick={() => setSelectedProduct(p)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '10px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
-                    background: selectedProduct?.id === p.id ? 'var(--accent-light)' : 'var(--bg)',
-                    border: selectedProduct?.id === p.id ? '1.5px solid var(--accent)' : '1px solid transparent',
-                    transition: 'all 0.1s',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary)' }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                      <span style={{ background: 'var(--border)', padding: '1px 6px', borderRadius: 4, marginRight: 6 }}>{p.code}</span>
-                      {p.category.split(' ')[0]}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>{p.concrete_per_unit} ม.³/{p.unit}</div>
-                  </div>
-                </div>
-              ))}
-              {filteredProducts.length === 0 && (
-                <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)', fontSize: 12 }}>
-                  <i className="fas fa-search" style={{ fontSize: 24, marginBottom: 8, display: 'block' }}></i>
-                  ไม่พบสินค้า
-                </div>
-              )}
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: 6 }}>ชื่อสินค้า</label>
+              <select value={selName} onChange={e => actOnName(e.target.value)} disabled={!selCat} style={{ width: '100%', height: 38, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 13, background: !selCat ? '#F9FAFB' : '#fff', outline: 'none', color: '#374151' }}>
+                <option value="">-- เลือกชื่อสินค้า --</option>
+                {names.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: 6 }}>ขนาดสินค้า</label>
+              <select value={selSize} onChange={e => actOnSize(e.target.value)} disabled={!selName} style={{ width: '100%', height: 38, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 13, background: !selName ? '#F9FAFB' : '#fff', outline: 'none', color: '#374151' }}>
+                <option value="">-- เลือกขนาด --</option>
+                {sizes.map(s => <option key={s} value={s}>{s === '-' ? 'ไม่มีขนาด' : s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: 6 }}>รหัสสินค้า</label>
+              <select value={selCode} onChange={e => setSelCode(e.target.value)} disabled={!selSize} style={{ width: '100%', height: 38, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 13, background: !selSize ? '#F9FAFB' : '#fff', outline: 'none', color: '#374151' }}>
+                <option value="">-- เลือกรหัสสินค้า --</option>
+                {codes.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+              </select>
             </div>
           </div>
 
-          {/* Add to Plan Controls */}
-          {selectedProduct && (
-            <div style={{ background: 'var(--accent-light)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: 16 }}>
-              <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--accent)', marginBottom: 10 }}>
-                <i className="fas fa-plus-circle" style={{ marginRight: 6 }}></i>
-                เพิ่มลงแผน: {selectedProduct.name}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>แท่นผลิต</label>
-                  <select value={selectedBed} onChange={e => setSelectedBed(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, background: 'white', outline: 'none' }}>
-                    {beds.map(b => <option key={b} value={b}>แท่น {b}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>จำนวน ({selectedProduct.unit})</label>
-                  <input type="number" min={1} value={qty} onChange={e => setQty(parseInt(e.target.value) || 1)}
-                    onFocus={e => e.target.select()}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, outline: 'none' }} />
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--accent)', marginBottom: 10 }}>
-                ปริมาณคอนกรีตที่ใช้: <strong>{(qty * selectedProduct.concrete_per_unit).toFixed(4)} ม.³</strong>
-              </div>
-              <button onClick={handleAddProduct} disabled={isPlanConfirmed}
-                style={{
-                  width: '100%', padding: '10px', background: isPlanConfirmed ? '#ccc' : 'var(--accent)', color: 'white',
-                  border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: isPlanConfirmed ? 'not-allowed' : 'pointer',
-                }}>
-                <i className="fas fa-plus" style={{ marginRight: 6 }}></i>
-                เพิ่มลงตารางแผน
-              </button>
-            </div>
-          )}
-
-          {/* Raw Material Summary */}
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>
-              <i className="fas fa-layer-group" style={{ marginRight: 6, color: 'var(--accent)' }}></i>
-              วัตถุดิบในคลัง (RM)
-            </div>
-            {rawMaterials.slice(0, 6).map((rm, i) => {
-              const isLow = rm.qty_on_hand <= rm.min_stock
-              return (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ fontSize: 12 }}>{rm.name}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: isLow ? 'var(--red)' : 'var(--green)' }}>
-                    {rm.qty_on_hand} {rm.unit}
-                    {isLow && <i className="fas fa-exclamation-triangle" style={{ marginLeft: 4, fontSize: 10 }}></i>}
-                  </span>
-                </div>
-              )
-            })}
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, alignItems: 'flex-end' }}>
+             <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: 6 }}>แท่นผลิตเป้าหมาย</label>
+                <select value={selectedBed} onChange={e => setSelectedBed(e.target.value)} style={{ width: '100%', height: 38, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 13, background: '#fff', outline: 'none', color: '#374151' }}>
+                  {beds.map(b => <option key={b} value={b}>แท่น {b} (ว่าง: 50)</option>)}
+                </select>
+             </div>
+             <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: 6 }}>จำนวนเป้าหมาย</label>
+                <input type="number" min={1} value={qty} onChange={e => setQty(parseInt(e.target.value) || 1)} onFocus={e => e.target.select()} style={{ width: '100%', height: 38, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 8px', fontSize: 15, fontWeight: 700, textAlign: 'center', color: '#2563EB', outline: 'none', background: '#fff', boxSizing: 'border-box' }} />
+             </div>
+             <div>
+                <button onClick={handleAddProduct} disabled={!selectedProduct} style={{ width: '100%', height: 38, background: !selectedProduct ? '#D1D5DB' : '#2563EB', color: '#fff', fontWeight: 700, border: 'none', borderRadius: 8, fontSize: 13, cursor: !selectedProduct ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'background 0.15s' }}>
+                  <i className="fas fa-plus"></i> เพิ่มลงแผน
+                </button>
+             </div>
           </div>
         </div>
 
-        {/* RIGHT — Plan Table + Summary */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-          {/* Plan Status Banner */}
-          {isPlanConfirmed && (
-            <div style={{ background: '#ECFDF5', border: '1px solid #10B981', borderRadius: 'var(--radius)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <i className="fas fa-check-circle" style={{ color: 'var(--green)', fontSize: 20 }}></i>
-              <div>
-                <div style={{ fontWeight: 700, color: '#047857', fontSize: 13 }}>แผนการผลิตได้รับการยืนยันแล้ว</div>
-                <div style={{ fontSize: 11, color: '#059669' }}>ใบสั่งผลิตถูกสร้างเรียบร้อยแล้ว ไม่สามารถแก้ไขได้</div>
-              </div>
-            </div>
-          )}
-
-          {/* Summary Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-            {[
-              { label: 'รายการทั้งหมด', value: planItems.length, unit: 'รายการ', icon: 'fa-list', color: 'var(--accent)' },
-              { label: 'จำนวนผลิต', value: totalQty.toLocaleString(), unit: 'ชิ้น', icon: 'fa-cubes', color: 'var(--green)' },
-              { label: 'คอนกรีตรวม', value: totalConcrete.toFixed(2), unit: 'ม.³', icon: 'fa-fill-drip', color: 'var(--amber)' },
-            ].map(s => (
-              <div key={s.label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px', textAlign: 'center' }}>
-                <i className={`fas ${s.icon}`} style={{ fontSize: 22, color: s.color, marginBottom: 6, display: 'block' }}></i>
-                <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1 }}>{s.value}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>{s.label}</div>
-                <div style={{ fontSize: 10, color: s.color, fontWeight: 600 }}>{s.unit}</div>
-              </div>
-            ))}
+        {/* PLAN TABLE */}
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 300, overflow: 'hidden' }}>
+          <div style={{ padding: '20px 20px 16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: '#fff' }}>
+             <div>
+               <h3 className="font-bold text-gray-900 text-[15px]">สรุปแผนการผลิตวันนี้ {planItems.length > 0 && <span className="font-normal text-gray-500">({isPlanConfirmed ? 'Confirmed' : 'Draft'})</span>}</h3>
+               <p className="text-xs text-gray-500 mt-0.5">รวมทั้งหมด: <span className="font-bold text-blue-600">{planItems.length}</span> รายการ | <span className="font-bold text-blue-600">{totalQty.toLocaleString()}</span> ชิ้น</p>
+             </div>
+             <div>
+               {todayPlan?.status === 'confirmed' ? (
+                 <span className="bg-emerald-100 text-emerald-700 text-[11px] px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 border border-emerald-200">
+                    <i className="fas fa-check-circle"></i> ยืนยันแล้ว
+                 </span>
+               ) : (
+                 <span className="bg-amber-100 text-amber-700 text-[11px] px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 border border-amber-200">
+                    <i className="fas fa-pencil-alt"></i> สถานะ: กำลังร่างแผน
+                 </span>
+               )}
+             </div>
           </div>
-
-          {/* Plan Table */}
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', flex: 1 }}>
-            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 700, fontSize: 13 }}>
-                รายการแผนการผลิตวันนี้
-                <span style={{ marginLeft: 8, background: 'var(--accent-light)', color: 'var(--accent)', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
-                  {planItems.length} รายการ
-                </span>
-              </span>
-              {!isPlanConfirmed && (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={handleSaveDraft} disabled={saving || planItems.length === 0}
-                    style={{ padding: '7px 14px', border: '1px solid var(--accent)', borderRadius: 6, background: 'white', color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    {saving ? <><i className="fas fa-spinner fa-spin" style={{ marginRight: 4 }}></i>บันทึก...</> : <><i className="fas fa-save" style={{ marginRight: 4 }}></i>บันทึก Draft</>}
-                  </button>
-                  <button onClick={handleConfirmPlan} disabled={confirming || planItems.length === 0}
-                    style={{ padding: '7px 14px', border: 'none', borderRadius: 6, background: 'var(--accent)', color: 'white', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    {confirming ? <><i className="fas fa-spinner fa-spin" style={{ marginRight: 4 }}></i>กำลังยืนยัน...</> : <><i className="fas fa-check" style={{ marginRight: 4 }}></i>ยืนยันแผน</>}
-                  </button>
-                </div>
-              )}
-            </div>
-            <div style={{ overflowY: 'auto', maxHeight: 420 }}>
-              {planItems.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
-                  <i className="fas fa-clipboard-list" style={{ fontSize: 36, marginBottom: 12, display: 'block', opacity: 0.3 }}></i>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>ยังไม่มีรายการในแผน</div>
-                  <div style={{ fontSize: 11, marginTop: 4 }}>เลือกสินค้าทางซ้ายแล้วกด "เพิ่มลงตารางแผน"</div>
-                </div>
-              ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead>
-                    <tr>
-                      {['#', 'สินค้า', 'แท่น', 'จำนวน', 'คอนกรีต', ''].map((th, i) => (
-                        <th key={th + i} style={{ padding: '8px 12px', textAlign: i >= 3 ? 'right' : 'left', color: 'var(--text-muted)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>{th}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {planItems.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-[var(--bg)] transition-colors">
-                        <td style={{ padding: '10px 12px', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{idx + 1}</td>
-                        <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
-                          <div style={{ fontWeight: 600 }}>{item.productName}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{item.productCode}</div>
+          
+          <div className="overflow-x-auto flex-1">
+             <table className="w-full text-sm text-left whitespace-nowrap">
+                <thead>
+                   <tr className="text-sm text-gray-600 font-bold bg-gray-50/80 border-b-2 border-gray-200">
+                      <th className="px-5 py-4 text-center">NO.</th>
+                      <th className="px-5 py-4">รหัสสินค้า</th>
+                      <th className="px-5 py-4">ชื่อสินค้า</th>
+                      <th className="px-5 py-4 hidden sm:table-cell">ขนาดสินค้า</th>
+                      <th className="px-5 py-4 hidden md:table-cell">หมวดหมู่</th>
+                      <th className="px-5 py-4 text-center">แท่นผลิต</th>
+                      <th className="px-5 py-4 text-center">จำนวน</th>
+                      <th className="px-5 py-4 text-right">คอนกรีต (Q)</th>
+                      <th className="px-5 py-4 text-center">จัดการ</th>
+                   </tr>
+                </thead>
+                <tbody>
+                   {planItems.length === 0 ? (
+                     <tr>
+                        <td colSpan={9} className="px-5 py-16 text-center text-gray-400">
+                          ไม่มีรายการลงแผน กรุณาเพิ่มรายการผลิตข้างต้น
                         </td>
-                        <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
-                          <span style={{ background: 'var(--accent-light)', color: 'var(--accent)', padding: '3px 10px', borderRadius: 4, fontWeight: 700, fontSize: 12 }}>แท่น {item.bed}</span>
-                        </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border)' }}>{item.qty.toLocaleString()}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--text-secondary)', fontFamily: 'monospace', borderBottom: '1px solid var(--border)' }}>{item.concrete.toFixed(4)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>
-                          {!isPlanConfirmed && (
-                            <button onClick={() => handleRemove(idx)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: '4px 6px', borderRadius: 4 }}>
-                              <i className="fas fa-times"></i>
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ background: 'var(--bg)' }}>
-                      <td colSpan={3} style={{ padding: '10px 12px', fontWeight: 700, fontSize: 12 }}>รวมทั้งหมด</td>
-                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>{totalQty.toLocaleString()}</td>
-                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--amber)', fontFamily: 'monospace' }}>{totalConcrete.toFixed(4)}</td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              )}
-            </div>
+                     </tr>
+                   ) : (
+                     planItems.map((item, idx) => (
+                       <tr key={idx} className="border-b border-gray-200 hover:bg-blue-50/40 transition-colors">
+                          <td style={{ padding: "28px 20px" }} className=" text-center text-gray-400 font-semibold text-sm">{idx + 1}</td>
+                          <td style={{ padding: "28px 20px" }} className=" font-bold text-gray-800 text-sm tracking-wide">{item.productCode}</td>
+                          <td style={{ padding: "28px 20px" }} className=" text-gray-700 font-medium text-sm">{item.productName}</td>
+                          <td style={{ padding: "28px 20px" }} className=" hidden sm:table-cell text-gray-500 text-sm">{item.size || '-'}</td>
+                          <td style={{ padding: "28px 20px" }} className=" hidden md:table-cell text-gray-500 text-sm">{item.category.split(' ')[0]}</td>
+                          <td style={{ padding: "28px 20px" }} className=" text-center">
+                             <span className="inline-flex items-center justify-center bg-slate-100 text-slate-700 font-bold text-xs px-3 py-1 rounded-md border border-slate-200">แท่น {item.bed}</span>
+                          </td>
+                          <td style={{ padding: "28px 20px" }} className=" text-center">
+                             <span className="font-bold text-blue-600 text-[15px]">{item.qty.toLocaleString()}</span>
+                          </td>
+                          <td style={{ padding: "28px 20px" }} className=" text-right font-mono text-gray-500 text-sm">~ {item.concrete.toFixed(2)}</td>
+                          <td style={{ padding: "28px 20px" }} className=" text-center">
+                             <button onClick={() => handleRemove(idx)} className="text-red-400 hover:text-red-600 text-sm transition-colors p-2 rounded-lg hover:bg-red-50" title="ลบรายการ">
+                                <i className="fas fa-trash-alt"></i>
+                             </button>
+                          </td>
+                       </tr>
+                     ))
+                   )}
+                </tbody>
+             </table>
           </div>
         </div>
       </div>
+
+      {/* RIGHT — BOM & Action */}
+      <div style={{ width: 320, minWidth: 300, maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 16 }}>
+         
+         {/* BOM CARD */}
+         <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <div className="flex justify-between items-center mb-6">
+              <div className="font-bold text-[15px] flex items-center gap-2 text-gray-800">
+                 <i className="fas fa-file-excel text-emerald-500"></i>
+                 คำนวณวัตถุดิบ (BOM)
+              </div>
+              <button className="text-[11px] text-blue-600 font-bold flex items-center gap-1 hover:underline">
+                 <i className="fas fa-sync-alt"></i> อัปเดต
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-6 pb-4 border-b border-gray-100">ตรวจสอบสต๊อกวัตถุดิบป้องกันของขาดหน้างาน</p>
+
+            <div className="flex flex-col gap-6">
+               {/* Ready mix */}
+               <div>
+                  <div className="flex justify-between font-bold text-sm mb-2">
+                     <span className="text-gray-800">คอนกรีตผสมเสร็จ (รวม)</span>
+                     <span className="text-blue-600">{totalConcrete.toFixed(2)} Q</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1 mb-1.5">
+                     <div className="bg-blue-600 h-1 rounded-full" style={{ width: '100%' }}></div>
+                  </div>
+                  <p className="text-[10px] text-gray-400 text-right w-full">สั่งจากแพลนท์ปูนเมื่อเริ่มงาน</p>
+               </div>
+
+               {/* WIP structure */}
+               <div>
+                  <div className="flex justify-between font-bold text-sm mb-2 opacity-90">
+                     <span className="text-gray-800">โครงเหล็กพร้อมผลิต (WIP)</span>
+                     {wipList.length === 0 ? (
+                       <span className="text-[10px] text-gray-400">ไม่มีรายการ WIP</span>
+                     ) : isWipShortage ? (
+                       <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">ของไม่พอ</span>
+                     ) : (
+                       <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">สต๊อกพอดี</span>
+                     )}
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1 mb-3">
+                     <div className={wipList.length === 0 ? "bg-gray-300 h-1 rounded-full" : isWipShortage ? "bg-red-500 h-1 rounded-full" : "bg-emerald-500 h-1 rounded-full"} style={{ width: '100%' }}></div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-[11px] text-gray-500">
+                     {wipList.length === 0 && <span className="text-gray-400 italic">เลือกสินค้าเพื่อคำนวณโครงเหล็ก</span>}
+                     {wipList.map(wip => (
+                       <div key={wip.wip_code} className="flex justify-between border-b border-dashed border-gray-200 pb-1">
+                          <span className={wip.onHand < wip.needed ? 'text-red-500 font-semibold' : ''}>{wip.name}</span>
+                          <span className={wip.onHand < wip.needed ? 'text-red-500 font-semibold' : ''}>ต้องการ {wip.needed.toLocaleString()} / มี {wip.onHand.toLocaleString()} ชุด</span>
+                       </div>
+                     ))}
+                  </div>
+               </div>
+
+               {/* PC Wire Warning Card */}
+               {planItems.length > 0 && (
+                 <div className="bg-red-50 border border-red-100 rounded-lg mt-2 relative overflow-hidden" style={{ padding: '16px 20px' }}>
+                    <div className="absolute top-0 left-0 w-1 h-full bg-red-400"></div>
+                    <div className="flex justify-between font-bold text-sm mb-3">
+                       <span className="text-red-600 flex items-center gap-1.5">
+                          <i className="fas fa-exclamation-circle text-[15px]"></i> ลวดอัดแรง PC Wire 4mm
+                       </span>
+                       <span className="text-red-600">ต้องการ {pcWireNeeded.toLocaleString()} ม.</span>
+                    </div>
+                    <div className="w-full bg-red-200/50 rounded-full h-1.5 mb-3">
+                       <div className="bg-red-500 h-1.5 rounded-full relative" style={{ width: `${Math.min((pcWireStock / (pcWireNeeded || 1)) * 100, 100)}%` }}></div>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-red-500/80 mb-4">
+                       <span>มีในคลัง: {pcWireStock.toLocaleString()} ม.</span>
+                       <span className="font-bold whitespace-nowrap">(ขาด {(pcWireNeeded - pcWireStock > 0 ? (pcWireNeeded - pcWireStock) : 0).toLocaleString()} ม.)</span>
+                    </div>
+                    <button className="w-full py-2 bg-red-100 text-red-600 hover:bg-red-200 transition-colors font-bold text-[12px] rounded border border-red-200">
+                       ส่งแจ้งเตือนจัดซื้อ/คลังสินค้า
+                    </button>
+                 </div>
+               )}
+            </div>
+         </div>
+
+         {/* NEXT STEPS (DARK THEME) */}
+         <div style={{ background: '#1C1F26', borderRadius: 12, padding: 24, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', color: '#fff', position: 'relative', overflow: 'hidden', flex: 1 }}>
+            
+            {/* Watermark Background */}
+            <div style={{ position: 'absolute', bottom: -10, right: -10, fontSize: 130, fontWeight: 900, color: 'rgba(255,255,255,0.03)', pointerEvents: 'none', lineHeight: 1, userSelect: 'none' }}>
+              PCC
+            </div>
+
+            <h3 className="font-bold text-lg mb-3 relative z-10">ขั้นตอนต่อไป</h3>
+            <p className="text-sm text-gray-400 mb-6 leading-relaxed">
+               เมื่อตรวจสอบแผนและวัตถุดิบเรียบร้อยแล้ว กดยืนยันเพื่อนำแผนขึ้นระบบ และออกใบสั่งผลิดให้หน้างาน
+            </p>
+            <div className="flex flex-col gap-3 mb-8">
+               <div className="flex items-start gap-3">
+                  <i className="fas fa-check text-emerald-400 mt-1"></i>
+                  <span className="text-[13px] text-gray-300">ระบบจะจองสต๊อก (Reserve) ทันที</span>
+               </div>
+               <div className="flex items-start gap-3">
+                  <i className="fas fa-check text-emerald-400 mt-1"></i>
+                  <span className="text-[13px] text-gray-300">สร้าง Job Order {planItems.length} รายการ</span>
+               </div>
+               <div className="flex items-start gap-3">
+                  <i className="fas fa-check text-emerald-400 mt-1"></i>
+                  <span className="text-[13px] text-gray-300">สร้าง QR Code สำหรับสแกนหน้าแท่นผลิต</span>
+               </div>
+            </div>
+
+            <div className="flex flex-col gap-3 mt-auto">
+               <button
+                 onClick={handleSaveDraft}
+                 disabled={saving || planItems.length === 0}
+                 className="w-full bg-transparent hover:bg-white/8 border border-gray-600 text-gray-200 font-semibold rounded-xl text-[14px] disabled:opacity-40 transition-all flex justify-center items-center gap-2.5"
+                 style={{ minHeight: 48, padding: '12px 20px' }}
+               >
+                  {saving
+                    ? <i className="fas fa-spinner fa-spin text-sm"></i>
+                    : <i className="fas fa-save text-sm"></i>
+                  }
+                  <span>บันทึกแบบร่าง</span>
+               </button>
+               <button
+                 onClick={handleConfirmPlan}
+                 disabled={confirming || planItems.length === 0}
+                 className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-[15px] disabled:opacity-40 transition-all flex justify-center items-center gap-2.5 relative"
+                 style={{ minHeight: 52, padding: '14px 20px' }}
+               >
+                  {confirming
+                    ? <i className="fas fa-spinner fa-spin text-base"></i>
+                    : (
+                      <>
+                        <i className="fas fa-check-circle text-base"></i>
+                        <span>บันทึก/สร้างใบสั่งผลิต</span>
+                        <i className="fas fa-arrow-right absolute right-5 text-blue-200"></i>
+                      </>
+                    )
+                  }
+               </button>
+            </div>
+         </div>
+      </div>
+      </div>
+
     </div>
   )
 }

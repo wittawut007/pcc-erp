@@ -13,11 +13,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showPass, setShowPass] = useState(false)
+  const [workerBlocked, setWorkerBlocked] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
+    setWorkerBlocked(false)
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
@@ -27,12 +29,26 @@ export default function LoginPage() {
       return
     }
 
-    const role = data?.user?.user_metadata?.role
-    if (role === 'worker') {
-      router.push('/worker')
-    } else {
-      router.push('/dashboard')
+    // ดึง role จาก profiles table
+    let role = data?.user?.user_metadata?.role
+    if (!role && data?.user?.id) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', data.user.id)
+        .single()
+      role = profile?.role
     }
+
+    // Worker ถูก Block — ไม่อนุญาตให้ Login ผ่านหน้านี้
+    if (role === 'worker') {
+      await supabase.auth.signOut()
+      setWorkerBlocked(true)
+      setLoading(false)
+      return
+    }
+
+    router.push('/dashboard')
     router.refresh()
   }
 
@@ -66,6 +82,25 @@ export default function LoginPage() {
             <h2 className="text-slate-900 tracking-tight font-bold" style={{ fontSize: '26px', marginBottom: '6px' }}>เข้าสู่ระบบ</h2>
             <p className="text-slate-400 font-medium tracking-wide" style={{ fontSize: '13px' }}>ยินดีต้อนรับกลับ! โปรดกรอกข้อมูลเพื่อเข้าใช้งานระบบ</p>
           </div>
+
+          {/* Worker Blocked Alert */}
+          {workerBlocked && (
+            <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-xl flex gap-3">
+              <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center">
+                <i className="fas fa-qrcode text-amber-600 text-base"></i>
+              </div>
+              <div>
+                <p className="font-bold text-amber-800" style={{ fontSize: '13px', marginBottom: 4 }}>
+                  บัญชีพนักงานหน้างาน
+                </p>
+                <p className="text-amber-700" style={{ fontSize: '12px', lineHeight: 1.5 }}>
+                  บัญชีนี้เป็นบัญชีพนักงานผลิต ไม่สามารถเข้าสู่ระบบผ่านหน้านี้ได้
+                  <br />
+                  <strong>กรุณาสแกน QR Code</strong> ที่ได้รับจากผู้ดูแลระบบ เพื่อเข้าใช้งาน
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Error Alert */}
           {error && (

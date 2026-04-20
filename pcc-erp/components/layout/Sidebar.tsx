@@ -4,42 +4,60 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
+import type { UserRole } from '@/lib/supabase/types'
 
-const navItems = [
+interface NavLink {
+  href: string
+  icon: string
+  label: string
+  roles: UserRole[]
+}
+
+interface NavSection {
+  label: string
+  links: NavLink[]
+}
+
+const allNavItems: NavSection[] = [
   {
-    label: 'Main',
+    label: 'MAIN',
     links: [
-      { href: '/dashboard', icon: 'fa-chart-line', label: 'Dashboard' },
+      { href: '/dashboard', icon: 'fa-chart-line', label: 'Dashboard', roles: ['admin', 'planner', 'warehouse', 'qc'] },
     ],
   },
   {
-    label: 'Production',
+    label: 'PRODUCTION',
     links: [
-      { href: '/planner', icon: 'fa-calendar-alt', label: 'แผนการผลิต' },
-      { href: '/job-orders', icon: 'fa-clipboard-list', label: 'คิวงานเทปูน' },
-      { href: '/demolding', icon: 'fa-hammer', label: 'งานถอดแบบ' },
+      { href: '/planner',          icon: 'fa-calendar-alt',   label: 'แผนการผลิต',    roles: ['admin', 'planner'] },
+      { href: '/production-order', icon: 'fa-file-invoice',   label: 'ใบสั่งผลิต',    roles: ['admin', 'planner'] },
+      { href: '/job-orders',       icon: 'fa-clipboard-list', label: 'คิวงานเทปูน',   roles: ['admin', 'planner'] },
+      { href: '/demolding',        icon: 'fa-hammer',         label: 'งานถอดแบบ',     roles: ['admin', 'planner'] },
     ],
   },
   {
-    label: 'Inventory',
+    label: 'INVENTORY',
     links: [
-      { href: '/inventory/raw', icon: 'fa-layer-group', label: 'คลังวัตถุดิบ' },
-      { href: '/inventory/wip', icon: 'fa-th-large', label: 'โครงเหล็ก (WIP)' },
-      { href: '/inventory/fg', icon: 'fa-cubes', label: 'สินค้าพร้อมขาย' },
+      { href: '/inventory/raw', icon: 'fa-layer-group', label: 'คลังวัตถุดิบ',    roles: ['admin', 'warehouse'] },
+      { href: '/inventory/wip', icon: 'fa-th-large',    label: 'โครงเหล็ก (WIP)', roles: ['admin', 'warehouse'] },
+      { href: '/inventory/fg',  icon: 'fa-cubes',       label: 'สินค้าพร้อมขาย',  roles: ['admin', 'warehouse'] },
     ],
   },
   {
-    label: 'System',
+    label: 'SYSTEM',
     links: [
-      { href: '/products', icon: 'fa-box-open', label: 'ข้อมูลสินค้า' },
-      { href: '/users', icon: 'fa-users-cog', label: 'จัดการผู้ใช้งาน' },
-      { href: '/qc', icon: 'fa-clipboard-check', label: 'จัดการของเสีย (QC)' },
-      { href: '/logs', icon: 'fa-history', label: 'ประวัติการทำงาน' },
+      { href: '/products', icon: 'fa-box-open',       label: 'ข้อมูลสินค้า',       roles: ['admin', 'planner'] },
+      { href: '/users',    icon: 'fa-users-cog',       label: 'จัดการผู้ใช้งาน',    roles: ['admin'] },
+      { href: '/qc',       icon: 'fa-clipboard-check', label: 'จัดการของเสีย (QC)', roles: ['admin', 'qc'] },
+      { href: '/logs',     icon: 'fa-history',         label: 'ประวัติการทำงาน',    roles: ['admin'] },
     ],
   },
 ]
 
-export default function Sidebar() {
+interface SidebarProps {
+  role: UserRole
+}
+
+export default function Sidebar({ role }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
@@ -52,61 +70,111 @@ export default function Sidebar() {
     router.push('/login')
   }
 
+  const navItems = allNavItems
+    .map((section) => ({
+      ...section,
+      links: section.links.filter((link) => link.roles.includes(role)),
+    }))
+    .filter((section) => section.links.length > 0)
+
   return (
     <aside
       style={{
-        width: isCollapsed ? 70 : 'var(--sidebar-width)',
-        background: 'var(--surface)',
-        borderRight: '1px solid var(--border)',
-        transition: 'width 0.3s ease',
+        width: isCollapsed ? 64 : 200,
+        minWidth: isCollapsed ? 64 : 200,
+        maxWidth: isCollapsed ? 64 : 200,
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        background: '#fff',
+        borderRight: '1px solid #EBEBF0',
+        flexShrink: 0,
+        transition: 'width 0.25s, min-width 0.25s',
+        overflow: 'hidden',
+        zIndex: 10,
       }}
-      className="flex flex-col flex-shrink-0 z-10 h-screen"
     >
-      {/* Logo */}
+      {/* ── Logo ── */}
       <div
-        style={{ borderBottom: '1px solid var(--border)', height: 90 }}
-        className="flex flex-col justify-center items-center px-4 gap-1.5 overflow-hidden"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: isCollapsed ? 0 : 8,
+          justifyContent: isCollapsed ? 'center' : 'flex-start',
+          padding: isCollapsed ? '0' : '0 18px',
+          height: 80,
+          borderBottom: '1px solid #EBEBF0',
+          flexShrink: 0,
+          overflow: 'hidden',
+        }}
       >
         <div
-          style={{ background: 'var(--accent)', borderRadius: 8, width: 34, height: 34 }}
-          className="flex items-center justify-center flex-shrink-0 relative"
-          title={isCollapsed ? "PCC POSTENTION" : undefined}
+          style={{
+            background: '#2563EB',
+            borderRadius: 8,
+            width: 30,
+            height: 30,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+          title={isCollapsed ? 'PCC POSTENTION' : undefined}
         >
-          <i className="fas fa-industry text-white text-sm"></i>
+          <i className="fas fa-industry" style={{ color: '#fff', fontSize: 13 }} />
         </div>
         {!isCollapsed && (
-          <div
-            style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '0.02em', textAlign: 'center', whiteSpace: 'nowrap' }}
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 800,
+              color: '#1A1B23',
+              letterSpacing: '0.01em',
+              whiteSpace: 'nowrap',
+              lineHeight: 1.2,
+            }}
           >
-            PCC <span style={{ color: 'var(--accent)' }}>POSTENTION</span>
-          </div>
+            PCC <span style={{ color: '#2563EB' }}>POSTENTION</span>
+          </span>
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 overflow-x-hidden">
-        {navItems.map((section) => (
+      {/* ── Navigation ── */}
+      <nav
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          padding: isCollapsed ? '12px 6px' : '12px 8px',
+        }}
+      >
+        {navItems.map((section, index) => (
           <div key={section.label}>
+            {/* Section divider / label */}
             {isCollapsed ? (
-              <div style={{ height: 1, background: 'var(--border)', margin: '16px auto 6px', width: '24px' }}></div>
+              index !== 0 && (
+                <div style={{ height: 1, background: '#F3F4F6', margin: '6px 4px' }} />
+              )
             ) : (
               <div
                 style={{
                   fontSize: 10,
                   fontWeight: 600,
-                  color: 'var(--text-muted)',
-                  letterSpacing: '0.08em',
+                  color: '#B0B7C3',
+                  letterSpacing: '0.09em',
                   textTransform: 'uppercase',
-                  padding: '0 8px',
-                  marginTop: 16,
-                  marginBottom: 6,
+                  padding: '10px 8px 4px',
                   whiteSpace: 'nowrap',
                 }}
               >
                 {section.label}
               </div>
             )}
-            
+
+            {/* Nav links */}
             {section.links.map((link) => {
               const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
               return (
@@ -117,22 +185,43 @@ export default function Sidebar() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: isCollapsed ? 0 : 9,
-                    padding: isCollapsed ? '10px 0' : '8px 10px',
+                    gap: isCollapsed ? 0 : 8,
                     justifyContent: isCollapsed ? 'center' : 'flex-start',
-                    borderRadius: 'var(--radius-sm)',
-                    color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
+                    padding: isCollapsed ? '10px 0' : '7px 8px',
+                    borderRadius: 8,
                     textDecoration: 'none',
                     fontSize: 13,
-                    fontWeight: isActive ? 600 : 500,
-                    background: isActive ? 'var(--accent-light)' : 'transparent',
-                    marginBottom: 1,
-                    transition: 'all 0.15s, justify-content 0.3s, padding 0.3s',
+                    fontWeight: isActive ? 700 : 500,
+                    color: isActive ? '#2563EB' : '#4B5563',
+                    background: isActive ? '#EFF4FF' : 'transparent',
+                    transition: 'background 0.12s, color 0.12s',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
                   }}
-                  className="hover:bg-[var(--bg)] hover:text-[var(--text-primary)]"
+                  onMouseEnter={e => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLAnchorElement).style.background = '#F7F8FA'
+                      ;(e.currentTarget as HTMLAnchorElement).style.color = '#1A1B23'
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'
+                      ;(e.currentTarget as HTMLAnchorElement).style.color = '#4B5563'
+                    }
+                  }}
                 >
-                  <i className={`fas ${link.icon}`} style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0 }}></i>
-                  {!isCollapsed && <span style={{ whiteSpace: 'nowrap' }}>{link.label}</span>}
+                  <i
+                    className={`fas ${link.icon}`}
+                    style={{
+                      fontSize: 14,
+                      width: 16,
+                      textAlign: 'center',
+                      flexShrink: 0,
+                      color: isActive ? '#2563EB' : '#9CA3AF',
+                    }}
+                  />
+                  {!isCollapsed && <span>{link.label}</span>}
                 </Link>
               )
             })}
@@ -140,54 +229,99 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom */}
-      <div style={{ padding: 12, borderTop: '1px solid var(--border)', overflow: 'hidden' }}>
+      {/* ── Bottom ── */}
+      <div
+        style={{
+          flexShrink: 0,
+          borderTop: '1px solid #EBEBF0',
+          padding: isCollapsed ? '8px 6px' : '8px 8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+        }}
+      >
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
+          title={isCollapsed ? 'ขยายแถบเมนู' : 'ย่อแถบเมนู'}
           style={{
-            display: 'flex', alignItems: 'center', gap: isCollapsed ? 0 : 9, padding: isCollapsed ? '8px 0' : '8px 10px', width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: isCollapsed ? 0 : 8,
             justifyContent: isCollapsed ? 'center' : 'flex-start',
-            borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-            background: 'none', border: 'none', fontSize: 13, fontWeight: 500,
-            cursor: 'pointer', transition: 'all 0.15s',
-            marginBottom: 4,
+            padding: isCollapsed ? '10px 0' : '7px 8px',
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 500,
+            color: '#4B5563',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            width: '100%',
+            transition: 'background 0.12s',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
           }}
-          className="hover:bg-[var(--bg)]"
-          title={isCollapsed ? "ขยายแถบเมนู" : "ย่อแถบเมนู"}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#F7F8FA' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
         >
-          <i className={`fas ${isCollapsed ? 'fa-chevron-right' : 'fa-list'}`} style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0 }}></i>
-          {!isCollapsed && <span style={{ whiteSpace: 'nowrap' }}>ย่อแถบเมนู</span>}
+          <i className={`fas ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'}`} style={{ fontSize: 14, width: 16, textAlign: 'center', flexShrink: 0, color: '#9CA3AF' }} />
+          {!isCollapsed && <span>ย่อแถบเมนู</span>}
         </button>
-        <Link
-          href="/settings"
-          title={isCollapsed ? "ตั้งค่า" : undefined}
-          style={{
-            display: 'flex', alignItems: 'center', gap: isCollapsed ? 0 : 9, padding: isCollapsed ? '8px 0' : '8px 10px',
-            justifyContent: isCollapsed ? 'center' : 'flex-start',
-            borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-            textDecoration: 'none', fontSize: 13, fontWeight: 500,
-            marginBottom: 4,
-          }}
-          className="hover:bg-[var(--bg)]"
-        >
-          <i className="fas fa-cog" style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0 }}></i>
-          {!isCollapsed && <span style={{ whiteSpace: 'nowrap' }}>ตั้งค่า</span>}
-        </Link>
+
+        {role === 'admin' && (
+          <Link
+            href="/settings"
+            title={isCollapsed ? 'ตั้งค่า' : undefined}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: isCollapsed ? 0 : 8,
+              justifyContent: isCollapsed ? 'center' : 'flex-start',
+              padding: isCollapsed ? '10px 0' : '7px 8px',
+              borderRadius: 8,
+              textDecoration: 'none',
+              fontSize: 13,
+              fontWeight: 500,
+              color: '#4B5563',
+              transition: 'background 0.12s',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.background = '#F7F8FA' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.background = 'transparent' }}
+          >
+            <i className="fas fa-cog" style={{ fontSize: 14, width: 16, textAlign: 'center', flexShrink: 0, color: '#9CA3AF' }} />
+            {!isCollapsed && <span>ตั้งค่า</span>}
+          </Link>
+        )}
+
         <button
           onClick={handleLogout}
           disabled={loggingOut}
-          title={isCollapsed ? "ออกจากระบบ" : undefined}
+          title={isCollapsed ? 'ออกจากระบบ' : undefined}
           style={{
-            display: 'flex', alignItems: 'center', gap: isCollapsed ? 0 : 9, padding: isCollapsed ? '8px 0' : '8px 10px', width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: isCollapsed ? 0 : 8,
             justifyContent: isCollapsed ? 'center' : 'flex-start',
-            borderRadius: 'var(--radius-sm)', color: 'var(--red)',
-            background: 'none', border: 'none', fontSize: 13, fontWeight: 500,
-            cursor: 'pointer', transition: 'all 0.15s',
+            padding: isCollapsed ? '10px 0' : '7px 8px',
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 500,
+            color: '#EF4444',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            width: '100%',
+            transition: 'background 0.12s',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
           }}
-          className="hover:bg-[var(--red-light)]"
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#FEF2F2' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
         >
-          <i className="fas fa-sign-out-alt" style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0 }}></i>
-          {!isCollapsed && <span style={{ whiteSpace: 'nowrap' }}>ออกจากระบบ</span>}
+          <i className="fas fa-sign-out-alt" style={{ fontSize: 14, width: 16, textAlign: 'center', flexShrink: 0, color: '#EF4444' }} />
+          {!isCollapsed && <span>ออกจากระบบ</span>}
         </button>
       </div>
     </aside>

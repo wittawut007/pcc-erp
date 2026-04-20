@@ -13,37 +13,49 @@ async function getSupabaseData() {
   try {
     const { createClient } = await import('@/lib/supabase/server')
     const supabase = await createClient()
-    const today = new Date().toISOString().split('T')[0]
+    const now = new Date()
+    const today = now.toISOString().split('T')[0]
+    const sixDaysAgo = new Date()
+    sixDaysAgo.setDate(now.getDate() - 5)
+    const startDateStr = sixDaysAgo.toISOString().split('T')[0]
+    
     const [{ data: todayPlan }, { data: jobOrders }, { data: recentLogs }, { data: lowStock }] = await Promise.all([
       supabase.from('production_plans').select('*,items:production_plan_items(*,product:products(*))').eq('plan_date', today).single(),
-      supabase.from('job_orders').select('*,plan_item:production_plan_items(product:products(name,category))').gte('created_at', today).order('created_at', { ascending: false }),
+      supabase.from('job_orders').select('*,plan_item:production_plan_items(product:products(name,category))').gte('created_at', startDateStr).order('created_at', { ascending: false }),
       supabase.from('activity_logs').select('*,profile:profiles(full_name,role)').order('created_at', { ascending: false }).limit(10),
       supabase.from('raw_materials').select('*').filter('qty_on_hand', 'lte', 'min_stock').limit(5),
     ])
-    return { todayPlan, jobOrders, recentLogs, lowStock }
+    return { todayPlan, jobOrders, recentLogs, lowStock, today }
   } catch {
-    return { todayPlan: null, jobOrders: null, recentLogs: null, lowStock: null }
+    return { todayPlan: null, jobOrders: null, recentLogs: null, lowStock: null, today: '' }
   }
 }
 
 export default async function DashboardPage() {
-  const { todayPlan, jobOrders, recentLogs, lowStock } = await getSupabaseData()
+  const { todayPlan, jobOrders, recentLogs, lowStock, today } = await getSupabaseData()
+
+  const todaysJobOrders = (jobOrders as any[])?.filter((j: any) => j.created_at >= today) || []
 
   const totalTarget = (todayPlan as any)?.total_qty ?? 0
-  const qtyCast = (jobOrders as any[])?.filter((j: any) => ['casting', 'curing', 'ready_demold', 'demolded'].includes(j.status)).reduce((s: number, j: any) => s + j.qty_cast, 0) ?? 0
-  const qtyCuring = (jobOrders as any[])?.filter((j: any) => ['curing', 'ready_demold'].includes(j.status)).length ?? 0
-  const qtyDemolded = (jobOrders as any[])?.filter((j: any) => j.status === 'demolded').reduce((s: number, j: any) => s + j.qty_cast, 0) ?? 0
+  const qtyCast = todaysJobOrders.filter((j: any) => ['casting', 'curing', 'ready_demold', 'demolded'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
+  const qtyCuring = todaysJobOrders.filter((j: any) => ['curing', 'ready_demold'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
+  const qtyDemolded = todaysJobOrders.filter((j: any) => j.status === 'demolded').reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
+
+  // Calculate defect rate from qc_logs or job_orders with defect status
+  const totalQcFail = todaysJobOrders.reduce((s: number, j: any) => s + (j.qty_defect ?? 0), 0)
+  const totalQcCast = qtyCast
+  const defectRate = totalQcCast > 0 ? ((totalQcFail / totalQcCast) * 100).toFixed(1) + '%' : '0%'
 
   const thMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
   const now = new Date()
   const dateDisplay = `${now.getDate()} ${thMonths[now.getMonth()]} ${now.getFullYear() + 543}`
 
   const kpiCards = [
-    { label: 'เป้าหมายวันนี้ (ชิ้น)', value: totalTarget || 850, badge: 'Target', icon: 'fa-bullseye', bg: 'var(--accent-light)', color: 'var(--accent)' },
-    { label: 'เทคอนกรีตแล้ว', value: qtyCast || 320, badge: 'Casting', icon: 'fa-truck-monster', bg: 'var(--indigo-light)', color: 'var(--indigo)' },
-    { label: 'กำลังบ่ม / รอถอดแบบ', value: qtyCuring || 415, badge: 'Curing', icon: 'fa-clock', bg: 'var(--amber-light)', color: 'var(--amber)' },
-    { label: 'ถอดแบบแล้ว (FG)', value: qtyDemolded || 115, badge: 'Demolded', icon: 'fa-cubes', bg: 'var(--green-light)', color: 'var(--green)' },
-    { label: 'อัตราของเสียวันนี้', value: '2.4%', badge: 'Defect', icon: 'fa-exclamation-circle', bg: 'var(--red-light)', color: 'var(--red)', isRed: true },
+    { label: 'เป้าหมายวันนี้ (ชิ้น)', value: totalTarget, badge: 'Target', icon: 'fa-bullseye', bg: 'var(--accent-light)', color: 'var(--accent)' },
+    { label: 'เทคอนกรีตแล้ว', value: qtyCast, badge: 'Casting', icon: 'fa-truck-monster', bg: 'var(--indigo-light)', color: 'var(--indigo)' },
+    { label: 'กำลังบ่ม / รอถอดแบบ', value: qtyCuring, badge: 'Curing', icon: 'fa-clock', bg: 'var(--amber-light)', color: 'var(--amber)' },
+    { label: 'ถอดแบบแล้ว (FG)', value: qtyDemolded, badge: 'Demolded', icon: 'fa-cubes', bg: 'var(--green-light)', color: 'var(--green)' },
+    { label: 'อัตราของเสียวันนี้', value: defectRate, badge: 'Defect', icon: 'fa-exclamation-circle', bg: 'var(--red-light)', color: 'var(--red)', isRed: true },
   ]
 
   const statusBadge: Record<string, { label: string; bg: string; color: string }> = {
@@ -82,6 +94,68 @@ export default async function DashboardPage() {
   const displayLowStock = (lowStock as any[])?.slice(0, 4) ?? mockLowStock
   const displayLogs = ((recentLogs as any[])?.length > 0) ? [] : mockLogs
 
+  // Map Real Chart Data
+  const categoriesMap = new Map()
+  if (todayPlan?.items) {
+    todayPlan.items.forEach((item: any) => {
+      const catName = item.product?.category || 'ไม่ระบุ'
+      if (!categoriesMap.has(catName)) categoriesMap.set(catName, { plan: 0, actual: 0 })
+      categoriesMap.get(catName).plan += (item.qty_target || 0)
+    })
+  }
+  todaysJobOrders.forEach((job: any) => {
+    const catName = job.plan_item?.product?.category || 'ไม่ระบุ'
+    if (!categoriesMap.has(catName)) categoriesMap.set(catName, { plan: 0, actual: 0 })
+    categoriesMap.get(catName).actual += (job.qty_cast || 0)
+  })
+
+  // dailyChart fallback to undefined so component can render mock or empty
+  const dailyChartData = categoriesMap.size > 0 ? {
+    labels: Array.from(categoriesMap.keys()),
+    planData: Array.from(categoriesMap.values()).map(v => v.plan),
+    actualData: Array.from(categoriesMap.values()).map(v => v.actual)
+  } : undefined
+
+  const days: {dateStr: string, label: string}[] = []
+  const daysShort = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.']
+  for (let i = 5; i >= 0; i--) {
+     const d = new Date()
+     d.setDate(d.getDate() - i)
+     days.push({
+       dateStr: d.toISOString().split('T')[0],
+       label: daysShort[d.getDay()]
+     })
+  }
+  
+  const catWeeklyMap = new Map()
+  ;(jobOrders as any[])?.forEach(job => {
+     const catName = job.plan_item?.product?.category || 'ไม่ระบุ'
+     if (!catWeeklyMap.has(catName)) catWeeklyMap.set(catName, { dates: {} })
+     const jobDate = job.created_at.split('T')[0]
+     catWeeklyMap.get(catName).dates[jobDate] = (catWeeklyMap.get(catName).dates[jobDate] || 0) + (job.qty_cast || 0)
+  })
+
+  const weeklyChartData = catWeeklyMap.size > 0 ? {
+    labels: days.map(d => d.label),
+    datasets: [] as any[]
+  } : undefined
+  
+  if (weeklyChartData) {
+    const colors = ['#2563EB', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444', '#14B8A6']
+    let colorIdx = 0
+    catWeeklyMap.forEach((val, catName) => {
+       if (colorIdx > 5) return
+       const c = colors[colorIdx++]
+       weeklyChartData.datasets.push({
+         label: catName,
+         data: days.map(d => val.dates[d.dateStr] || 0),
+         borderColor: c,
+         backgroundColor: c,
+         tension: 0.3, borderWidth: 2, pointRadius: 3
+       })
+    })
+  }
+
   return (
     <>
       <Header title="Executive Dashboard" subtitle={`อัปเดต: วันนี้ ${dateDisplay}`} />
@@ -116,7 +190,7 @@ export default async function DashboardPage() {
         {/* Mid Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 1fr)', gap: 16, marginBottom: 20 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-            <DashboardCharts />
+            <DashboardCharts dailyData={dailyChartData} weeklyData={weeklyChartData} />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>

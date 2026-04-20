@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'planner' | 'worker' | 'qc'
+export type UserRole = 'admin' | 'planner' | 'worker' | 'qc' | 'warehouse'
 
 export type ProductCategory =
   | 'A13 แผ่นพื้นตัน'
@@ -26,6 +26,7 @@ export interface Profile {
   employee_code: string
   avatar_url: string | null
   is_active: boolean
+  worker_token: string | null  // UUID สำหรับ QR Code access (เฉพาะ role = worker)
   created_at: string
 }
 

@@ -10,7 +10,7 @@ export default async function PlannerPage() {
 
   const { data: products } = await supabase
     .from('products')
-    .select('id, code, name, category, concrete_per_unit, unit')
+    .select('id, code, name, category, size, concrete_per_unit, unit, wip_code')
     .eq('is_active', true)
     .order('category')
 
@@ -25,14 +25,34 @@ export default async function PlannerPage() {
     .select('name, qty_on_hand, unit, min_stock')
     .order('category')
 
+  const { data: wipInventory } = await supabase
+    .from('wip_inventory')
+    .select('product_id, qty_on_hand')
+
+  // Fetch a generic active worker token for the QR code
+  const { data: workerProfile } = await supabase
+    .from('profiles')
+    .select('worker_token')
+    .eq('role', 'worker')
+    .eq('is_active', true)
+    .limit(1)
+    .single()
+
+  const workerToken = workerProfile?.worker_token || ''
+
   return (
     <>
-      <Header title="แผนการผลิต" subtitle={`วันที่ ${new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}`} />
+      <Header 
+        title="จัดการแผนการผลิตรายวัน (Planner)" 
+        subtitle="จัดการตั้งค่าเป้าหมายการผลิตและตรวจสอบ (BOM) โครงเหล็ก" 
+      />
       <PlannerClient
         products={products ?? []}
         todayPlan={todayPlan ?? null}
         rawMaterials={rawMaterials ?? []}
+        wipInventory={wipInventory ?? []}
         today={today}
+        workerToken={workerToken}
       />
     </>
   )

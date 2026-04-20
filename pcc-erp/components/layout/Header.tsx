@@ -4,11 +4,12 @@ import { createClient } from '@/lib/supabase/server'
 import type { Profile } from '@/lib/supabase/types'
 
 interface HeaderProps {
-  title: string
-  subtitle?: string
+  title: React.ReactNode
+  subtitle?: React.ReactNode
+  rightContent?: React.ReactNode
 }
 
-export default async function Header({ title, subtitle }: HeaderProps) {
+export default async function Header({ title, subtitle, rightContent }: HeaderProps) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const isConfigured = supabaseUrl && supabaseUrl !== 'your_supabase_project_url'
 
@@ -37,73 +38,54 @@ export default async function Header({ title, subtitle }: HeaderProps) {
   }
 
   const now = new Date()
-  const thMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
-  const dateStr = `${now.getDate()} ${thMonths[now.getMonth()]} ${now.getFullYear() + 543}`
+  const dateStr = new Intl.DateTimeFormat('th-TH', { 
+    weekday: 'long', 
+    day: 'numeric', 
+    month: 'short', 
+    year: 'numeric' 
+  }).format(now)
 
   return (
-    <header
-      style={{
-        height: 'var(--header-height)',
-        background: 'var(--surface)',
-        borderBottom: '1px solid var(--border)',
-        padding: '0 36px',
-      }}
-      className="flex items-center justify-between flex-shrink-0"
-    >
+    <header style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 32, paddingRight: 32, background: 'var(--surface)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
       {/* Left */}
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+      <div className="flex flex-col">
+        <h1 className="text-[16px] font-[700] text-erp-text-primary m-0">
           {title}
         </h1>
         {subtitle && (
-          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{subtitle}</p>
+          <p className="text-[11px] text-erp-text-muted mt-0.5">{subtitle}</p>
         )}
       </div>
 
       <div className="flex-1"></div>
 
       {/* Right */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        {/* Date Pill */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 7,
-          background: 'var(--bg)', border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm)', padding: '5px 11px',
-          fontSize: 12, color: 'var(--text-secondary)',
-        }}>
-          <i className="fas fa-calendar" style={{ fontSize: 11, color: 'var(--accent)' }}></i>
-          <span>{dateStr}</span>
-        </div>
+      <div className="flex items-center gap-6">
+        {/* Custom Right Content or Default Date Pill */}
+        {rightContent ? rightContent : (
+          <div className="flex items-center gap-3 bg-blue-50 border border-blue-100/60 rounded-xl px-5 py-2.5 shadow-sm mr-2">
+            <div className="flex items-center justify-center w-7 h-7 bg-white rounded-md shadow-sm text-blue-600">
+              <i className="fas fa-calendar-day text-[12px]"></i>
+            </div>
+            <span className="text-[14px] font-bold text-blue-800 tracking-wide">{dateStr}</span>
+          </div>
+        )}
 
-        {/* Notification */}
-        <div style={{
-          width: 32, height: 32, background: 'var(--bg)',
-          border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', position: 'relative',
-        }}>
-          <i className="far fa-bell" style={{ fontSize: 13, color: 'var(--text-secondary)' }}></i>
-          <span style={{
-            position: 'absolute', top: 5, right: 5,
-            width: 7, height: 7, background: 'var(--red)',
-            borderRadius: '50%', border: '1.5px solid white',
-          }}></span>
-        </div>
 
         {/* User Info */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
-          <div style={{ width: 36, height: 36, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: '2px solid var(--border)' }}>
+        <div className="flex items-center gap-3 cursor-pointer">
+          <div className="w-[36px] h-[36px] rounded-full overflow-hidden shrink-0 border-2 border-erp-border">
             <img
               src={profile?.avatar_url || 'https://i.pravatar.cc/150?img=11'}
               alt="Profile"
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              className="w-full h-full object-cover"
             />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+          <div className="flex flex-col">
+            <span className="text-[13px] font-[600] text-erp-text-primary leading-[1.2]">
               {profile?.full_name || userEmail || 'วริศรา ผู้ดูแล'}
             </span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.2, marginTop: 2 }}>
+            <span className="text-[11px] text-erp-text-muted leading-[1.2] mt-0.5">
               {roleLabel[profile?.role || 'admin']}
             </span>
           </div>

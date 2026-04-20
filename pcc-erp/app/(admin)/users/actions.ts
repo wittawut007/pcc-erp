@@ -22,16 +22,23 @@ export async function createUserAction(formData: FormData) {
 
     if (authError) throw authError
 
-    // 2. Note: Our trigger "on_auth_user_created" might automatically insert a profile.
-    // If the trigger already exists and sets name initially, we ensure it updates correctly.
-    // Let's directly update the public.profiles just to be safe.
     if (authData.user) {
-      await supabaseAdmin.from('profiles').update({
-        full_name: fullName,
-        role: role,
-        employee_code: employeeCode,
-        is_active: true
-      }).eq('id', authData.user.id)
+      // 2. upsert แทน update เพื่อรองรับทั้งกรณีที่ trigger สร้าง profile ไว้แล้ว
+      //    และกรณีที่ยังไม่มี profile row เลย (ป้องกัน silent fail)
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .upsert({
+          id: authData.user.id,
+          email: email,
+          full_name: fullName,
+          role: role,
+          employee_code: employeeCode,
+          is_active: true,
+        }, {
+          onConflict: 'id',  // ถ้า id ซ้ำ (trigger สร้างไว้แล้ว) ให้ update แทน
+        })
+
+      if (profileError) throw new Error(`สร้าง profile ไม่สำเร็จ: ${profileError.message}`)
     }
 
     return { success: true, user: authData.user }
@@ -39,6 +46,7 @@ export async function createUserAction(formData: FormData) {
     return { success: false, error: error.message }
   }
 }
+
 
 export async function updateUserAction(formData: FormData) {
   const userId = formData.get('userId') as string
@@ -72,6 +80,29 @@ export async function updateUserAction(formData: FormData) {
     if (profileError) throw profileError
 
     return { success: true }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+}
+
+export async function generateWorkerTokenAction(formData: FormData) {
+  const userId = formData.get('userId') as string
+
+  try {
+    const supabaseAdmin = createAdminClient()
+
+    // สร้าง UUID ใหม่สำหรับ worker_token
+    const { data: tokenData } = await supabaseAdmin.rpc('gen_random_uuid')
+    const newToken = tokenData ?? crypto.randomUUID()
+
+    const { error } = await supabaseAdmin
+      .from('profiles')
+      .update({ worker_token: newToken })
+      .eq('id', userId)
+
+    if (error) throw error
+
+    return { success: true, token: newToken }
   } catch (error: any) {
     return { success: false, error: error.message }
   }
