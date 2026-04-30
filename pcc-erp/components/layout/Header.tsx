@@ -63,11 +63,9 @@ export default async function Header({ title, subtitle, rightContent }: HeaderPr
       <div className="flex items-center gap-6">
         {/* Custom Right Content or Default Date Pill */}
         {rightContent ? rightContent : (
-          <div className="flex items-center gap-3 bg-blue-50 border border-blue-100/60 rounded-xl px-5 py-2.5 shadow-sm mr-2">
-            <div className="flex items-center justify-center w-7 h-7 bg-white rounded-md shadow-sm text-blue-600">
-              <i className="fas fa-calendar-day text-[12px]"></i>
-            </div>
-            <span className="text-[14px] font-bold text-blue-800 tracking-wide">{dateStr}</span>
+          <div className="flex items-center gap-2.5 mr-3 text-blue-700">
+            <i className="fas fa-calendar-day text-[15px]"></i>
+            <span className="text-[14px] font-[600]">{dateStr}</span>
           </div>
         )}
 

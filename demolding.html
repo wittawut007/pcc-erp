@@ -187,7 +187,7 @@
             </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; min-height: 0; align-items: start;">
+        <div style="display: grid; grid-template-columns: 1fr; gap: 24px; min-height: 0; align-items: start;">
             
             <!-- Left Column: Curing Queue Table -->
             <div class="card" style="padding: 0; display: flex; flex-direction: column; overflow: hidden;">
@@ -195,7 +195,7 @@
                     <h2 style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 8px;">
                         <i class="fas fa-layer-group" style="color: var(--accent);"></i> คิวงานที่กำลังบ่ม (Curing Queue)
                     </h2>
-                    <span class="badge badge-blue-outline" style="border: none; background: var(--accent-light); color: var(--accent);">รอตรวจสอบ 5 รายการ</span>
+                    <span class="badge badge-blue-outline" style="border: none; background: var(--accent-light); color: var(--accent);">กำลังบ่ม 3 รายการ</span>
                 </div>
 
                 <div class="table-wrap">
@@ -211,67 +211,11 @@
                         </thead>
                         <tbody>
                             
-                            <!-- Active Selection Row (Ready) -->
+                            <!-- Not Ready Row 1 -->
                             <tr class="active-row">
                                 <td>
-                                    <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace;">#JO-2602-098</div>
-                                    <div style="font-size: 14px; font-weight: 700; color: var(--accent); margin: 2px 0;">เสาเข็ม .15x.15 2.00 ม. (10m)</div>
-                                    <div style="font-size: 11px; color: var(--text-muted);">เป้าหมาย: 50 ต้น</div>
-                                </td>
-                                <td style="text-align: center;">
-                                    <span class="badge badge-gray" style="border: 1px solid var(--border); background: white;">แท่น A</span>
-                                </td>
-                                <td style="text-align: center;">
-                                    <div style="font-weight: 700; color: var(--text-primary);">เมื่อวาน</div>
-                                    <div style="font-size: 11px; color: var(--text-muted);">10:30 น.</div>
-                                </td>
-                                <td>
-                                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
-                                        <span style="font-weight: 700; color: var(--green);">22 ชม.</span>
-                                        <span style="color: var(--text-muted);">เป้า: 18 ชม.</span>
-                                    </div>
-                                    <div class="progress-bar-wrap">
-                                        <div class="progress-bar-fill" style="width: 100%; background: var(--green);"></div>
-                                    </div>
-                                </td>
-                                <td style="text-align: center;">
-                                    <span class="badge badge-green-outline"><i class="fas fa-check-circle"></i> พร้อมถอด</span>
-                                </td>
-                            </tr>
-
-                            <!-- Ready Row 2 -->
-                            <tr>
-                                <td>
-                                    <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace;">#JO-2602-099</div>
-                                    <div style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 2px 0;">แผ่นพื้น PL50 4@4 Solid Plank</div>
-                                    <div style="font-size: 11px; color: var(--text-muted);">เป้าหมาย: 150 แผ่น</div>
-                                </td>
-                                <td style="text-align: center;">
-                                    <span class="badge badge-gray" style="border: 1px solid var(--border); background: white;">แท่น B</span>
-                                </td>
-                                <td style="text-align: center;">
-                                    <div style="font-weight: 700; color: var(--text-primary);">เมื่อวาน</div>
-                                    <div style="font-size: 11px; color: var(--text-muted);">14:00 น.</div>
-                                </td>
-                                <td>
-                                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
-                                        <span style="font-weight: 700; color: var(--green);">18.5 ชม.</span>
-                                        <span style="color: var(--text-muted);">เป้า: 18 ชม.</span>
-                                    </div>
-                                    <div class="progress-bar-wrap">
-                                        <div class="progress-bar-fill" style="width: 100%; background: var(--green);"></div>
-                                    </div>
-                                </td>
-                                <td style="text-align: center;">
-                                    <span class="badge badge-green-outline"><i class="fas fa-check-circle"></i> พร้อมถอด</span>
-                                </td>
-                            </tr>
-
-                            <!-- Not Ready Row 1 -->
-                            <tr class="disabled">
-                                <td>
                                     <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace;">#JO-2603-001</div>
-                                    <div style="font-size: 14px; font-weight: 700; color: var(--text-muted); margin: 2px 0;">กำแพงกันดิน Type 1</div>
+                                    <div style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 2px 0;">กำแพงกันดิน Type 1</div>
                                     <div style="font-size: 11px; color: var(--text-muted);">เป้าหมาย: 25 ชิ้น</div>
                                 </td>
                                 <td style="text-align: center;">
@@ -294,80 +238,65 @@
                                     <span class="badge badge-orange-outline"><i class="fas fa-hourglass-half"></i> กำลังบ่ม</span>
                                 </td>
                             </tr>
+                            
+                            <!-- Not Ready Row 2 -->
+                            <tr>
+                                <td>
+                                    <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace;">#JO-2603-002</div>
+                                    <div style="font-size: 14px; font-weight: 700; color: var(--text-muted); margin: 2px 0;">ท่อระบายน้ำ คสล. D0.60m</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">เป้าหมาย: 10 ท่อน</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-gray" style="border: 1px solid var(--border); background: white;">แท่น D</span>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; color: var(--text-muted);">วันนี้</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">08:00 น.</div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                                        <span style="font-weight: 700; color: #f97316;">0 ชม. 30 นาที</span>
+                                        <span style="color: var(--text-muted);">เป้า: 12 ชม.</span>
+                                    </div>
+                                    <div class="progress-bar-wrap">
+                                        <div class="progress-bar-fill" style="width: 5%; background: #fca5a5;"></div>
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-orange-outline"><i class="fas fa-hourglass-half"></i> กำลังบ่ม</span>
+                                </td>
+                            </tr>
+                            
+                            <!-- Not Ready Row 3 -->
+                            <tr>
+                                <td>
+                                    <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace;">#JO-2603-003</div>
+                                    <div style="font-size: 14px; font-weight: 700; color: var(--text-muted); margin: 2px 0;">แผ่นพื้น PL50 4@4 Solid Plank</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">เป้าหมาย: 80 แผ่น</div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-gray" style="border: 1px solid var(--border); background: white;">แท่น E</span>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div style="font-weight: 700; color: var(--text-muted);">เมื่อวาน</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">20:00 น.</div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                                        <span style="font-weight: 700; color: #f97316;">12 ชม. 30 นาที</span>
+                                        <span style="color: var(--text-muted);">เป้า: 18 ชม.</span>
+                                    </div>
+                                    <div class="progress-bar-wrap">
+                                        <div class="progress-bar-fill" style="width: 70%; background: #fca5a5;"></div>
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge badge-orange-outline"><i class="fas fa-hourglass-half"></i> กำลังบ่ม</span>
+                                </td>
+                            </tr>
 
                         </tbody>
                     </table>
-                </div>
-            </div>
-
-            <!-- Right Column: QC Form -->
-            <div class="card" style="padding: 0; box-shadow: var(--shadow-sm); overflow: hidden; position: relative; border-top: 4px solid var(--accent);">
-                <div class="form-panel">
-                    
-                    <div class="form-header">
-                        <h2 style="margin: 0; font-size: 14px; font-weight: 700; color: var(--text-primary);">บันทึกผลการถอดแบบ</h2>
-                        <span style="font-size: 10px; font-weight: 700; background: var(--accent-light); color: var(--accent); padding: 4px 8px; border-radius: 4px; text-transform: uppercase;">QC Form</span>
-                    </div>
-
-                    <div class="form-body custom-scrollbar">
-                        
-                        <!-- Selected Job Info -->
-                        <div class="job-card">
-                            <div class="meta">งานที่เลือก: #JO-2602-098</div>
-                            <div class="title">เสาเข็ม .15x.15 2.00 ม. (10m)</div>
-                            <div class="footer">
-                                <span style="font-size: 12px; color: var(--text-secondary);">เป้าหมายการผลิต:</span>
-                                <div>
-                                    <span style="font-size: 18px; font-weight: 700; color: var(--text-primary);">50</span>
-                                    <span style="font-size: 12px; color: var(--text-muted);">ต้น</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Data Entry -->
-                        <div class="input-group success">
-                            <label><i class="fas fa-check-circle"></i> 1. ยอดงานดี (ผ่าน QC)</label>
-                            <div class="input-field">
-                                <input type="number" value="48">
-                                <span>ต้น</span>
-                            </div>
-                            <div class="info-text"><i class="fas fa-info-circle" style="color: var(--green);"></i> ยอดนี้จะถูกนำเข้าคลังสินค้าสำเร็จรูป (FG) อัตโนมัติ</div>
-                        </div>
-
-                        <div class="input-group danger">
-                            <label><i class="fas fa-heart-broken"></i> 2. ยอดของเสีย (Defect)</label>
-                            <div class="input-field">
-                                <input type="number" value="2">
-                                <span>ต้น</span>
-                            </div>
-                            
-                            <div class="defect-reason">
-                                <label style="font-size: 11px; margin-bottom: 4px; display: block; color: var(--red);">ระบุสาเหตุของเสีย <span style="color: #fca5a5;">*</span></label>
-                                <select>
-                                    <option value="" disabled>-- เลือกสาเหตุหลัก --</option>
-                                    <option value="crack">คอนกรีตแตก/ร้าว (Cracking)</option>
-                                    <option value="honeycomb" selected>คอนกรีตเป็นโพรง (Honeycomb)</option>
-                                    <option value="chip">บิ่น/มุมหักตอนถอดแบบ (Chipping)</option>
-                                    <option value="dimension">มิติ/ขนาดไม่ได้ตามแบบ (Dimension)</option>
-                                    <option value="other">อื่นๆ (ระบุในหมายเหตุ)</option>
-                                </select>
-                            </div>
-                            
-                            <div class="info-text" style="margin-top: 12px;"><i class="fas fa-chart-pie" style="color: #fca5a5;"></i> ข้อมูลนี้จะถูกส่งไปวิเคราะห์ใน Dashboard ของผู้บริหาร</div>
-                        </div>
-                        
-                    </div>
-
-                    <div class="form-footer">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-size: 13px;">
-                            <span style="font-weight: 600; color: var(--text-muted);">ยอดรวมทั้งหมด:</span>
-                            <span style="font-weight: 700; color: var(--text-primary); background: var(--bg); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border);">50 / 50 ต้น</span>
-                        </div>
-                        <button class="btn-submit">
-                            <i class="fas fa-save"></i> ยืนยันจบงาน (Send to FG)
-                        </button>
-                    </div>
-
                 </div>
             </div>
 

@@ -175,7 +175,7 @@
             </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; min-height: 0; align-items: start;">
+        <div style="display: grid; grid-template-columns: 1fr; gap: 24px; min-height: 0; align-items: start;">
             
             <div class="card" style="padding: 0; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-sm);">
                 
@@ -315,70 +315,7 @@
                 </div>
             </div>
 
-            <div class="form-dark shadow-sm">
-                
-                <div class="form-dark-header">
-                    <i class="fas fa-tools"></i> บันทึกงานประกอบเหล็ก
-                </div>
 
-                <div class="form-dark-body custom-scrollbar">
-                    
-                    <div class="form-dark-field">
-                        <label>เลือกโครงเหล็กที่เตรียมเสร็จ <span style="color: #f87171;">*</span></label>
-                        <select class="form-dark-input focus:ring-blue-500">
-                            <option value="" disabled>-- เลือกชิ้นงาน (WIP) --</option>
-                            <option value="WIP-A42" selected>เมชกำแพงกันดิน Type 1 (กำลังขาดของ)</option>
-                            <option value="WIP-A41">โครงเหล็กเสาเข็ม .15x.15 2.00 ม. (10m)</option>
-                            <option value="WIP-STP-01">เหล็กปลอกเสา</option>
-                        </select>
-                    </div>
-
-                    <div class="form-dark-field">
-                        <label>จำนวนที่ทำสำเร็จ <span style="color: #f87171;">*</span></label>
-                        <div style="display: flex; border-radius: var(--radius-sm); overflow: hidden;">
-                            <input type="number" value="15" style="flex: 1; background: #334155; border: 1px solid #475569; border-right: none; color: #60a5fa; padding: 12px; font-size: 24px; font-weight: 700; text-align: right; outline: none;">
-                            <span style="background: #475569; border: 1px solid #475569; padding: 12px 16px; font-weight: 700; display: flex; align-items: center; color: #cbd5e1; font-size: 16px;">แผง</span>
-                        </div>
-                    </div>
-
-                    <div class="bom-preview">
-                        <div class="bom-header">
-                            <i class="fas fa-microchip" style="margin-right: 6px;"></i> ระบบจะอัปเดตสต็อกอัตโนมัติตาม BOM:
-                        </div>
-                        
-                        <div class="bom-row" style="align-items: flex-start;">
-                            <div style="color: #f87171; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                                <div style="background: rgba(239, 68, 68, 0.2); padding: 4px; border-radius: 4px;"><i class="fas fa-minus" style="font-size: 10px;"></i></div>
-                                คลังวัตถุดิบ (Raw)
-                            </div>
-                            <div style="text-align: right; color: #cbd5e1; display: flex; flex-direction: column; gap: 4px;">
-                                <div>ตัด เหล็ก DB12 <span class="bom-tag">30 เส้น</span></div>
-                                <div>ตัด ลวดผูก <span class="bom-tag">0.5 ม้วน</span></div>
-                            </div>
-                        </div>
-
-                        <div class="bom-row" style="align-items: center;">
-                            <div style="color: #34d399; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                                <div style="background: rgba(16, 185, 129, 0.2); padding: 4px; border-radius: 4px;"><i class="fas fa-plus" style="font-size: 10px;"></i></div>
-                                คลังพร้อมผลิต (WIP)
-                            </div>
-                            <div style="text-align: right;">
-                                <div style="color: #34d399; font-weight: 700; background: rgba(16, 185, 129, 0.1); padding: 4px 8px; border-radius: 4px;">
-                                    เพิ่ม เมชกำแพง <span style="color: white; margin-left: 4px;">15 แผง</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                </div>
-
-                <div class="form-dark-footer">
-                    <button class="btn-blue group" style="position: relative; overflow: hidden;">
-                        <i class="fas fa-sync-alt"></i> ยืนยันตัดสต็อก RM และเพิ่ม WIP
-                    </button>
-                </div>
-
-            </div>
 
         </div>
     </div>

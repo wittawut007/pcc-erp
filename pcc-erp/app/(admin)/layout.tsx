@@ -35,6 +35,11 @@ export default async function AdminLayout({
         redirect('/unauthorized?reason=worker_login')
       }
 
+      // QC ใช้ mobile layout → redirect
+      if (fetchedRole === 'qc') {
+        redirect('/qc-inspect')
+      }
+
       if (fetchedRole) {
         role = fetchedRole
       }

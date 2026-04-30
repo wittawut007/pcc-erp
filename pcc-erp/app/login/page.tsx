@@ -42,6 +42,12 @@ export default function LoginPage() {
 
     // Worker ถูก Block — ไม่อนุญาตให้ Login ผ่านหน้านี้
     if (role === 'worker') {
+      if (process.env.NODE_ENV === 'development') {
+        // ข้อยกเว้นสำหรับ Dev ให้ Login เข้าสู่ระบบ Worker ได้เลย
+        router.push('/worker')
+        router.refresh()
+        return
+      }
       await supabase.auth.signOut()
       setWorkerBlocked(true)
       setLoading(false)
@@ -123,7 +129,7 @@ export default function LoginPage() {
                 ชื่อผู้ใช้งาน (USERNAME)
               </label>
               <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-300">
+                <span className="absolute inset-y-0 left-0 pl-5 flex items-center text-slate-300">
                   <i className="fas fa-user text-[13px]"></i>
                 </span>
                 <input
@@ -133,8 +139,8 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your username"
                   required
-                  className="w-full pr-4 rounded-lg border border-slate-200 bg-white outline-none transition-all text-gray-800 placeholder:text-slate-300 font-medium focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                  style={{ paddingLeft: '38px', paddingTop: '12px', paddingBottom: '12px', fontSize: '13px', height: '46px' }}
+                  className="w-full pr-4 rounded-lg border border-blue-50 bg-[#EEF4FF] outline-none transition-all text-gray-800 placeholder:text-slate-300 font-medium focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                  style={{ paddingLeft: '48px', paddingTop: '12px', paddingBottom: '12px', fontSize: '13px', height: '46px' }}
                 />
               </div>
             </div>
@@ -149,7 +155,7 @@ export default function LoginPage() {
                 รหัสผ่าน (PASSWORD)
               </label>
               <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-300">
+                <span className="absolute inset-y-0 left-0 pl-5 flex items-center text-slate-300">
                   <i className="fas fa-lock text-[13px]"></i>
                 </span>
                 <input
@@ -159,13 +165,13 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full pr-10 rounded-lg border border-slate-200 bg-white outline-none transition-all text-gray-800 placeholder:text-slate-300 font-medium focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                  style={{ paddingLeft: '38px', paddingTop: '12px', paddingBottom: '12px', fontSize: '13px', height: '46px' }}
+                  className="w-full pr-12 rounded-lg border border-blue-50 bg-[#EEF4FF] outline-none transition-all text-gray-800 placeholder:text-slate-300 font-medium focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                  style={{ paddingLeft: '48px', paddingTop: '12px', paddingBottom: '12px', fontSize: '13px', height: '46px' }}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-300 hover:text-slate-400"
+                  className="absolute inset-y-0 right-0 pr-5 flex items-center text-slate-300 hover:text-slate-400"
                 >
                   <i className={`fas ${showPass ? 'fa-eye-slash' : 'fa-eye'} text-xs`}></i>
                 </button>
@@ -199,6 +205,42 @@ export default function LoginPage() {
                 <span>เข้าสู่ระบบ (Sign in)</span>
               )}
             </button>
+            
+            {/* Quick Login for Dev */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="mt-4 border-t border-slate-200 pt-6">
+                <div className="text-center mb-4">
+                  <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                    Dev Mode Active
+                  </span>
+                  <p className="text-slate-500 text-xs mt-2.5 font-medium">เข้าสู่ระบบด่วนด้วยข้อมูลทดสอบ</p>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[
+                    { role: 'admin', label: 'Admin', color: 'bg-slate-800 text-white hover:bg-slate-700' },
+                    { role: 'planner', label: 'Planner', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
+                    { role: 'material', label: 'Material', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200' },
+                    { role: 'concrete', label: 'Concrete', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
+                    { role: 'warehouse', label: 'Warehouse', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
+                    { role: 'qc', label: 'QC', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200' },
+                    { role: 'worker', label: 'Worker', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200' },
+                  ].map((t) => (
+                    <button
+                      key={t.role}
+                      type="button"
+                      onClick={() => {
+                        setEmail(`${t.role}@example.com`);
+                        setPassword('password123');
+                      }}
+                      className={`text-[11px] font-bold py-2.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 ${t.color}`}
+                    >
+                      <i className={`fas ${t.role === 'admin' ? 'fa-user-shield' : t.role === 'qc' ? 'fa-clipboard-check' : t.role === 'worker' ? 'fa-hard-hat' : 'fa-user'}`}></i>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </form>
 
           {/* Footer */}

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { canAccess, getDefaultPath } from '@/lib/rbac'
 import type { UserRole } from '@/lib/supabase/types'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -81,7 +81,46 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // ─── กรณี C: Admin/Standard Routes ───────────────────────────────────────
+  // ─── กรณี C: QC Mobile Route ──────────────────────────────────────────────
+  // /qc → ต้องมี Session ปกติ + role = 'qc'
+  if (path === '/qc-inspect' || path.startsWith('/qc-inspect/')) {
+    let supabaseResponseQC = NextResponse.next({ request })
+    const supabaseQC = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() { return request.cookies.getAll() },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          supabaseResponseQC = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponseQC.cookies.set(name, value, options)
+          )
+        },
+      },
+    })
+
+    const { data: { user } } = await supabaseQC.auth.getUser()
+    if (!user) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+
+    try {
+      const { data: profile } = await supabaseQC
+        .from('profiles')
+        .select('role, is_active')
+        .eq('id', user.id)
+        .single()
+
+      if (!profile || !profile.is_active || (profile.role !== 'qc' && profile.role !== 'admin')) {
+        return NextResponse.redirect(new URL('/unauthorized?reason=forbidden', request.url))
+      }
+    } catch {
+      return NextResponse.redirect(new URL('/unauthorized?reason=forbidden', request.url))
+    }
+
+    return supabaseResponseQC
+  }
+
+  // ─── กรณี D: Admin/Standard Desktop Routes ───────────────────────────────
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
@@ -133,9 +172,14 @@ export async function middleware(request: NextRequest) {
 
       const role = (profile?.role ?? 'admin') as UserRole
 
-      // Worker login ปกติ → ไม่อนุญาต
+      // Worker login ผ่าน /login ปกติ → ไม่อนุญาต
       if (role === 'worker') {
         return NextResponse.redirect(new URL('/unauthorized?reason=worker_login', request.url))
+      }
+
+      // QC → redirect ไป mobile route
+      if (role === 'qc') {
+        return NextResponse.redirect(new URL('/qc-inspect', request.url))
       }
 
       // ตรวจสิทธิ์ตาม role

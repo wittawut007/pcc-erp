@@ -22,16 +22,9 @@ export default async function ProductionOrdersPage() {
     .order('plan_date', { ascending: false })
     .limit(60)
 
-  const title = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 18, color: '#1F2937' }}>
-      <i className="fas fa-file-invoice text-blue-600"></i>
-      ใบสั่งผลิต (Production Orders)
-    </div>
-  )
-
   return (
     <>
-      <Header title={title} subtitle="รายการสั่งผลิตทั้งหมด — คลิกเพื่อดูรายละเอียดและพิมพ์ใบสั่งผลิต" />
+      <Header title="ใบสั่งผลิต (Production Orders)" subtitle="รายการสั่งผลิตทั้งหมด — คลิกเพื่อดูรายละเอียดและพิมพ์ใบสั่งผลิต" />
       <ProductionOrdersClient plans={plans ?? []} />
     </>
   )

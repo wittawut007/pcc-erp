@@ -167,7 +167,14 @@ function UnauthorizedContent() {
               }
             </button>
           )}
-          <p style={{ fontSize: 11, color: '#CBD5E1', margin: 0 }}>
+          {config.showBackToQr && (
+            <button onClick={() => window.location.href = '/api/auth/test-worker'}
+              style={{ width: '100%', padding: '12px 0', background: '#0F172A', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', marginBottom: 8 }}>
+              <i className="fas fa-vial" style={{ marginRight: 8 }}></i>
+              จำลองการเข้าสู่ระบบ (สำหรับทดสอบ)
+            </button>
+          )}
+          <p style={{ fontSize: 11, color: '#CBD5E1', margin: 0, marginTop: 8 }}>
             หากพบปัญหา ติดต่อ IT Support
           </p>
         </div>

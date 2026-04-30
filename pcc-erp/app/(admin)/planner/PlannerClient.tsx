@@ -13,6 +13,8 @@ interface Product {
   size: string
   concrete_per_unit: number
   unit: string
+  bom_code: string | null
+  wip_code: string | null
 }
 
 interface RawMaterial {
@@ -140,43 +142,65 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
     setPlanItems(planItems.filter((_, i) => i !== idx))
   }
 
+  const savePlanData = async (status: 'draft' | 'confirmed') => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Not authenticated')
+
+    const payload: any = {
+      plan_date: today,
+      created_by: user.id,
+      status,
+      total_qty: totalQty,
+      total_concrete: totalConcrete
+    }
+    if (todayPlan?.id) payload.id = todayPlan.id
+
+    const { data: plan, error: planError } = await supabase
+      .from('production_plans')
+      .upsert(payload)
+      .select()
+      .single()
+    if (planError) throw planError
+
+    // Safe deletion: delete job_orders first to avoid FK violations
+    const { data: oldItems } = await supabase.from('production_plan_items').select('id').eq('plan_id', plan.id)
+    if (oldItems && oldItems.length > 0) {
+      const itemIds = oldItems.map(i => i.id)
+      await supabase.from('job_orders').delete().in('plan_item_id', itemIds)
+    }
+    await supabase.from('production_plan_items').delete().eq('plan_id', plan.id)
+
+    let createdItems: any[] = []
+    if (planItems.length > 0) {
+      const { data: items, error: itemsError } = await supabase.from('production_plan_items').insert(
+        planItems.map(item => ({
+          plan_id: plan.id,
+          product_id: item.productId,
+          bed: item.bed,
+          qty_target: item.qty,
+          status: 'pending',
+        }))
+      ).select()
+      if (itemsError) throw itemsError
+      createdItems = items || []
+    }
+
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: `บันทึกแผนการผลิต (${status})`,
+      entity_type: 'production_plan',
+      entity_id: plan.id,
+      detail: `วันที่ ${today} รวม ${totalQty} ชิ้น คอนกรีต ${totalConcrete.toFixed(2)} ม.³`,
+    })
+
+    return { plan, items: createdItems }
+  }
+
   const handleSaveDraft = async () => {
     setSaving(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
-      const { data: plan, error: planError } = await supabase
-        .from('production_plans')
-        .upsert({ plan_date: today, created_by: user.id, status: 'draft', total_qty: totalQty, total_concrete: totalConcrete })
-        .select()
-        .single()
-      if (planError) throw planError
-
-      await supabase.from('production_plan_items').delete().eq('plan_id', plan.id)
-
-      if (planItems.length > 0) {
-        const { error: itemsError } = await supabase.from('production_plan_items').insert(
-          planItems.map(item => ({
-            plan_id: plan.id,
-            product_id: item.productId,
-            bed: item.bed,
-            qty_target: item.qty,
-            status: 'pending',
-          }))
-        )
-        if (itemsError) throw itemsError
-      }
-
-      await supabase.from('activity_logs').insert({
-        user_id: user.id,
-        action_type: 'บันทึกแผนการผลิต (Draft)',
-        entity_type: 'production_plan',
-        entity_id: plan.id,
-        detail: `วันที่ ${today} รวม ${totalQty} ชิ้น คอนกรีต ${totalConcrete.toFixed(2)} ม.³`,
-      })
-
-      toast.success('บันทึกแผนการผลิตสำเร็จ!')
+      const { plan } = await savePlanData('draft')
+      toast.success('บันทึกแบบร่างสำเร็จ!')
       supabaseRouter.push(`/production-order/${plan.id}`)
     } catch (e: any) {
       toast.error('เกิดข้อผิดพลาด: ' + e.message)
@@ -188,12 +212,7 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
   const handleConfirmPlan = async () => {
     setConfirming(true)
     try {
-      await handleSaveDraft()
-      const { data: plan } = await supabase.from('production_plans').select('id').eq('plan_date', today).single()
-      if (!plan) throw new Error('Plan not found')
-
-      await supabase.from('production_plans').update({ status: 'confirmed' }).eq('id', plan.id)
-      const { data: items } = await supabase.from('production_plan_items').select('id, bed, qty_target').eq('plan_id', plan.id)
+      const { plan, items } = await savePlanData('confirmed')
 
       if (items && items.length > 0) {
         const { error: orderError } = await supabase.from('job_orders').insert(
@@ -208,8 +227,6 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
       }
 
       toast.success('ยืนยันแผนการผลิตและสร้างคิวงานเทปูนแล้ว!')
-
-      // Navigate to the dedicated production order print page
       supabaseRouter.push(`/production-order/${plan.id}`)
     } catch (e: any) {
       toast.error('เกิดข้อผิดพลาด: ' + e.message)

@@ -34,7 +34,7 @@ async function getSupabaseData() {
 export default async function DashboardPage() {
   const { todayPlan, jobOrders, recentLogs, lowStock, today } = await getSupabaseData()
 
-  const todaysJobOrders = (jobOrders as any[])?.filter((j: any) => j.created_at >= today) || []
+  const todaysJobOrders = (jobOrders as any[])?.filter((j: any) => j.created_at >= (today ?? '')) || []
 
   const totalTarget = (todayPlan as any)?.total_qty ?? 0
   const qtyCast = todaysJobOrders.filter((j: any) => ['casting', 'curing', 'ready_demold', 'demolded'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)

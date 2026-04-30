@@ -40,7 +40,7 @@ export default async function DemoldingPage() {
 
   return (
     <>
-      <Header title="งานถอดแบบ & QC" subtitle="บันทึกจำนวนชิ้นดีและของเสียหลังถอดแบบ" />
+      <Header title="งานตัดยก & ตรวจสอบ" subtitle="บันทึกจำนวนชิ้นดีและของเสียหลังตัดยก & ตรวจสอบ" />
       <DemoldingClient readyJobs={readyJobs ?? []} recentDemolding={recentDemolding ?? []} workers={workers ?? []} />
     </>
   )

@@ -15,7 +15,10 @@ export default async function ProductsPage() {
 
   return (
     <>
-      <Header title="ข้อมูลสินค้าและ BOM" subtitle="จัดการข้อมูลสินค้า Precast Concrete ทุกประเภท" />
+      <Header 
+        title="จัดการข้อมูลสินค้า (Product Master Data)" 
+        subtitle="จัดการข้อมูลสินค้า Precast Concrete ทุกประเภท" 
+      />
       <ProductsClient products={products ?? []} />
     </>
   )

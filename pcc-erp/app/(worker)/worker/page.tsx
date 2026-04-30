@@ -20,8 +20,8 @@ export default async function WorkerPage() {
   // Also fetch defect reasons from the same constants or hardcode in client
   
   return (
-    <div style={{ minHeight: '100vh', background: '#F1F5F9', display: 'flex', justifyContent: 'center' }}>
-      <div style={{ width: '100%', maxWidth: 480, background: 'white', minHeight: '100vh', display: 'flex', flexDirection: 'column', boxShadow: '0 0 20px rgba(0,0,0,0.05)' }}>
+    <div className="min-h-screen bg-slate-50 flex justify-center w-full">
+      <div className="w-full max-w-[480px] bg-white min-h-screen flex flex-col shadow-[0_0_40px_rgba(0,0,0,0.05)] relative">
         <WorkerClient jobOrders={(jobOrders as any) ?? []} />
       </div>
     </div>

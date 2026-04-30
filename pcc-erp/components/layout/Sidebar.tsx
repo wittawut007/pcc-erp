@@ -22,22 +22,39 @@ const allNavItems: NavSection[] = [
   {
     label: 'MAIN',
     links: [
-      { href: '/dashboard', icon: 'fa-chart-line', label: 'Dashboard', roles: ['admin', 'planner', 'warehouse', 'qc'] },
+      {
+        href: '/dashboard',
+        icon: 'fa-chart-line',
+        label: 'Dashboard',
+        roles: ['admin', 'planner', 'material', 'concrete', 'warehouse'],
+      },
     ],
   },
   {
     label: 'PRODUCTION',
     links: [
-      { href: '/planner',          icon: 'fa-calendar-alt',   label: 'แผนการผลิต',    roles: ['admin', 'planner'] },
-      { href: '/production-order', icon: 'fa-file-invoice',   label: 'ใบสั่งผลิต',    roles: ['admin', 'planner'] },
-      { href: '/job-orders',       icon: 'fa-clipboard-list', label: 'คิวงานเทปูน',   roles: ['admin', 'planner'] },
-      { href: '/demolding',        icon: 'fa-hammer',         label: 'งานถอดแบบ',     roles: ['admin', 'planner'] },
+      { href: '/planner',          icon: 'fa-calendar-alt',   label: 'แผนการผลิต',      roles: ['admin', 'planner'] },
+      { href: '/production-order', icon: 'fa-file-invoice',   label: 'ใบสั่งผลิต',      roles: ['admin', 'planner'] },
+      { href: '/job-orders',       icon: 'fa-clipboard-list', label: 'คิวงานเทปูน',     roles: ['admin', 'planner'] },
+      { href: '/demolding',        icon: 'fa-hammer',         label: 'งานตัดยก',         roles: ['admin', 'planner'] },
+    ],
+  },
+  {
+    label: 'MATERIAL',
+    links: [
+      { href: '/material',         icon: 'fa-dolly',          label: 'เบิกจ่ายวัตถุดิบ', roles: ['admin', 'material'] },
+    ],
+  },
+  {
+    label: 'CONCRETE',
+    links: [
+      { href: '/concrete',         icon: 'fa-fill-drip',      label: 'คิวผสมคอนกรีต',  roles: ['admin', 'concrete'] },
     ],
   },
   {
     label: 'INVENTORY',
     links: [
-      { href: '/inventory/raw', icon: 'fa-layer-group', label: 'คลังวัตถุดิบ',    roles: ['admin', 'warehouse'] },
+      { href: '/inventory/raw', icon: 'fa-layer-group', label: 'คลังวัตถุดิบ',    roles: ['admin', 'material', 'warehouse'] },
       { href: '/inventory/wip', icon: 'fa-th-large',    label: 'โครงเหล็ก (WIP)', roles: ['admin', 'warehouse'] },
       { href: '/inventory/fg',  icon: 'fa-cubes',       label: 'สินค้าพร้อมขาย',  roles: ['admin', 'warehouse'] },
     ],
@@ -45,10 +62,10 @@ const allNavItems: NavSection[] = [
   {
     label: 'SYSTEM',
     links: [
-      { href: '/products', icon: 'fa-box-open',       label: 'ข้อมูลสินค้า',       roles: ['admin', 'planner'] },
-      { href: '/users',    icon: 'fa-users-cog',       label: 'จัดการผู้ใช้งาน',    roles: ['admin'] },
-      { href: '/qc',       icon: 'fa-clipboard-check', label: 'จัดการของเสีย (QC)', roles: ['admin', 'qc'] },
-      { href: '/logs',     icon: 'fa-history',         label: 'ประวัติการทำงาน',    roles: ['admin'] },
+      { href: '/products',     icon: 'fa-box-open',       label: 'ข้อมูลสินค้า',    roles: ['admin', 'planner'] },
+      { href: '/users',        icon: 'fa-users-cog',      label: 'จัดการผู้ใช้งาน', roles: ['admin'] },
+      { href: '/logs',         icon: 'fa-history',        label: 'ประวัติการทำงาน', roles: ['admin'] },
+      { href: '/data-catalog', icon: 'fa-database',       label: 'Data Catalog',   roles: ['admin'] },
     ],
   },
 ]

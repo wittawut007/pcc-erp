@@ -10,7 +10,7 @@ export default async function PlannerPage() {
 
   const { data: products } = await supabase
     .from('products')
-    .select('id, code, name, category, size, concrete_per_unit, unit, wip_code')
+    .select('id, code, name, category, size, concrete_per_unit, unit, bom_code, wip_code')
     .eq('is_active', true)
     .order('category')
 

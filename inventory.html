@@ -159,104 +159,56 @@
 
     <div class="content">
         
-        <!-- Summary Cards: 2 Parts -->
-        <div class="split-top">
+        <!-- Summary Cards: 1 Part -->
+        <div style="display: grid; grid-template-columns: 1fr; gap: 24px; margin-bottom: 24px;">
             
             <!-- Part 1: Raw Materials Overview -->
             <div class="card-top blue">
                 <div class="card-header">
-                    <div style="display: flex; align-items: center;"><div class="icon-box blue"><i class="fas fa-layer-group"></i></div> ส่วนที่ 1: วัตถุดิบดิบ (ยังไม่ผ่านการตัด/เตรียม)</div>
+                    <div style="display: flex; align-items: center;"><div class="icon-box blue"><i class="fas fa-layer-group"></i></div> ภาพรวมคลังวัตถุดิบดิบ (ยังไม่ผ่านการตัด/เตรียม)</div>
                 </div>
                 
-                <div class="stat-boxes">
-                    <div class="stat-box">
-                        <span class="stat-label" style="color: var(--text-muted);">จำนวนรายการทั้งหมด</span>
-                        <span class="stat-val" style="color: var(--text-primary);">18</span>
+                <div class="stat-boxes" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; padding: 0 16px;">
+                    <div class="stat-box" style="padding: 24px; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px;">
+                        <span class="stat-label" style="color: var(--text-muted); font-size: 14px;">จำนวนรายการทั้งหมด</span>
+                        <span class="stat-val" style="color: var(--text-primary); font-size: 48px;">18 <span style="font-size: 16px; color: var(--text-muted); font-weight: 500;">รายการ</span></span>
                     </div>
-                    <div class="stat-box red-tint">
-                        <div class="ping"><span class="ping-circle"></span><span class="ping-dot"></span></div>
-                        <span class="stat-label" style="color: var(--red);">ใกล้หมด (Low Stock)</span>
-                        <span class="stat-val" style="color: var(--red);">2</span>
+                    <div class="stat-box red-tint" style="padding: 24px; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px;">
+                        <div class="ping" style="top: 12px; right: 12px;"><span class="ping-circle"></span><span class="ping-dot"></span></div>
+                        <span class="stat-label" style="color: var(--red); font-size: 14px;">ใกล้หมด (Low Stock)</span>
+                        <span class="stat-val" style="color: var(--red); font-size: 48px;">2 <span style="font-size: 16px; color: var(--red); font-weight: 500;">รายการ</span></span>
                     </div>
                 </div>
 
                 <div class="mini-list">
-                    <div class="mini-list-title"><i class="fas fa-list-ul"></i> รายการวัตถุดิบ (อัปเดตล่าสุด)</div>
-                    <div class="mini-list-wrap custom-scrollbar">
-                        <table>
+                    <div class="mini-list-title" style="font-size: 14px; margin-bottom: 12px; padding: 0 16px;"><i class="fas fa-list-ul"></i> รายการวัตถุดิบ (อัปเดตล่าสุด)</div>
+                    <div class="mini-list-wrap custom-scrollbar" style="max-height: 200px; margin: 0 16px;">
+                        <table style="font-size: 14px;">
                             <tbody>
                                 <tr>
-                                    <td style="font-weight: 600; color: var(--text-primary);">ลวดอัดแรง PC Wire 4mm</td>
-                                    <td style="text-align: right;">1,250 กก.</td>
-                                    <td style="text-align: center; color: var(--green); width: 40px;"><i class="fas fa-check-circle"></i></td>
+                                    <td style="font-weight: 600; color: var(--text-primary); padding: 12px;">ลวดอัดแรง PC Wire 4mm</td>
+                                    <td style="text-align: right; padding: 12px;">1,250 กก.</td>
+                                    <td style="text-align: center; color: var(--green); width: 60px;"><i class="fas fa-check-circle" style="font-size: 18px;"></i></td>
                                 </tr>
                                 <tr class="alert-row">
-                                    <td style="font-weight: 600;"><i class="fas fa-exclamation-triangle" style="margin-right: 4px;"></i> เหล็กเส้น DB12 (10m)</td>
-                                    <td style="text-align: right; font-weight: 700;">45 เส้น</td>
-                                    <td style="text-align: center; font-weight: 700; width: 40px;">Low</td>
+                                    <td style="font-weight: 600; padding: 12px;"><i class="fas fa-exclamation-triangle" style="margin-right: 4px;"></i> เหล็กเส้น DB12 (10m)</td>
+                                    <td style="text-align: right; font-weight: 700; padding: 12px;">45 เส้น</td>
+                                    <td style="text-align: center; font-weight: 700; width: 60px;">Low</td>
                                 </tr>
                                 <tr>
-                                    <td style="font-weight: 600; color: var(--text-primary);">เหล็กเส้นกลม RB6 (10m)</td>
-                                    <td style="text-align: right;">300 เส้น</td>
-                                    <td style="text-align: center; color: var(--green); width: 40px;"><i class="fas fa-check-circle"></i></td>
+                                    <td style="font-weight: 600; color: var(--text-primary); padding: 12px;">เหล็กเส้นกลม RB6 (10m)</td>
+                                    <td style="text-align: right; padding: 12px;">300 เส้น</td>
+                                    <td style="text-align: center; color: var(--green); width: 60px;"><i class="fas fa-check-circle" style="font-size: 18px;"></i></td>
                                 </tr>
                                 <tr class="alert-row">
-                                    <td style="font-weight: 600;"><i class="fas fa-exclamation-triangle" style="margin-right: 4px;"></i> น้ำยาทาแบบ</td>
-                                    <td style="text-align: right; font-weight: 700;">2 ถัง</td>
-                                    <td style="text-align: center; font-weight: 700; width: 40px;">Low</td>
+                                    <td style="font-weight: 600; padding: 12px;"><i class="fas fa-exclamation-triangle" style="margin-right: 4px;"></i> น้ำยาทาแบบ</td>
+                                    <td style="text-align: right; font-weight: 700; padding: 12px;">2 ถัง</td>
+                                    <td style="text-align: center; font-weight: 700; width: 60px;">Low</td>
                                 </tr>
                                 <tr>
-                                    <td style="font-weight: 600; color: var(--text-primary);">ลวดผูกเหล็ก</td>
-                                    <td style="text-align: right;">50 ม้วน</td>
-                                    <td style="text-align: center; color: var(--green); width: 40px;"><i class="fas fa-check-circle"></i></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Part 2: Prepared / WIP Materials Overview -->
-            <div class="card-top emerald">
-                <div class="card-header">
-                    <div style="display: flex; align-items: center;"><div class="icon-box emerald"><i class="fas fa-th-large"></i></div> ส่วนที่ 2: โครงเหล็ก (เตรียมประกอบตามแผน)</div>
-                </div>
-                
-                <div class="stat-boxes">
-                    <div class="stat-box emerald-tint">
-                        <span class="stat-label" style="color: #047857;">พร้อมผลิตตามแผน</span>
-                        <div class="stat-val" style="color: #047857;">3 <span style="font-size: 11px; font-weight: 400;">งาน</span></div>
-                    </div>
-                    <div class="stat-box orange-tint">
-                        <span class="stat-label" style="color: #c2410c;">ขาดของ/รอประกอบ</span>
-                        <div class="stat-val" style="color: #c2410c;">1 <span style="font-size: 11px; font-weight: 400;">งาน</span></div>
-                    </div>
-                </div>
-
-                <div class="mini-list">
-                    <div class="mini-list-title"><i class="fas fa-tasks"></i> ความพร้อมแยกตามใบสั่งผลิตวันนี้</div>
-                    <div class="mini-list-wrap custom-scrollbar">
-                        <table>
-                            <tbody>
-                                <tr>
-                                    <td style="font-weight: 600; color: var(--text-primary);">โครงเสาเข็ม .15x.15 2.00 ม.</td>
-                                    <td style="text-align: center; color: var(--text-muted);">ต้องการ: 50</td>
-                                    <td style="text-align: right; font-weight: 700; color: var(--green);">เตรียมแล้ว: 50</td>
-                                </tr>
-                                <tr class="warn-row">
-                                    <td style="font-weight: 600;"><i class="fas fa-tools" style="margin-right: 4px;"></i> เมชกำแพงกันดิน Type 1</td>
-                                    <td style="text-align: center; opacity: 0.8;">ต้องการ: 25</td>
-                                    <td style="text-align: right; font-weight: 700;">เตรียมแล้ว: 10</td>
-                                </tr>
-                                <tr>
-                                    <td style="font-weight: 600; color: var(--text-primary);">โครงผนังรั้วสำเร็จรูป ขนาด 0.50x2.90 m.</td>
-                                    <td style="text-align: center; color: var(--text-muted);">ต้องการ: 40</td>
-                                    <td style="text-align: right; font-weight: 700; color: var(--green);">เตรียมแล้ว: 40</td>
-                                </tr>
-                                <tr>
-                                    <td style="font-weight: 600; color: var(--text-primary);">แผ่นพื้น Solid Plank</td>
-                                    <td style="text-align: center; color: var(--text-muted);">-</td>
-                                    <td style="text-align: right; font-weight: 500; color: var(--text-muted);">ไม่ต้องใช้เหล็กเสริม</td>
+                                    <td style="font-weight: 600; color: var(--text-primary); padding: 12px;">ลวดผูกเหล็ก</td>
+                                    <td style="text-align: right; padding: 12px;">50 ม้วน</td>
+                                    <td style="text-align: center; color: var(--green); width: 60px;"><i class="fas fa-check-circle" style="font-size: 18px;"></i></td>
                                 </tr>
                             </tbody>
                         </table>
