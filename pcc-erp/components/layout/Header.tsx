@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
 import type { Profile } from '@/lib/supabase/types'
+import MobileLogoutButton from '@/components/shared/MobileLogoutButton'
 
 interface HeaderProps {
   title: React.ReactNode
@@ -87,6 +88,11 @@ export default async function Header({ title, subtitle, rightContent }: HeaderPr
               {roleLabel[profile?.role || 'admin']}
             </span>
           </div>
+        </div>
+
+        {/* Logout Button */}
+        <div className="ml-2">
+          <MobileLogoutButton />
         </div>
       </div>
     </header>

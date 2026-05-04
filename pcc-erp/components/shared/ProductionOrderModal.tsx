@@ -152,7 +152,7 @@ export default function ProductionOrderModal({
                 <th className="border p-2 font-semibold text-gray-600 text-xs w-10 text-center">NO.</th>
                 <th className="border p-2 font-semibold text-gray-600 text-xs">รายการสินค้า</th>
                 <th className="border p-2 font-semibold text-gray-600 text-xs text-center">รหัส BOM</th>
-                <th className="border p-2 font-semibold text-gray-600 text-xs text-center">แท่นผลิต</th>
+                <th className="border p-2 font-semibold text-gray-600 text-xs text-center">โรงผลิต</th>
                 <th className="border p-2 font-semibold text-gray-600 text-xs text-center">จำนวน</th>
                 <th className="border p-2 font-semibold text-gray-600 text-xs text-center">หน่วย</th>
                 <th className="border p-2 font-semibold text-gray-600 text-xs text-right">คอนกรีต (Q)</th>
@@ -167,7 +167,7 @@ export default function ProductionOrderModal({
                     <div className="text-[11px] text-gray-500 mt-0.5">{item.productCode}</div>
                   </td>
                   <td className="border p-3 text-center text-[12px] font-mono text-gray-600 align-top">BOM-{item.productCode.substring(0, 4)}</td>
-                  <td className="border p-3 text-center text-[13px] align-top">แท่น {item.bed}</td>
+                  <td className="border p-3 text-center text-[13px] align-top">โรงผลิต {item.bed}</td>
                   <td className="border p-3 text-center font-bold text-[13px] align-top">{item.qty.toLocaleString()}</td>
                   <td className="border p-3 text-center text-[12px] text-gray-500 align-top">{item.unit || 'ชิ้น'}</td>
                   <td className="border p-3 text-right text-[13px] text-gray-600 align-top">~ {item.concrete.toFixed(1)}</td>

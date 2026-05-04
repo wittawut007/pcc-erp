@@ -18,6 +18,7 @@ interface Product {
 }
 
 interface RawMaterial {
+  id: string
   name: string
   qty_on_hand: number
   unit: string
@@ -51,7 +52,7 @@ interface Props {
   workerToken?: string
 }
 
-const beds = ['A', 'B', 'C', 'D', 'E', 'F']
+const beds = ['1', '2', '3', '4']
 
 export default function PlannerClient({ products, todayPlan, rawMaterials, wipInventory = [], today, workerToken = '' }: Props) {
   const supabase = createClient()
@@ -63,7 +64,7 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
   const [selSize, setSelSize] = useState('')
   const [selCode, setSelCode] = useState('')
 
-  const [selectedBed, setSelectedBed] = useState('A')
+  const [selectedBed, setSelectedBed] = useState('1')
   const [qty, setQty] = useState(1)
   const [planItems, setPlanItems] = useState<PlanItem[]>(
     todayPlan?.items?.map((item: any) => ({
@@ -157,7 +158,7 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
 
     const { data: plan, error: planError } = await supabase
       .from('production_plans')
-      .upsert(payload)
+      .upsert(payload, { onConflict: 'plan_date' })
       .select()
       .single()
     if (planError) throw planError
@@ -183,6 +184,18 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
       ).select()
       if (itemsError) throw itemsError
       createdItems = items || []
+    }
+
+    const pcWireLocal = rawMaterials.find(r => r.name.toLowerCase().includes('ลวด') || r.name.toLowerCase().includes('pc wire'))
+    if (pcWireLocal && totalQty > 0) {
+      const pcWireReq = totalQty * 18.5
+      const { error: pmError } = await supabase.from('plan_materials').upsert({
+        plan_id: plan.id,
+        raw_material_id: pcWireLocal.id,
+        qty_required: pcWireReq,
+        status: 'pending'
+      }, { onConflict: 'plan_id,raw_material_id' })
+      if (pmError) throw new Error('plan_materials error: ' + pmError.message)
     }
 
     await supabase.from('activity_logs').insert({
@@ -214,13 +227,38 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
     try {
       const { plan, items } = await savePlanData('confirmed')
 
-      if (items && items.length > 0) {
+      const { data: { user } } = await supabase.auth.getUser()
+
+      // Generate order number
+      const datePart = today.replace(/-/g, '')
+      const { count } = await supabase.from('production_orders').select('*', { count: 'exact', head: true }).like('order_number', `PO-${datePart}-%`)
+      const seq = String((count || 0) + 1).padStart(3, '0')
+      const orderNumber = `PO-${datePart}-${seq}`
+
+      const { data: prodOrder, error: prodOrderErr } = await supabase.from('production_orders').insert({
+        order_number: orderNumber,
+        plan_id: plan.id,
+        confirmed_by: user?.id,
+        status: 'active'
+      }).select().single()
+      
+      if (prodOrderErr && !prodOrderErr.message.includes('duplicate')) throw prodOrderErr
+
+      // If it already exists due to a duplicate run, fetch it instead
+      let finalOrderId = prodOrder?.id;
+      if (!finalOrderId) {
+         const { data: existing } = await supabase.from('production_orders').select('id').eq('plan_id', plan.id).single();
+         finalOrderId = existing?.id;
+      }
+
+      if (items && items.length > 0 && finalOrderId) {
         const { error: orderError } = await supabase.from('job_orders').insert(
           items.map(item => ({
             plan_item_id: item.id,
             bed: item.bed,
             qty_target: item.qty_target,
-            status: 'pending'
+            status: 'pending',
+            order_id: finalOrderId
           }))
         )
         if (orderError && !orderError.message.includes('duplicate')) throw orderError
@@ -239,7 +277,7 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
 
   // PC wire BOM check
   const pcWireNeeded = totalQty * 18.5 // Estimation formula
-  const pcWireLocal = rawMaterials.find(r => r.name.toLowerCase().includes('ลวด'))
+  const pcWireLocal = rawMaterials.find(r => r.name.toLowerCase().includes('ลวด') || r.name.toLowerCase().includes('pc wire'))
   const pcWireStock = pcWireLocal?.qty_on_hand || 3100
 
   // Calculate dynamic WIP requirements
@@ -318,9 +356,9 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
 
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, alignItems: 'flex-end' }}>
              <div>
-                <label style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: 6 }}>แท่นผลิตเป้าหมาย</label>
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: 6 }}>โรงผลิตเป้าหมาย</label>
                 <select value={selectedBed} onChange={e => setSelectedBed(e.target.value)} style={{ width: '100%', height: 38, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 13, background: '#fff', outline: 'none', color: '#374151' }}>
-                  {beds.map(b => <option key={b} value={b}>แท่น {b} (ว่าง: 50)</option>)}
+                  {beds.map(b => <option key={b} value={b}>โรงผลิตที่ {b}</option>)}
                 </select>
              </div>
              <div>
@@ -359,15 +397,15 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
              <table className="w-full text-sm text-left whitespace-nowrap">
                 <thead>
                    <tr className="text-sm text-gray-600 font-bold bg-gray-50/80 border-b-2 border-gray-200">
-                      <th className="px-5 py-4 text-center">NO.</th>
-                      <th className="px-5 py-4">รหัสสินค้า</th>
-                      <th className="px-5 py-4">ชื่อสินค้า</th>
-                      <th className="px-5 py-4 hidden sm:table-cell">ขนาดสินค้า</th>
-                      <th className="px-5 py-4 hidden md:table-cell">หมวดหมู่</th>
-                      <th className="px-5 py-4 text-center">แท่นผลิต</th>
-                      <th className="px-5 py-4 text-center">จำนวน</th>
-                      <th className="px-5 py-4 text-right">คอนกรีต (Q)</th>
-                      <th className="px-5 py-4 text-center">จัดการ</th>
+                      <th style={{ padding: "22px 20px" }} className="text-center">NO.</th>
+                      <th style={{ padding: "22px 20px" }} className="hidden text-left">รหัสสินค้า</th>
+                      <th style={{ padding: "22px 20px" }} className="text-left">ชื่อสินค้า</th>
+                      <th style={{ padding: "22px 20px" }} className="hidden sm:table-cell text-left">ขนาดสินค้า</th>
+                      <th style={{ padding: "22px 20px" }} className="hidden md:table-cell text-left">หมวดหมู่</th>
+                      <th style={{ padding: "22px 20px" }} className="text-center">โรงผลิต</th>
+                      <th style={{ padding: "22px 20px" }} className="text-center">จำนวน</th>
+                      <th style={{ padding: "22px 20px" }} className="text-right">คอนกรีต (Q)</th>
+                      <th style={{ padding: "22px 20px" }} className="text-center">จัดการ</th>
                    </tr>
                 </thead>
                 <tbody>
@@ -380,19 +418,19 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
                    ) : (
                      planItems.map((item, idx) => (
                        <tr key={idx} className="border-b border-gray-200 hover:bg-blue-50/40 transition-colors">
-                          <td style={{ padding: "28px 20px" }} className=" text-center text-gray-400 font-semibold text-sm">{idx + 1}</td>
-                          <td style={{ padding: "28px 20px" }} className=" font-bold text-gray-800 text-sm tracking-wide">{item.productCode}</td>
-                          <td style={{ padding: "28px 20px" }} className=" text-gray-700 font-medium text-sm">{item.productName}</td>
-                          <td style={{ padding: "28px 20px" }} className=" hidden sm:table-cell text-gray-500 text-sm">{item.size || '-'}</td>
-                          <td style={{ padding: "28px 20px" }} className=" hidden md:table-cell text-gray-500 text-sm">{item.category.split(' ')[0]}</td>
-                          <td style={{ padding: "28px 20px" }} className=" text-center">
-                             <span className="inline-flex items-center justify-center bg-slate-100 text-slate-700 font-bold text-xs px-3 py-1 rounded-md border border-slate-200">แท่น {item.bed}</span>
+                          <td style={{ padding: "30px 20px" }} className=" text-center text-gray-400 font-semibold text-sm">{idx + 1}</td>
+                          <td style={{ padding: "30px 20px" }} className=" hidden font-bold text-gray-800 text-sm tracking-wide">{item.productCode}</td>
+                          <td style={{ padding: "30px 20px" }} className=" text-gray-700 font-medium text-sm">{item.productName}</td>
+                          <td style={{ padding: "30px 20px" }} className=" hidden sm:table-cell text-gray-500 text-sm">{item.size || '-'}</td>
+                          <td style={{ padding: "30px 20px" }} className=" hidden md:table-cell text-gray-500 text-sm">{item.category.split(' ')[0]}</td>
+                          <td style={{ padding: "30px 20px" }} className=" text-center">
+                             <span className="inline-flex items-center justify-center bg-slate-100 text-slate-700 font-bold text-xs px-3 py-1 rounded-md border border-slate-200">โรงผลิต {item.bed}</span>
                           </td>
-                          <td style={{ padding: "28px 20px" }} className=" text-center">
+                          <td style={{ padding: "30px 20px" }} className=" text-center">
                              <span className="font-bold text-blue-600 text-[15px]">{item.qty.toLocaleString()}</span>
                           </td>
-                          <td style={{ padding: "28px 20px" }} className=" text-right font-mono text-gray-500 text-sm">~ {item.concrete.toFixed(2)}</td>
-                          <td style={{ padding: "28px 20px" }} className=" text-center">
+                          <td style={{ padding: "30px 20px" }} className=" text-right font-mono text-gray-500 text-sm">~ {item.concrete.toFixed(2)}</td>
+                          <td style={{ padding: "30px 20px" }} className=" text-center">
                              <button onClick={() => handleRemove(idx)} className="text-red-400 hover:text-red-600 text-sm transition-colors p-2 rounded-lg hover:bg-red-50" title="ลบรายการ">
                                 <i className="fas fa-trash-alt"></i>
                              </button>
@@ -423,16 +461,29 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
             <p className="text-xs text-gray-500 mb-6 pb-4 border-b border-gray-100">ตรวจสอบสต๊อกวัตถุดิบป้องกันของขาดหน้างาน</p>
 
             <div className="flex flex-col gap-6">
-               {/* Ready mix */}
+               {/* Main Raw Materials */}
                <div>
-                  <div className="flex justify-between font-bold text-sm mb-2">
-                     <span className="text-gray-800">คอนกรีตผสมเสร็จ (รวม)</span>
-                     <span className="text-blue-600">{totalConcrete.toFixed(2)} Q</span>
+                  <div className="flex justify-between font-bold text-[15px] mb-4">
+                     <span className="text-gray-800">สรุปวัตถุดิบหลัก</span>
                   </div>
-                  <div className="w-full bg-gray-100 rounded-full h-1 mb-1.5">
-                     <div className="bg-blue-600 h-1 rounded-full" style={{ width: '100%' }}></div>
+                  <div className="grid grid-cols-2 gap-y-6 gap-x-4">
+                     <div>
+                        <p className="text-[12px] text-gray-500 font-medium mb-1">คอนกรีตรวม</p>
+                        <p className="font-extrabold text-blue-600 text-[20px]">{totalConcrete.toFixed(2)} <span className="text-[11px] text-gray-400 font-medium">คิว</span></p>
+                     </div>
+                     <div>
+                        <p className="text-[12px] text-gray-500 font-medium mb-1">ลวดรวม</p>
+                        <p className="font-extrabold text-blue-600 text-[20px]">{(totalQty > 0 ? totalQty * 2.5 : 0).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">กก.</span></p>
+                     </div>
+                     <div>
+                        <p className="text-[12px] text-gray-500 font-medium mb-1">เมชรวม</p>
+                        <p className="font-extrabold text-blue-600 text-[20px]">{(totalQty > 0 ? totalQty * 1.2 : 0).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">ตร.ม.</span></p>
+                     </div>
+                     <div>
+                        <p className="text-[12px] text-gray-500 font-medium mb-1">เหล็กเส้นรวม</p>
+                        <p className="font-extrabold text-blue-600 text-[20px]">{(totalQty > 0 ? totalQty * 4.0 : 0).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">เมตร</span></p>
+                     </div>
                   </div>
-                  <p className="text-[10px] text-gray-400 text-right w-full">สั่งจากแพลนท์ปูนเมื่อเริ่มงาน</p>
                </div>
 
                {/* WIP structure */}
@@ -461,28 +512,7 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
                   </div>
                </div>
 
-               {/* PC Wire Warning Card */}
-               {planItems.length > 0 && (
-                 <div className="bg-red-50 border border-red-100 rounded-lg mt-2 relative overflow-hidden" style={{ padding: '16px 20px' }}>
-                    <div className="absolute top-0 left-0 w-1 h-full bg-red-400"></div>
-                    <div className="flex justify-between font-bold text-sm mb-3">
-                       <span className="text-red-600 flex items-center gap-1.5">
-                          <i className="fas fa-exclamation-circle text-[15px]"></i> ลวดอัดแรง PC Wire 4mm
-                       </span>
-                       <span className="text-red-600">ต้องการ {pcWireNeeded.toLocaleString()} ม.</span>
-                    </div>
-                    <div className="w-full bg-red-200/50 rounded-full h-1.5 mb-3">
-                       <div className="bg-red-500 h-1.5 rounded-full relative" style={{ width: `${Math.min((pcWireStock / (pcWireNeeded || 1)) * 100, 100)}%` }}></div>
-                    </div>
-                    <div className="flex justify-between text-[11px] text-red-500/80 mb-4">
-                       <span>มีในคลัง: {pcWireStock.toLocaleString()} ม.</span>
-                       <span className="font-bold whitespace-nowrap">(ขาด {(pcWireNeeded - pcWireStock > 0 ? (pcWireNeeded - pcWireStock) : 0).toLocaleString()} ม.)</span>
-                    </div>
-                    <button className="w-full py-2 bg-red-100 text-red-600 hover:bg-red-200 transition-colors font-bold text-[12px] rounded border border-red-200">
-                       ส่งแจ้งเตือนจัดซื้อ/คลังสินค้า
-                    </button>
-                 </div>
-               )}
+
             </div>
          </div>
 
@@ -509,7 +539,7 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
                </div>
                <div className="flex items-start gap-3">
                   <i className="fas fa-check text-emerald-400 mt-1"></i>
-                  <span className="text-[13px] text-gray-300">สร้าง QR Code สำหรับสแกนหน้าแท่นผลิต</span>
+                  <span className="text-[13px] text-gray-300">สร้าง QR Code สำหรับสแกนหน้าโรงผลิต</span>
                </div>
             </div>
 

@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
 import type { UserRole } from '@/lib/supabase/types'
 
@@ -77,15 +76,7 @@ interface SidebarProps {
 export default function Sidebar({ role }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const supabase = createClient()
-  const [loggingOut, setLoggingOut] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
-
-  const handleLogout = async () => {
-    setLoggingOut(true)
-    await supabase.auth.signOut()
-    router.push('/login')
-  }
 
   const navItems = allNavItems
     .map((section) => ({
@@ -135,10 +126,20 @@ export default function Sidebar({ role }: SidebarProps) {
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
+            overflow: 'hidden',
           }}
           title={isCollapsed ? 'PCC POSTENTION' : undefined}
         >
-          <i className="fas fa-industry" style={{ color: '#fff', fontSize: 13 }} />
+          <img 
+            src="/logo.png" 
+            alt="TP Logo" 
+            style={{ width: '20px', height: '20px', objectFit: 'contain' }}
+            onError={(e) => {
+              // Fallback to icon if image not found yet
+              (e.target as HTMLImageElement).style.display = 'none';
+              e.currentTarget.parentElement?.insertAdjacentHTML('beforeend', '<i class="fas fa-industry" style="color: #fff; font-size: 13px"></i>');
+            }}
+          />
         </div>
         {!isCollapsed && (
           <span
@@ -312,34 +313,7 @@ export default function Sidebar({ role }: SidebarProps) {
           </Link>
         )}
 
-        <button
-          onClick={handleLogout}
-          disabled={loggingOut}
-          title={isCollapsed ? 'ออกจากระบบ' : undefined}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: isCollapsed ? 0 : 8,
-            justifyContent: isCollapsed ? 'center' : 'flex-start',
-            padding: isCollapsed ? '10px 0' : '7px 8px',
-            borderRadius: 8,
-            fontSize: 13,
-            fontWeight: 500,
-            color: '#EF4444',
-            background: 'transparent',
-            border: 'none',
-            cursor: 'pointer',
-            width: '100%',
-            transition: 'background 0.12s',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-          }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#FEF2F2' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
-        >
-          <i className="fas fa-sign-out-alt" style={{ fontSize: 14, width: 16, textAlign: 'center', flexShrink: 0, color: '#EF4444' }} />
-          {!isCollapsed && <span>ออกจากระบบ</span>}
-        </button>
+
       </div>
     </aside>
   )

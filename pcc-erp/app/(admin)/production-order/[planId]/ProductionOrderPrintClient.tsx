@@ -252,7 +252,7 @@ export default function ProductionOrderPrintClient({
                 <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'center', width: 36 }}>NO.</th>
                 <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'left' }}>รายการสินค้า</th>
                 <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'center' }}>รหัส BOM</th>
-                <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'center' }}>แท่นผลิต</th>
+                <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'center' }}>โรงผลิต</th>
                 <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'center' }}>จำนวน</th>
                 <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'center' }}>หน่วย</th>
                 <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'right' }}>คอนกรีต (Q)</th>
@@ -275,7 +275,7 @@ export default function ProductionOrderPrintClient({
                   </td>
                   <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontSize: 13, verticalAlign: 'top' }}>
                     <span style={{ background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 4, padding: '2px 8px', fontSize: 12, fontWeight: 600, color: '#475569' }}>
-                      แท่น {item.bed}
+                      โรงผลิต {item.bed}
                     </span>
                   </td>
                   <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontWeight: 700, fontSize: 14, color: '#111827', verticalAlign: 'top' }}>

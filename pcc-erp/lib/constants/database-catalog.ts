@@ -151,8 +151,6 @@ export const DATABASE_CATALOG: {
         { name: 'unit', type: 'TEXT', nullable: false, description: 'หน่วยนับ' },
         { name: 'qty_on_hand', type: 'NUMERIC(12,3)', nullable: false, default: '0', description: 'จำนวนคงเหลือปัจจุบัน' },
         { name: 'min_stock', type: 'NUMERIC(12,3)', nullable: false, default: '0', description: 'ระดับแตือนภัยสต็อกต่ำ' },
-        { name: 'cost_per_unit', type: 'NUMERIC(10,2)', nullable: true, description: 'ราคาทุนต่อหน่วย' },
-        { name: 'supplier', type: 'TEXT', nullable: true, description: 'ข้อมูลผู้จัดจำหน่าย' },
       ],
     },
     {

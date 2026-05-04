@@ -67,10 +67,10 @@ export default async function DashboardPage() {
   }
 
   const mockJobs = [
-    { id: '1', name: 'แผ่นพื้น PL50 4@4', bed: 'B', qty_cast: 120, qty_target: 150, status: 'casting' },
-    { id: '2', name: 'เสาเข็ม .15x.15 2.00 ม.', bed: 'A', qty_cast: 50, qty_target: 50, status: 'curing' },
-    { id: '3', name: 'กำแพงกันดิน Type 1', bed: 'C', qty_cast: 0, qty_target: 25, status: 'pending' },
-    { id: '4', name: 'ผนังรั้วสำเร็จรูป 0.50x2.90 ม.', bed: 'D', qty_cast: 18, qty_target: 40, status: 'casting' },
+    { id: '1', name: 'แผ่นพื้น PL50 4@4', bed: '2', qty_cast: 120, qty_target: 150, status: 'casting' },
+    { id: '2', name: 'เสาเข็ม .15x.15 2.00 ม.', bed: '1', qty_cast: 50, qty_target: 50, status: 'curing' },
+    { id: '3', name: 'กำแพงกันดิน Type 1', bed: '3', qty_cast: 0, qty_target: 25, status: 'pending' },
+    { id: '4', name: 'ผนังรั้วสำเร็จรูป 0.50x2.90 ม.', bed: '4', qty_cast: 18, qty_target: 40, status: 'casting' },
   ]
 
   const mockLowStock = [
@@ -80,11 +80,11 @@ export default async function DashboardPage() {
   ]
 
   const mockLogs = [
-    { time: '11:25', name: 'สมชาย ใจดี', dept: 'แท่น A', action: 'เทคอนกรีตเสร็จสิ้น', detail: 'เสาเข็ม .15x.15 2.00 ม.', status: 'สำเร็จ', green: true },
+    { time: '11:25', name: 'สมชาย ใจดี', dept: 'โรงผลิต 1', action: 'เทคอนกรีตเสร็จสิ้น', detail: 'เสาเข็ม .15x.15 2.00 ม.', status: 'สำเร็จ', green: true },
     { time: '11:10', name: 'วิชัย รักดี', dept: 'คลังเตรียมเหล็ก', action: 'บันทึกยอด WIP', detail: 'โครงเสาเข็ม (+50 ชุด)', status: 'สำเร็จ', green: true },
     { time: '10:45', name: 'สมหญิง คลังเป๊ะ', dept: 'คลังวัตถุดิบ', action: 'เบิกวัตถุดิบ', detail: 'เหล็ก DB12 (40 เส้น)', status: 'สำเร็จ', green: true },
-    { time: '09:30', name: 'มานะ ถอดเก่ง', dept: 'แท่น B', action: 'ถอดแบบ / จบงาน', detail: 'แผ่นพื้น 2 แผ่น — บิ่น', status: 'ของเสีย', green: false },
-    { time: '08:15', name: 'สมชาย ใจดี', dept: 'แท่น A', action: 'เริ่มงาน (สแกน QR)', detail: 'Job: #JO-2610-042', status: 'เริ่มระบบ', green: true },
+    { time: '09:30', name: 'มานะ ถอดเก่ง', dept: 'โรงผลิต 2', action: 'ถอดแบบ / จบงาน', detail: 'แผ่นพื้น 2 แผ่น — บิ่น', status: 'ของเสีย', green: false },
+    { time: '08:15', name: 'สมชาย ใจดี', dept: 'โรงผลิต 1', action: 'เริ่มงาน (สแกน QR)', detail: 'Job: #JO-2610-042', status: 'เริ่มระบบ', green: true },
   ]
 
   const displayJobs = (jobOrders as any[])?.slice(0, 5).map((j: any) => ({
@@ -263,7 +263,7 @@ export default async function DashboardPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['รายการสินค้า', 'แท่น', 'ความคืบหน้า', 'สำเร็จ', 'สถานะ'].map((th, i) => (
+                  {['รายการสินค้า', 'โรงผลิต', 'ความคืบหน้า', 'สำเร็จ', 'สถานะ'].map((th, i) => (
                     <th key={th} style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0 8px 10px', textAlign: i >= 3 ? 'center' : 'left', borderBottom: '1px solid var(--border)' }}>{th}</th>
                   ))}
                 </tr>
@@ -275,7 +275,7 @@ export default async function DashboardPage() {
                   return (
                     <tr key={job.id} className="hover:bg-[var(--bg)] transition-colors">
                       <td style={{ padding: '10px 8px', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>{job.name}</td>
-                      <td style={{ padding: '10px 8px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>แท่น {job.bed}</td>
+                      <td style={{ padding: '10px 8px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>โรงผลิต {job.bed}</td>
                       <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <div style={{ width: 70, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
@@ -334,7 +334,7 @@ export default async function DashboardPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                {['เวลา', 'พนักงาน', 'แท่น / แผนก', 'กิจกรรม', 'รายละเอียด', 'สถานะ'].map((th, i) => (
+                {['เวลา', 'พนักงาน', 'โรงผลิต / แผนก', 'กิจกรรม', 'รายละเอียด', 'สถานะ'].map((th, i) => (
                   <th key={th} style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0 8px 10px', textAlign: i === 5 ? 'center' : 'left', borderBottom: '1px solid var(--border)' }}>{th}</th>
                 ))}
               </tr>

@@ -188,7 +188,7 @@ export default function QCClient({ initialData }: Props) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                   <div>
                     <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#6B7280', textTransform: 'uppercase' }}>
-                      แท่น {job.plan_item?.bed ?? job.bed}
+                      โรงผลิต {job.plan_item?.bed ?? job.bed}
                     </span>
                     <div style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginTop: 2 }}>
                       {product?.name ?? '—'}
@@ -277,22 +277,39 @@ export default function QCClient({ initialData }: Props) {
                         <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: 0 }}>บันทึกผลการตรวจถอดแบบ</p>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                           <div>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: '#16A34A', display: 'block', marginBottom: 4 }}>จำนวนดี (ชิ้น)</label>
-                            <input
-                              type="number" min={0} value={demoldGood}
-                              onChange={e => setDemoldGood(e.target.value)}
-                              placeholder="0"
-                              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '2px solid #16A34A', fontSize: 18, fontWeight: 700, fontFamily: 'monospace', textAlign: 'center', outline: 'none', color: '#16A34A', boxSizing: 'border-box' }}
-                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: '#16A34A', display: 'block' }}>จำนวนดี (ชิ้น)</label>
+                              <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600 }}>เป้า: {job.qty_target}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', background: '#F0FDF4', borderRadius: 8, padding: 4, border: '2px solid #16A34A' }}>
+                              <button type="button" onClick={() => setDemoldGood(p => Math.max(0, (parseInt(p)||0)-1).toString())} style={{ width: 36, height: 36, borderRadius: 6, border: 'none', background: '#fff', color: '#16A34A', fontSize: 18, cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>-</button>
+                              <input
+                                type="number" min={0} value={demoldGood}
+                                onChange={e => setDemoldGood(e.target.value)}
+                                placeholder="0"
+                                style={{ flex: 1, width: '100%', padding: '0 4px', border: 'none', background: 'transparent', fontSize: 20, fontWeight: 800, fontFamily: 'monospace', textAlign: 'center', outline: 'none', color: '#16A34A' }}
+                              />
+                              <button type="button" onClick={() => setDemoldGood(p => ((parseInt(p)||0)+1).toString())} style={{ width: 36, height: 36, borderRadius: 6, border: 'none', background: '#fff', color: '#16A34A', fontSize: 18, cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>+</button>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                              <button type="button" onClick={() => setDemoldGood(job.qty_target.toString())} style={{ flex: 1, padding: '4px', fontSize: 10, background: '#DCFCE7', color: '#16A34A', border: 'none', borderRadius: 4, fontWeight: 600, cursor: 'pointer' }}>ALL ({job.qty_target})</button>
+                              <button type="button" onClick={() => setDemoldGood(p => ((parseInt(p)||0)+5).toString())} style={{ flex: 1, padding: '4px', fontSize: 10, background: '#DCFCE7', color: '#16A34A', border: 'none', borderRadius: 4, fontWeight: 600, cursor: 'pointer' }}>+5</button>
+                            </div>
                           </div>
                           <div>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: '#DC2626', display: 'block', marginBottom: 4 }}>จำนวนเสีย (ชิ้น)</label>
-                            <input
-                              type="number" min={0} value={demoldDefect}
-                              onChange={e => setDemoldDefect(e.target.value)}
-                              placeholder="0"
-                              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '2px solid #DC2626', fontSize: 18, fontWeight: 700, fontFamily: 'monospace', textAlign: 'center', outline: 'none', color: '#DC2626', boxSizing: 'border-box' }}
-                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: '#DC2626', display: 'block' }}>จำนวนเสีย (ชิ้น)</label>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', background: '#FEF2F2', borderRadius: 8, padding: 4, border: '2px solid #DC2626' }}>
+                              <button type="button" onClick={() => setDemoldDefect(p => Math.max(0, (parseInt(p)||0)-1).toString())} style={{ width: 36, height: 36, borderRadius: 6, border: 'none', background: '#fff', color: '#DC2626', fontSize: 18, cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>-</button>
+                              <input
+                                type="number" min={0} value={demoldDefect}
+                                onChange={e => setDemoldDefect(e.target.value)}
+                                placeholder="0"
+                                style={{ flex: 1, width: '100%', padding: '0 4px', border: 'none', background: 'transparent', fontSize: 20, fontWeight: 800, fontFamily: 'monospace', textAlign: 'center', outline: 'none', color: '#DC2626' }}
+                              />
+                              <button type="button" onClick={() => setDemoldDefect(p => ((parseInt(p)||0)+1).toString())} style={{ width: 36, height: 36, borderRadius: 6, border: 'none', background: '#fff', color: '#DC2626', fontSize: 18, cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>+</button>
+                            </div>
                           </div>
                         </div>
                         {parseInt(demoldDefect) > 0 && (

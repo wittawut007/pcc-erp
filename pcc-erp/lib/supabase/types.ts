@@ -235,8 +235,6 @@ export interface RawMaterial {
   unit: string
   qty_on_hand: number
   min_stock: number
-  cost_per_unit: number | null
-  supplier: string | null
   updated_at: string
 }
 

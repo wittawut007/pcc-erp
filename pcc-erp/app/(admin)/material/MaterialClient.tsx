@@ -90,6 +90,9 @@ export default function MaterialClient({ initialData }: Props) {
         </div>
         <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>ไม่มีรายการรอจ่ายวัตถุดิบ</p>
         <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>วัตถุดิบทั้งหมดในแผนการผลิตได้รับการจ่ายครบแล้ว</p>
+        <button onClick={() => window.location.href = '/'} style={{ marginTop: 16, padding: '10px 24px', borderRadius: 8, border: 'none', background: '#2563EB', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 6px -1px rgba(37,99,235,0.2)' }}>
+          <i className="fas fa-arrow-left" /> กลับหน้าหลัก
+        </button>
       </div>
     )
   }
@@ -143,7 +146,8 @@ export default function MaterialClient({ initialData }: Props) {
             </div>
 
             {/* Material Items */}
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
               <thead>
                 <tr>
                   {['วัตถุดิบ', 'ต้องใช้', 'จ่ายแล้ว', 'สต็อกคงเหลือ', 'สถานะ', 'จ่ายเพิ่ม', ''].map((th, i) => (
@@ -220,6 +224,7 @@ export default function MaterialClient({ initialData }: Props) {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         )
       })}

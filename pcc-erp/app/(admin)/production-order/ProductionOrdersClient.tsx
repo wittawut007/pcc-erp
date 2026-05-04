@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
+import { toast } from 'react-hot-toast'
+import { deleteProductionPlan } from '@/app/actions/planner'
 
 interface Plan {
   id: string
@@ -16,6 +18,7 @@ interface Plan {
 
 interface Props {
   plans: Plan[]
+  userRole?: string
 }
 
 const STATUS_CONFIG = {
@@ -88,9 +91,31 @@ function getProfile(p: ProfileShape | ProfileShape[] | null): ProfileShape | nul
   return p
 }
 
-export default function ProductionOrdersClient({ plans }: Props) {
+export default function ProductionOrdersClient({ plans, userRole = 'worker' }: Props) {
   const [activeStatus, setActiveStatus] = useState<StatusKey | 'all'>('all')
   const [search, setSearch] = useState('')
+  const [isPending, startTransition] = useTransition()
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const handleDelete = (planId: string, orderNumber: string) => {
+    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งผลิต ${orderNumber} ?\nการกระทำนี้จะลบข้อมูลที่เกี่ยวข้องทั้งหมดและไม่สามารถย้อนกลับได้`)) return
+
+    setDeletingId(planId)
+    startTransition(async () => {
+      try {
+        const res = await deleteProductionPlan(planId)
+        if (res.success) {
+          toast.success(`ลบใบสั่งผลิต ${orderNumber} สำเร็จ`)
+        } else {
+          toast.error(res.error || 'ไม่สามารถลบใบสั่งผลิตได้')
+        }
+      } catch (err) {
+        toast.error('เกิดข้อผิดพลาดในการลบข้อมูล')
+      } finally {
+        setDeletingId(null)
+      }
+    })
+  }
 
   // KPI counts
   const counts = useMemo(() => ({
@@ -321,30 +346,67 @@ export default function ProductionOrdersClient({ plans }: Props) {
 
                       {/* Actions */}
                       <td style={{ padding: '14px 20px', textAlign: 'center' }}>
-                        <Link
-                          href={`/production-order/${plan.id}`}
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6,
-                            padding: '6px 16px', borderRadius: 8,
-                            background: '#EFF6FF', color: '#2563EB',
-                            fontSize: 12, fontWeight: 700,
-                            border: '1px solid #BFDBFE',
-                            textDecoration: 'none',
-                            transition: 'all 0.15s',
-                            whiteSpace: 'nowrap',
-                          }}
-                          onMouseEnter={e => {
-                            e.currentTarget.style.background = '#DBEAFE'
-                            e.currentTarget.style.borderColor = '#93C5FD'
-                          }}
-                          onMouseLeave={e => {
-                            e.currentTarget.style.background = '#EFF6FF'
-                            e.currentTarget.style.borderColor = '#BFDBFE'
-                          }}
-                        >
-                          <i className="fas fa-eye" style={{ fontSize: 11 }}></i>
-                          ดูรายละเอียด
-                        </Link>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                          <Link
+                            href={`/production-order/${plan.id}`}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              padding: '6px 16px', borderRadius: 8,
+                              background: '#EFF6FF', color: '#2563EB',
+                              fontSize: 12, fontWeight: 700,
+                              border: '1px solid #BFDBFE',
+                              textDecoration: 'none',
+                              transition: 'all 0.15s',
+                              whiteSpace: 'nowrap',
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.background = '#DBEAFE'
+                              e.currentTarget.style.borderColor = '#93C5FD'
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.background = '#EFF6FF'
+                              e.currentTarget.style.borderColor = '#BFDBFE'
+                            }}
+                          >
+                            <i className="fas fa-eye" style={{ fontSize: 11 }}></i>
+                            ดูรายละเอียด
+                          </Link>
+
+                          {userRole === 'admin' && (
+                            <button
+                              onClick={() => handleDelete(plan.id, orderNumber)}
+                              disabled={isPending && deletingId === plan.id}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                padding: '6px 16px', borderRadius: 8,
+                                background: '#FEF2F2', color: '#DC2626',
+                                fontSize: 12, fontWeight: 700,
+                                border: '1px solid #FECACA',
+                                cursor: (isPending && deletingId === plan.id) ? 'not-allowed' : 'pointer',
+                                opacity: (isPending && deletingId === plan.id) ? 0.6 : 1,
+                                transition: 'all 0.15s',
+                                whiteSpace: 'nowrap',
+                              }}
+                              onMouseEnter={e => {
+                                if (isPending && deletingId === plan.id) return
+                                e.currentTarget.style.background = '#FEE2E2'
+                                e.currentTarget.style.borderColor = '#FCA5A5'
+                              }}
+                              onMouseLeave={e => {
+                                if (isPending && deletingId === plan.id) return
+                                e.currentTarget.style.background = '#FEF2F2'
+                                e.currentTarget.style.borderColor = '#FECACA'
+                              }}
+                            >
+                              {isPending && deletingId === plan.id ? (
+                                <i className="fas fa-spinner fa-spin" style={{ fontSize: 11 }}></i>
+                              ) : (
+                                <i className="fas fa-trash-alt" style={{ fontSize: 11 }}></i>
+                              )}
+                              ลบข้อมูล
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )

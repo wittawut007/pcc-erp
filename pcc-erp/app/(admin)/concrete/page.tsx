@@ -21,7 +21,7 @@ export default async function ConcretePage() {
     <>
       <Header
         title="คิวผสมคอนกรีต"
-        subtitle="ตรวจสอบและยืนยันการจ่ายคอนกรีตให้แต่ละแท่น"
+        subtitle="ตรวจสอบและยืนยันการจ่ายคอนกรีตให้แต่ละโรงผลิต"
       />
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 36px' }}>
         <ConcreteClient pending={pending} history={history} />

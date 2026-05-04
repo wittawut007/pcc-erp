@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
 interface RawMaterial {
   id: string; name: string; category: string; unit: string
-  qty_on_hand: number; min_stock: number; cost_per_unit: number | null; supplier: string | null; updated_at: string
+  qty_on_hand: number; min_stock: number; updated_at: string
 }
 
 const CATEGORIES = ['ทั้งหมด', 'เหล็กเส้น', 'ลวด', 'น้ำยา', 'ปูน', 'เมช', 'อื่นๆ']
@@ -19,10 +19,11 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
   const [adjustModal, setAdjustModal] = useState<RawMaterial | null>(null)
   const [addModal, setAddModal] = useState(false)
   const [adjustQty, setAdjustQty] = useState(0)
+  const [adjustMinStock, setAdjustMinStock] = useState(0)
   const [adjustMode, setAdjustMode] = useState<'add' | 'sub' | 'set'>('add')
   const [adjustNote, setAdjustNote] = useState('')
   const [saving, setSaving] = useState(false)
-  const [newForm, setNewForm] = useState({ name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0, cost_per_unit: '', supplier: '' })
+  const [newForm, setNewForm] = useState({ name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0 })
 
   const filtered = materials.filter(m => {
     const matchCat = filterCat === 'ทั้งหมด' || m.category === filterCat
@@ -30,8 +31,9 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
     return matchCat && matchSearch
   })
 
-  const lowStock = materials.filter(m => m.qty_on_hand <= m.min_stock)
-  const totalValue = materials.reduce((s, m) => s + (m.qty_on_hand * (m.cost_per_unit ?? 0)), 0)
+  const normalStock = materials.filter(m => m.qty_on_hand > m.min_stock)
+  const lowStock = materials.filter(m => m.qty_on_hand <= m.min_stock && m.qty_on_hand > m.min_stock * 0.5)
+  const criticalStock = materials.filter(m => m.qty_on_hand <= m.min_stock * 0.5)
 
   const handleAdjust = async () => {
     if (!adjustModal) return
@@ -42,7 +44,7 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
       else if (adjustMode === 'sub') newQty = Math.max(0, newQty - adjustQty)
       else newQty = adjustQty
 
-      const { error } = await supabase.from('raw_materials').update({ qty_on_hand: newQty, updated_at: new Date().toISOString() }).eq('id', adjustModal.id)
+      const { error } = await supabase.from('raw_materials').update({ qty_on_hand: newQty, min_stock: adjustMinStock, updated_at: new Date().toISOString() }).eq('id', adjustModal.id)
       if (error) throw error
 
       const { data: { user } } = await supabase.auth.getUser()
@@ -51,10 +53,10 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
         action_type: adjustMode === 'add' ? 'รับวัตถุดิบ (เพิ่ม)' : adjustMode === 'sub' ? 'เบิกวัตถุดิบ (ลด)' : 'ปรับสต็อก',
         entity_type: 'raw_material',
         entity_id: adjustModal.id,
-        detail: `${adjustModal.name}: ${adjustModal.qty_on_hand} → ${newQty} ${adjustModal.unit}${adjustNote ? ' | ' + adjustNote : ''}`,
+        detail: `${adjustModal.name}: ${adjustModal.qty_on_hand} → ${newQty} ${adjustModal.unit} (ขั้นต่ำ: ${adjustMinStock})${adjustNote ? ' | ' + adjustNote : ''}`,
       })
 
-      setMaterials(prev => prev.map(m => m.id === adjustModal.id ? { ...m, qty_on_hand: newQty, updated_at: new Date().toISOString() } : m))
+      setMaterials(prev => prev.map(m => m.id === adjustModal.id ? { ...m, qty_on_hand: newQty, min_stock: adjustMinStock, updated_at: new Date().toISOString() } : m))
       toast.success('อัปเดตสต็อกสำเร็จ!')
       setAdjustModal(null)
     } catch (e: any) { toast.error('เกิดข้อผิดพลาด: ' + e.message) }
@@ -65,18 +67,40 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
     if (!newForm.name || !newForm.unit) { toast.error('กรุณากรอกชื่อและหน่วย'); return }
     setSaving(true)
     try {
-      const { data, error } = await supabase.from('raw_materials').insert({
-        ...newForm,
-        cost_per_unit: newForm.cost_per_unit ? parseFloat(newForm.cost_per_unit) : null,
-        supplier: newForm.supplier || null,
-      }).select().single()
+      const { data, error } = await supabase.from('raw_materials').insert(newForm).select().single()
       if (error) throw error
       setMaterials(prev => [...prev, data])
       toast.success('เพิ่มวัตถุดิบใหม่สำเร็จ!')
       setAddModal(false)
-      setNewForm({ name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0, cost_per_unit: '', supplier: '' })
+      setNewForm({ name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0 })
     } catch (e: any) { toast.error('เกิดข้อผิดพลาด: ' + e.message) }
     finally { setSaving(false) }
+  }
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบรายการ "${name}"?\nการกระทำนี้ไม่สามารถกู้คืนได้`)) return
+    
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('raw_materials').delete().eq('id', id)
+      if (error) throw error
+      
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) await supabase.from('activity_logs').insert({
+        user_id: user.id,
+        action_type: 'ลบวัตถุดิบ',
+        entity_type: 'raw_material',
+        entity_id: id,
+        detail: `ลบวัตถุดิบ: ${name}`
+      })
+
+      setMaterials(prev => prev.filter(m => m.id !== id))
+      toast.success('ลบวัตถุดิบสำเร็จ!')
+    } catch (e: any) {
+      toast.error('ลบไม่สำเร็จ: ' + (e.message.includes('foreign key constraint') ? 'มีการใช้งานวัตถุดิบนี้ในระบบแล้ว' : e.message))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -86,9 +110,9 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
         {[
           { label: 'รายการทั้งหมด', value: materials.length, color: 'var(--accent)', icon: 'fa-layer-group' },
-          { label: 'สต็อกใกล้หมด', value: lowStock.length, color: lowStock.length > 0 ? 'var(--red)' : 'var(--green)', icon: 'fa-exclamation-triangle' },
-          { label: 'รายการแสดง', value: filtered.length, color: 'var(--indigo)', icon: 'fa-filter' },
-          { label: 'มูลค่าสต็อกรวม', value: `฿${totalValue.toLocaleString(undefined, { minimumFractionDigits: 0 })}`, color: 'var(--amber)', icon: 'fa-coins' },
+          { label: 'สต็อกปกติ', value: normalStock.length, color: 'var(--green)', icon: 'fa-check-circle' },
+          { label: 'สต็อกใกล้หมด', value: lowStock.length, color: 'var(--amber)', icon: 'fa-exclamation-circle' },
+          { label: 'สต็อกวิกฤต', value: criticalStock.length, color: 'var(--red)', icon: 'fa-exclamation-triangle' },
         ].map(s => (
           <div key={s.label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ width: 40, height: 40, borderRadius: 8, background: `${s.color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -103,12 +127,12 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
       </div>
 
       {/* Alert low stock */}
-      {lowStock.length > 0 && (
+      {(lowStock.length > 0 || criticalStock.length > 0) && (
         <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center' }}>
           <i className="fas fa-exclamation-triangle" style={{ color: 'var(--red)', fontSize: 18, flexShrink: 0 }}></i>
           <div>
-            <span style={{ fontWeight: 700, color: '#B91C1C', fontSize: 13 }}>สต็อกใกล้หมด {lowStock.length} รายการ: </span>
-            <span style={{ fontSize: 12, color: '#DC2626' }}>{lowStock.map(m => m.name).join(', ')}</span>
+            <span style={{ fontWeight: 700, color: '#B91C1C', fontSize: 13 }}>สต็อกที่ต้องสั่งเพิ่ม {lowStock.length + criticalStock.length} รายการ: </span>
+            <span style={{ fontSize: 12, color: '#DC2626' }}>{[...criticalStock, ...lowStock].map(m => m.name).join(', ')}</span>
           </div>
         </div>
       )}
@@ -134,51 +158,63 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr>
-              {['ชื่อวัตถุดิบ', 'หมวดหมู่', 'คงเหลือ', 'สต็อกขั้นต่ำ', 'สถานะ', 'ราคา/หน่วย', 'ผู้จัดจำหน่าย', 'จัดการ'].map((h, i) => (
-                <th key={h} style={{ padding: '10px 14px', textAlign: i >= 7 ? 'center' : 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>{h}</th>
+              {['ชื่อวัตถุดิบ', 'หมวดหมู่', 'คงเหลือ', 'สต็อกขั้นต่ำ', 'สถานะ', 'จัดการ'].map((h, i) => (
+                <th key={h} style={{ padding: '10px 14px', textAlign: i >= 5 ? 'center' : 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {filtered.map(m => {
-              const pct = m.min_stock > 0 ? (m.qty_on_hand / m.min_stock) * 100 : 100
-              const isLow = m.qty_on_hand <= m.min_stock
-              const isCritical = m.qty_on_hand <= m.min_stock * 0.5
-              return (
-                <tr key={m.id} className="hover:bg-[var(--bg)] transition-colors">
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ fontWeight: 600 }}>{m.name}</div>
-                  </td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 11 }}>{m.category}</td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: isCritical ? 'var(--red)' : isLow ? '#B45309' : 'var(--text-primary)' }}>
-                      {m.qty_on_hand.toLocaleString()} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>{m.unit}</span>
-                    </div>
-                    <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginTop: 5, width: 80 }}>
-                      <div style={{ height: '100%', background: isCritical ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--green)', width: `${Math.min(100, pct)}%`, borderRadius: 2 }}></div>
-                    </div>
-                  </td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>{m.min_stock} {m.unit}</td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 700,
-                      background: isCritical ? 'var(--red-light)' : isLow ? 'var(--amber-light)' : 'var(--green-light)',
-                      color: isCritical ? 'var(--red)' : isLow ? '#B45309' : '#059669' }}>
-                      {isCritical ? '🔴 วิกฤต' : isLow ? '⚠ ใกล้หมด' : '✓ ปกติ'}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
-                    {m.cost_per_unit ? `฿${m.cost_per_unit.toLocaleString()}` : '—'}
-                  </td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text-secondary)' }}>{m.supplier ?? '—'}</td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
-                    <button onClick={() => { setAdjustModal(m); setAdjustQty(0); setAdjustMode('add'); setAdjustNote('') }}
-                      style={{ padding: '6px 12px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                      <i className="fas fa-edit" style={{ marginRight: 4 }}></i>ปรับสต็อก
-                    </button>
+            {Array.from(new Set(filtered.map(m => m.category))).sort().map(category => (
+              <Fragment key={category}>
+                <tr>
+                  <td colSpan={6} style={{ padding: '12px 14px', background: 'var(--bg)', fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>
+                    <i className="fas fa-folder-open" style={{ marginRight: 8, color: 'var(--text-muted)' }}></i>
+                    หมวดหมู่: {category}
                   </td>
                 </tr>
-              )
-            })}
+                {filtered.filter(m => m.category === category).map(m => {
+                  const pct = m.min_stock > 0 ? (m.qty_on_hand / m.min_stock) * 100 : 100
+                  const isLow = m.qty_on_hand <= m.min_stock
+                  const isCritical = m.qty_on_hand <= m.min_stock * 0.5
+                  return (
+                    <tr key={m.id} className="hover:bg-[var(--bg)] transition-colors">
+                      <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ fontWeight: 600, paddingLeft: 10 }}>{m.name}</div>
+                      </td>
+                      <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 11 }}>{m.category}</td>
+                      <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: isCritical ? 'var(--red)' : isLow ? '#B45309' : 'var(--text-primary)' }}>
+                          {m.qty_on_hand.toLocaleString()} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>{m.unit}</span>
+                        </div>
+                        <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginTop: 5, width: 80 }}>
+                          <div style={{ height: '100%', background: isCritical ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--green)', width: `${Math.min(100, pct)}%`, borderRadius: 2 }}></div>
+                        </div>
+                      </td>
+                      <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>{m.min_stock} {m.unit}</td>
+                      <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                          background: isCritical ? 'var(--red-light)' : isLow ? 'var(--amber-light)' : 'var(--green-light)',
+                          color: isCritical ? 'var(--red)' : isLow ? '#B45309' : '#059669' }}>
+                          {isCritical ? '🔴 วิกฤต' : isLow ? '⚠ ใกล้หมด' : '✓ ปกติ'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                          <button onClick={() => { setAdjustModal(m); setAdjustQty(0); setAdjustMinStock(m.min_stock); setAdjustMode('add'); setAdjustNote('') }}
+                            style={{ padding: '6px 12px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                            <i className="fas fa-edit" style={{ marginRight: 4 }}></i>ปรับสต็อก
+                          </button>
+                          <button onClick={() => handleDelete(m.id, m.name)} disabled={saving}
+                            style={{ padding: '6px 10px', background: '#FEE2E2', color: '#DC2626', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                            <i className="fas fa-trash"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </Fragment>
+            ))}
           </tbody>
         </table>
         {filtered.length === 0 && (
@@ -206,18 +242,26 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
                 </button>
               ))}
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 5 }}>จำนวน ({adjustModal.unit})</label>
-              <input type="number" min={0} value={adjustQty} onChange={e => setAdjustQty(parseFloat(e.target.value) || 0)}
-                onFocus={e => e.target.select()}
-                style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--accent)', borderRadius: 7, fontSize: 16, fontWeight: 700, textAlign: 'center', outline: 'none', boxSizing: 'border-box' }} />
-              {adjustMode !== 'set' && (
-                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 5 }}>
-                  คงเหลือใหม่: <strong style={{ color: 'var(--accent)' }}>
-                    {adjustMode === 'add' ? adjustModal.qty_on_hand + adjustQty : Math.max(0, adjustModal.qty_on_hand - adjustQty)} {adjustModal.unit}
-                  </strong>
-                </p>
-              )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 5 }}>จำนวนที่จะปรับ ({adjustModal.unit})</label>
+                <input type="number" min={0} value={adjustQty} onChange={e => setAdjustQty(parseFloat(e.target.value) || 0)}
+                  onFocus={e => e.target.select()}
+                  style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--accent)', borderRadius: 7, fontSize: 16, fontWeight: 700, textAlign: 'center', outline: 'none', boxSizing: 'border-box' }} />
+                {adjustMode !== 'set' && (
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 5 }}>
+                    คงเหลือใหม่: <strong style={{ color: 'var(--accent)' }}>
+                      {adjustMode === 'add' ? adjustModal.qty_on_hand + adjustQty : Math.max(0, adjustModal.qty_on_hand - adjustQty)} {adjustModal.unit}
+                    </strong>
+                  </p>
+                )}
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 5 }}>สต็อกขั้นต่ำ (Alert)</label>
+                <input type="number" min={0} value={adjustMinStock} onChange={e => setAdjustMinStock(parseFloat(e.target.value) || 0)}
+                  onFocus={e => e.target.select()}
+                  style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: 7, fontSize: 16, fontWeight: 700, textAlign: 'center', outline: 'none', boxSizing: 'border-box' }} />
+              </div>
             </div>
             <div style={{ marginBottom: 18 }}>
               <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 5 }}>หมายเหตุ</label>
@@ -249,8 +293,6 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
                 { label: 'หน่วย *', key: 'unit', type: 'text', placeholder: 'เส้น / ถัง / ม้วน' },
                 { label: 'สต็อกเริ่มต้น', key: 'qty_on_hand', type: 'number', placeholder: '0' },
                 { label: 'สต็อกขั้นต่ำ (alert)', key: 'min_stock', type: 'number', placeholder: '10' },
-                { label: 'ราคา/หน่วย (฿)', key: 'cost_per_unit', type: 'number', placeholder: '0' },
-                { label: 'ผู้จัดจำหน่าย', key: 'supplier', type: 'text', placeholder: 'ชื่อบริษัท', colSpan: 2 },
               ].map(f => (
                 <div key={f.key} style={{ gridColumn: (f as any).colSpan === 2 ? 'span 2' : undefined }}>
                   <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>{f.label}</label>

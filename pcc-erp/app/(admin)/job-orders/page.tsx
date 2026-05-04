@@ -29,7 +29,7 @@ export default async function JobOrdersPage() {
 
   return (
     <>
-      <Header title="คิวงานเทคอนกรีต" subtitle="ติดตามสถานะการเทและบ่มคอนกรีตทุกแท่น" />
+      <Header title="คิวงานเทคอนกรีต" subtitle="ติดตามสถานะการเทและบ่มคอนกรีตทุกโรงผลิต" />
       <JobOrdersClient jobOrders={jobOrders ?? []} workers={workers ?? []} />
     </>
   )

@@ -64,8 +64,16 @@ export default function LoginPage() {
       {/* Left Column — Branding */}
       <div className="hidden lg:flex lg:w-1/2 items-center justify-center bg-white border-r border-gray-100">
         <div className="text-center flex flex-col items-center" style={{ fontFamily: "'Quicksand', sans-serif" }}>
-          <div className="bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20" style={{ width: '84px', height: '84px', borderRadius: '22px', marginBottom: '32px' }}>
-            <i className="fas fa-industry text-white" style={{ fontSize: '36px' }}></i>
+          <div className="bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 overflow-hidden relative group" style={{ width: '84px', height: '84px', borderRadius: '22px', marginBottom: '32px' }}>
+            <img 
+              src="/logo.png" 
+              alt="TP Logo" 
+              style={{ width: '56px', height: '56px', objectFit: 'contain' }}
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+                e.currentTarget.parentElement?.insertAdjacentHTML('beforeend', '<i class="fas fa-industry text-white" style="font-size: 36px"></i>');
+              }}
+            />
           </div>
           <h1 className="text-slate-900 tracking-tight uppercase font-bold" style={{ fontSize: '46px', marginBottom: '16px' }}>
             PCC <span className="text-blue-600">POSTENTION</span>
@@ -82,8 +90,16 @@ export default function LoginPage() {
 
           {/* Header */}
           <div className="text-center flex flex-col items-center" style={{ marginBottom: '60px' }}>
-            <div className="bg-blue-600 flex items-center justify-center shadow-md" style={{ width: '52px', height: '52px', borderRadius: '14px', marginBottom: '20px' }}>
-              <i className="fas fa-industry text-white text-xl"></i>
+            <div className="bg-blue-600 flex items-center justify-center shadow-md overflow-hidden relative" style={{ width: '52px', height: '52px', borderRadius: '14px', marginBottom: '20px' }}>
+              <img 
+                src="/logo.png" 
+                alt="TP Logo" 
+                style={{ width: '36px', height: '36px', objectFit: 'contain' }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                  e.currentTarget.parentElement?.insertAdjacentHTML('beforeend', '<i class="fas fa-industry text-white text-xl"></i>');
+                }}
+              />
             </div>
             <h2 className="text-slate-900 tracking-tight font-bold" style={{ fontSize: '26px', marginBottom: '6px' }}>เข้าสู่ระบบ</h2>
             <p className="text-slate-400 font-medium tracking-wide" style={{ fontSize: '13px' }}>ยินดีต้อนรับกลับ! โปรดกรอกข้อมูลเพื่อเข้าใช้งานระบบ</p>

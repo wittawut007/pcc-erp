@@ -108,7 +108,7 @@ export default function ConcreteClient({ pending: initialPending, history }: Pro
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                     flexShrink: 0, fontWeight: 800,
                   }}>
-                    <span style={{ fontSize: 8, letterSpacing: '0.05em', marginBottom: -2 }}>แท่น</span>
+                    <span style={{ fontSize: 8, letterSpacing: '0.05em', marginBottom: -2 }}>โรงผลิต</span>
                     <span style={{ fontSize: 20 }}>{bed ?? '?'}</span>
                   </div>
 
@@ -159,7 +159,7 @@ export default function ConcreteClient({ pending: initialPending, history }: Pro
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                {['เวลา', 'แท่น', 'สินค้า', 'ปริมาณ (m³)', 'ผู้สั่ง', 'ผู้จ่าย', 'สถานะ'].map(th => (
+                {['เวลา', 'โรงผลิต', 'สินค้า', 'ปริมาณ (m³)', 'ผู้สั่ง', 'ผู้จ่าย', 'สถานะ'].map(th => (
                   <th key={th} style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '10px 16px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{th}</th>
                 ))}
               </tr>
@@ -168,7 +168,7 @@ export default function ConcreteClient({ pending: initialPending, history }: Pro
               {history.map(h => (
                 <tr key={h.id}>
                   <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{formatTime(h.requested_at)}</td>
-                  <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 700, borderBottom: '1px solid var(--border)' }}>แท่น {h.job_order?.bed}</td>
+                  <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 700, borderBottom: '1px solid var(--border)' }}>โรงผลิต {h.job_order?.bed}</td>
                   <td style={{ padding: '10px 16px', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{h.job_order?.plan_item?.product?.name ?? '—'}</td>
                   <td style={{ padding: '10px 16px', fontSize: 13, fontFamily: 'monospace', borderBottom: '1px solid var(--border)' }}>{h.qty_requested}</td>
                   <td style={{ padding: '10px 16px', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{h.requested_by_profile?.full_name ?? '—'}</td>

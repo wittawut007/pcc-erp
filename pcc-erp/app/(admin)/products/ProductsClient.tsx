@@ -137,18 +137,41 @@ export default function ProductsClient({ products: initial }: { products: Produc
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
         {CAT_STYLES.map(cat => {
           const count = products.filter(p => p.category.startsWith(cat.prefix)).length
+          const fullCategoryName = `${cat.prefix} ${cat.short}`
+          const isSelected = filterCat === fullCategoryName
+          
           return (
-            <div key={cat.prefix} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: cat.colorCode, borderTopLeftRadius: 'var(--radius)', borderBottomLeftRadius: 'var(--radius)' }}></div>
+            <div 
+              key={cat.prefix} 
+              onClick={() => {
+                setFilterCat(isSelected ? 'all' : fullCategoryName)
+                setPage(1)
+              }}
+              style={{ 
+                background: cat.pillBg, 
+                border: isSelected ? `2px solid ${cat.pillText}` : '1px solid transparent', 
+                borderRadius: 'var(--radius)', 
+                padding: isSelected ? '13px 15px' : '14px 16px', 
+                position: 'relative', 
+                overflow: 'hidden', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                opacity: (filterCat !== 'all' && !isSelected) ? 0.6 : 1
+              }}
+            >
+              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: cat.pillText, borderTopLeftRadius: 'var(--radius)', borderBottomLeftRadius: 'var(--radius)' }}></div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, paddingLeft: 4 }}>
-                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>{cat.prefix} {cat.short}</div>
+                 <div style={{ fontSize: 11, fontWeight: 700, color: cat.pillText }}>{cat.prefix} {cat.short}</div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingLeft: 4 }}>
                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                   <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{count}</span>
-                   <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>รายการ</span>
+                   <span style={{ fontSize: 22, fontWeight: 700, color: cat.pillText, lineHeight: 1 }}>{count}</span>
+                   <span style={{ fontSize: 11, color: cat.pillText, fontWeight: 500, opacity: 0.8 }}>รายการ</span>
                  </div>
-                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#EFF4FF', color: cat.colorCode, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'white', color: cat.pillText, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: 0.9 }}>
                    <i className={`fas ${cat.icon}`} style={{ fontSize: 14 }}></i>
                  </div>
               </div>

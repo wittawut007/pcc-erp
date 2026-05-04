@@ -134,7 +134,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                       <div>
                         <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{job.plan_item?.product?.name ?? '—'}</span>
-                        <span style={{ marginLeft: 8, fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'var(--accent-light)', color: 'var(--accent)', fontWeight: 700 }}>แท่น {job.bed}</span>
+                        <span style={{ marginLeft: 8, fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'var(--accent-light)', color: 'var(--accent)', fontWeight: 700 }}>โรงผลิต {job.bed}</span>
                       </div>
                       <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, fontWeight: 700,
                         background: overdue ? 'var(--red-light)' : ready ? 'var(--green-light)' : 'var(--amber-light)',
@@ -167,7 +167,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
                 {/* Info Summary */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 18 }}>
                   {[
-                    { label: 'แท่น', value: selected.bed, color: 'var(--accent)' },
+                    { label: 'โรงผลิต', value: selected.bed, color: 'var(--accent)' },
                     { label: 'เทมาแล้ว', value: `${selected.qty_cast} ${selected.plan_item?.product?.unit}`, color: 'var(--text-primary)' },
                     { label: 'สถานะ', value: selected.status === 'ready_demold' ? 'พร้อมถอด' : 'กำลังบ่ม', color: selected.status === 'ready_demold' ? 'var(--green)' : '#B45309' },
                   ].map(s => (
@@ -251,7 +251,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr>
-                    {['สินค้า', 'แท่น', 'ดี', 'เสีย', 'สาเหตุ', 'เวลา'].map(h => (
+                    {['สินค้า', 'โรงผลิต', 'ดี', 'เสีย', 'สาเหตุ', 'เวลา'].map(h => (
                       <th key={h} style={{ padding: '6px 8px', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>
                     ))}
                   </tr>

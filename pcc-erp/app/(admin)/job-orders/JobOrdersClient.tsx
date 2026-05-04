@@ -159,7 +159,7 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
           action_type: cfg.nextLabel,
           entity_type: 'job_order',
           entity_id: job.id,
-          detail: `${job.plan_item?.product?.name ?? '—'} | แท่น ${job.bed} | ${castQty} ${job.plan_item?.product?.unit ?? 'ชิ้น'}`,
+          detail: `${job.plan_item?.product?.name ?? '—'} | โรงผลิต ${job.bed} | ${castQty} ${job.plan_item?.product?.unit ?? 'ชิ้น'}`,
         })
       }
 
@@ -236,7 +236,7 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
 
           {/* Bed filter pills */}
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF', marginRight: 2 }}>แท่น:</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF', marginRight: 2 }}>โรงผลิต:</span>
             {beds.map(b => (
               <button
                 key={b}
@@ -249,7 +249,7 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
                   transition: 'all 0.12s',
                 }}
               >
-                {b === 'all' ? 'ทุกแท่น' : `แท่น ${b}`}
+                {b === 'all' ? 'ทุกโรงผลิต' : `โรงผลิต ${b}`}
               </button>
             ))}
           </div>
@@ -264,7 +264,7 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
             <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#9CA3AF' }} />
             <input
               type="text"
-              placeholder="ค้นหาสินค้า, รหัส, แท่น..."
+              placeholder="ค้นหาสินค้า, รหัส, โรงผลิต..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               style={{
@@ -282,13 +282,13 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
             <div style={{ padding: '80px 24px', textAlign: 'center' }}>
               <i className="fas fa-clipboard-list" style={{ fontSize: 48, color: '#E5E7EB', display: 'block', marginBottom: 16 }} />
               <div style={{ fontSize: 14, fontWeight: 600, color: '#9CA3AF' }}>ไม่พบรายการ</div>
-              <div style={{ fontSize: 12, color: '#D1D5DB', marginTop: 4 }}>ลองปรับตัวกรองสถานะหรือแท่นผลิต</div>
+              <div style={{ fontSize: 12, color: '#D1D5DB', marginTop: 4 }}>ลองปรับตัวกรองสถานะหรือโรงผลิต</div>
             </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: '#F9FAFB', borderBottom: '2px solid #E5E7EB' }}>
-                  <th style={thStyle}>แท่น</th>
+                  <th style={thStyle}>โรงผลิต</th>
                   <th style={thStyle}>สินค้า</th>
                   <th style={{ ...thStyle, textAlign: 'center' }}>เป้า / เทแล้ว</th>
                   <th style={{ ...thStyle, textAlign: 'center' }}>ความคืบหน้า</th>
@@ -507,7 +507,7 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
                 <div>
                   <h2 style={{ fontSize: 15, fontWeight: 700, color: '#111827', margin: 0 }}>
-                    อัปเดตสถานะ — แท่น {showDetail.bed}
+                    อัปเดตสถานะ — โรงผลิต {showDetail.bed}
                   </h2>
                   <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
                     {showDetail.plan_item?.product?.name}
@@ -589,7 +589,7 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#065F46' }}>ยืนยันการ{cfg.nextLabel}</div>
                       <div style={{ fontSize: 12, color: '#059669', marginTop: 4 }}>
-                        {showDetail.plan_item?.product?.name} | {showDetail.qty_cast} {showDetail.plan_item?.product?.unit} | แท่น {showDetail.bed}
+                        {showDetail.plan_item?.product?.name} | {showDetail.qty_cast} {showDetail.plan_item?.product?.unit} | โรงผลิต {showDetail.bed}
                       </div>
                     </div>
                   </div>

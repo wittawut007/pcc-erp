@@ -110,8 +110,16 @@ function UnauthorizedContent() {
 
         {/* Logo mini */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 24 }}>
-          <div style={{ width: 24, height: 24, background: '#2563EB', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <i className="fas fa-industry text-white" style={{ fontSize: 11, color: 'white' }}></i>
+          <div style={{ width: 24, height: 24, background: '#2563EB', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+            <img 
+              src="/logo.png" 
+              alt="TP Logo" 
+              style={{ width: '16px', height: '16px', objectFit: 'contain' }}
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+                e.currentTarget.parentElement?.insertAdjacentHTML('beforeend', '<i class="fas fa-industry text-white" style="font-size: 11px; color: white"></i>');
+              }}
+            />
           </div>
           <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B', letterSpacing: '0.05em' }}>PCC POSTENTION ERP</span>
         </div>

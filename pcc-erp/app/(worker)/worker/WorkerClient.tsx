@@ -549,124 +549,156 @@ export default function WorkerClient({ jobOrders }: { jobOrders: Job[] }) {
 
           {/* SECTION: Phase 1 */}
           {activeSection === 'phase1' && currentJob && (
-            <div className="p-4 pb-10">
-              <div className="flex items-center justify-between mb-4">
-                <button onClick={resetScanner} className="text-blue-600 font-semibold text-sm flex items-center px-3 py-1.5 bg-blue-50 rounded-xl active:bg-blue-100">
-                  <i className="fas fa-chevron-left mr-1"></i> สแกนใหม่
+            <div style={{ padding: '24px 20px', maxWidth: '480px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <button 
+                  onClick={resetScanner} 
+                  style={{ color: '#2563EB', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', padding: '8px 14px', backgroundColor: '#EFF6FF', borderRadius: '12px', border: 'none', cursor: 'pointer' }}>
+                  <i className="fas fa-chevron-left" style={{ marginRight: '6px' }}></i> สแกนใหม่
                 </button>
-                <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-3 py-1 rounded-full border border-blue-200">
+                <span style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8', fontSize: '12px', fontWeight: 700, padding: '6px 14px', borderRadius: '99px', border: '1px solid #BFDBFE' }}>
                   ขั้นที่ 1: เตรียมแบบ ({currentIndex + 1}/{selectedJobs.length})
                 </span>
               </div>
 
-              <div className="bg-white rounded-[20px] p-5 mb-4 relative overflow-hidden fade-in border border-black/[0.03]" 
-                style={{ boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07), 0 15px 30px -5px rgba(0,0,0,0.05)' }}>
-                <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600"></div>
-                <div className="pl-3">
-                  <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mb-1">แท่นผลิต: {currentJob.bed}</p>
-                  <h2 className="text-xl font-extrabold text-slate-900 mt-0.5">{currentJob.plan_item?.product?.name}</h2>
-                  <div className="bg-blue-50/50 rounded-xl p-4 mt-4 flex justify-between items-center border border-blue-100/50">
-                    <span className="text-[13px] font-bold text-blue-900">เป้าหมายผลิตวันนี้</span>
-                    <span className="text-2xl font-black text-blue-600">{currentJob.qty_target} <span className="text-[13px] font-bold text-blue-400 uppercase">{currentJob.plan_item?.product?.unit}</span></span>
+              {/* Product Details Card */}
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '24px', position: 'relative', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.04)', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.06)' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, width: '6px', height: '100%', backgroundColor: '#2563EB' }}></div>
+                <div style={{ paddingLeft: '8px' }}>
+                  <p style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>โรงผลิต: {currentJob.bed}</p>
+                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', marginTop: '2px', lineHeight: 1.3 }}>{currentJob.plan_item?.product?.name}</h2>
+                  <div style={{ backgroundColor: 'rgba(239, 246, 255, 0.6)', borderRadius: '16px', padding: '16px 20px', marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgba(219, 234, 254, 0.8)' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#1E3A8A' }}>เป้าหมายผลิตวันนี้</span>
+                    <span style={{ fontSize: '26px', fontWeight: 900, color: '#2563EB' }}>{currentJob.qty_target} <span style={{ fontSize: '13px', fontWeight: 800, color: '#60A5FA', textTransform: 'uppercase' }}>{currentJob.plan_item?.product?.unit}</span></span>
                   </div>
                 </div>
               </div>
 
-              <h3 className="font-bold text-gray-600 mb-2 text-xs uppercase tracking-wide px-1 mt-4">ตรวจสอบความพร้อม</h3>
-              <div className="bg-white rounded-[20px] p-2 mb-4 fade-in border border-black/[0.03]" 
-                style={{ boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07), 0 15px 30px -5px rgba(0,0,0,0.05)' }}>
-                <label className="flex items-start p-4 hover:bg-slate-50/50 rounded-xl cursor-pointer border-b border-slate-50 transition-colors">
-                  <input type="checkbox" className="custom-checkbox mt-1 mr-4 flex-shrink-0" checked={phase1Checks.clean} onChange={e => setPhase1Checks(p => ({...p, clean: e.target.checked}))} />
-                  <div>
-                    <p className="font-extrabold text-slate-800 text-[14px]">ทำความสะอาดและทาน้ำยาแม่พิมพ์</p>
-                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">ตรวจสอบความสะอาดของแท่นเทปูนก่อนเริ่มงาน</p>
-                  </div>
-                </label>
-                <label className="flex items-start p-4 hover:bg-slate-50/50 rounded-xl cursor-pointer transition-colors">
-                  <input type="checkbox" className="custom-checkbox mt-1 mr-4 flex-shrink-0" checked={phase1Checks.wip} onChange={e => setPhase1Checks(p => ({...p, wip: e.target.checked}))} />
-                  <div>
-                    <p className="font-extrabold text-slate-800 text-[14px]">จัดวางโครงเหล็ก (WIP) ครบถ้วน</p>
-                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">ตรวจสอบรหัสและจำนวนโครงเหล็กให้ตรงตามแผน</p>
-                  </div>
-                </label>
-              </div>
-
-              <h3 className="font-bold text-gray-600 mb-2 text-xs uppercase tracking-wide px-1">รายการสั่งคอนกรีต</h3>
-              <div className="bg-[#0F172A] rounded-[20px] p-6 mb-5 fade-in text-white relative overflow-hidden" 
-                style={{ boxShadow: '0 10px 25px -5px rgba(15,23,42,0.3)' }}>
-                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-                <div className="flex justify-between items-center border-b border-slate-700/50 pb-4 mb-4">
-                  <p className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">ปริมาณสินค้าทั้งหมด</p>
-                  <p className="font-black text-white text-lg">{currentJob.qty_target} {currentJob.plan_item?.product?.unit}</p>
-                </div>
-                <div className="flex justify-between items-center">
-                  <p className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">ปริมาณคอนกรีตที่ต้องใช้</p>
-                  <p className="font-black text-3xl text-blue-400">{((currentJob.plan_item?.product?.concrete_per_unit || 0) * currentJob.qty_target).toFixed(2)} <span className="text-sm font-bold text-slate-500 ml-1 uppercase">คิว</span></p>
+              {/* Checklist */}
+              <div>
+                <h3 style={{ fontWeight: 800, color: '#475569', marginBottom: '14px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>ตรวจสอบความพร้อม</h3>
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '12px', border: '1px solid rgba(0,0,0,0.04)', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)' }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', padding: '18px', borderRadius: '16px', cursor: 'pointer', borderBottom: '1px solid #F8FAFC' }}>
+                    <input type="checkbox" style={{ marginTop: '4px', marginRight: '16px', flexShrink: 0, width: '20px', height: '20px', accentColor: '#2563EB' }} checked={phase1Checks.clean} onChange={e => setPhase1Checks(p => ({...p, clean: e.target.checked}))} />
+                    <div>
+                      <p style={{ fontWeight: 800, color: '#1E293B', fontSize: '15px' }}>ทำความสะอาดและทาน้ำยาแม่พิมพ์</p>
+                      <p style={{ fontSize: '13px', color: '#94A3B8', fontWeight: 500, marginTop: '4px' }}>ตรวจสอบความสะอาดของโรงผลิตก่อนเริ่มงาน</p>
+                    </div>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', padding: '18px', borderRadius: '16px', cursor: 'pointer' }}>
+                    <input type="checkbox" style={{ marginTop: '4px', marginRight: '16px', flexShrink: 0, width: '20px', height: '20px', accentColor: '#2563EB' }} checked={phase1Checks.wip} onChange={e => setPhase1Checks(p => ({...p, wip: e.target.checked}))} />
+                    <div>
+                      <p style={{ fontWeight: 800, color: '#1E293B', fontSize: '15px' }}>จัดวางโครงเหล็ก (WIP) ครบถ้วน</p>
+                      <p style={{ fontSize: '13px', color: '#94A3B8', fontWeight: 500, marginTop: '4px' }}>ตรวจสอบรหัสและจำนวนโครงเหล็กให้ตรงตามแผน</p>
+                    </div>
+                  </label>
                 </div>
               </div>
 
-              <h3 className="font-bold text-gray-600 mb-2 text-xs uppercase tracking-wide px-1">ถ่ายภาพยืนยัน <span className="text-red-500">*</span></h3>
-              <div className="bg-white rounded-[20px] border border-slate-100 p-2 mb-6 relative fade-in" 
-                style={{ boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07), 0 10px 20px -5px rgba(0,0,0,0.04)' }}>
-                <input type="file" accept="image/*" capture="environment" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onChange={e => handlePhotoSelect(e, `phase1-${currentJob.id}`)} />
-                <div className={`w-full h-32 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${photos[`phase1-${currentJob.id}`] ? 'border-emerald-300 text-emerald-500 overflow-hidden relative' : 'border-dashed border-slate-200 text-slate-400 bg-slate-50/50'}`}>
-                  {photos[`phase1-${currentJob.id}`] ? (
-                    <img src={photos[`phase1-${currentJob.id}`].preview} alt="preview" className="absolute inset-0 w-full h-full object-cover" />
-                  ) : (
-                    <><i className="fas fa-camera text-3xl mb-2"></i><span className="text-[11px] font-extrabold uppercase tracking-widest">แตะเพื่อถ่ายภาพยืนยัน</span></>
-                  )}
-                  {photos[`phase1-${currentJob.id}`] && <div className="absolute inset-0 bg-black/20 flex items-center justify-center"><i className="fas fa-check-circle text-white text-3xl drop-shadow-lg"></i></div>}
+              {/* Concrete Summary Box */}
+              <div>
+                <h3 style={{ fontWeight: 800, color: '#475569', marginBottom: '14px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>รายการสั่งคอนกรีต</h3>
+                <div style={{ backgroundColor: '#0F172A', borderRadius: '24px', padding: '24px 28px', color: '#ffffff', position: 'relative', overflow: 'hidden', boxShadow: '0 15px 35px -5px rgba(15,23,42,0.4)' }}>
+                  <div style={{ position: 'absolute', top: 0, right: 0, width: '150px', height: '150px', backgroundColor: 'rgba(59, 130, 246, 0.15)', borderRadius: '50%', marginRight: '-60px', marginTop: '-60px', filter: 'blur(35px)' }}></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(51, 65, 85, 0.6)', paddingBottom: '20px', marginBottom: '20px' }}>
+                    <p style={{ fontSize: '14px', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ปริมาณสินค้าทั้งหมด</p>
+                    <p style={{ fontWeight: 900, color: '#ffffff', fontSize: '20px' }}>{currentJob.qty_target} {currentJob.plan_item?.product?.unit}</p>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <p style={{ fontSize: '14px', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>คอนกรีตที่ต้องใช้</p>
+                    <p style={{ fontWeight: 900, fontSize: '36px', color: '#60A5FA' }}>{((currentJob.plan_item?.product?.concrete_per_unit || 0) * currentJob.qty_target).toFixed(2)} <span style={{ fontSize: '16px', fontWeight: 800, color: '#64748B', marginLeft: '6px', textTransform: 'uppercase' }}>คิว</span></p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Camera */}
+              <div>
+                <h3 style={{ fontWeight: 800, color: '#475569', marginBottom: '14px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>ถ่ายภาพยืนยัน <span style={{ color: '#EF4444' }}>*</span></h3>
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.05)', padding: '10px', position: 'relative', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)' }}>
+                  {!photos[`phase1-${currentJob.id}`] && <input type="file" accept="image/*" capture="environment" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10 }} onChange={e => handlePhotoSelect(e, `phase1-${currentJob.id}`)} />}
+                  <div style={{ 
+                    width: '100%', height: '140px', borderRadius: '16px', border: photos[`phase1-${currentJob.id}`] ? '2px solid #34D399' : '2px dashed #CBD5E1', 
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
+                    color: photos[`phase1-${currentJob.id}`] ? '#10B981' : '#94A3B8', backgroundColor: photos[`phase1-${currentJob.id}`] ? 'transparent' : '#F8FAFC',
+                    position: 'relative', overflow: 'hidden'
+                  }}>
+                    {photos[`phase1-${currentJob.id}`] ? (
+                      <>
+                        <img src={photos[`phase1-${currentJob.id}`].preview} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                          <button onClick={(e) => { e.stopPropagation(); setPhotos(p => { const newP = {...p}; delete newP[`phase1-${currentJob.id}`]; return newP; }) }} 
+                            style={{ width: '44px', height: '44px', backgroundColor: 'rgba(239, 68, 68, 0.95)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 20px -3px rgba(0,0,0,0.2)', position: 'absolute', top: '12px', right: '12px', border: 'none', cursor: 'pointer', zIndex: 20 }}>
+                            <i className="fas fa-trash" style={{ color: '#ffffff', fontSize: '16px' }}></i>
+                          </button>
+                          <i className="fas fa-check-circle" style={{ color: '#ffffff', fontSize: '42px', filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))' }}></i>
+                        </div>
+                      </>
+                    ) : (
+                      <><i className="fas fa-camera" style={{ fontSize: '36px', marginBottom: '10px' }}></i><span style={{ fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>แตะเพื่อถ่ายภาพยืนยัน</span></>
+                    )}
+                  </div>
                 </div>
               </div>
 
               <button disabled={!isPhase1Ready} onClick={handlePhase1Next} 
-                className={`w-full py-4 rounded-2xl font-black text-base flex justify-center items-center gap-2 transition-all ${isPhase1Ready ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/30 active:scale-95' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
-                {currentIndex < selectedJobs.length - 1 ? `ถัดไป (คิวที่ ${currentIndex + 2}/${selectedJobs.length})` : 'สรุปเพื่อสั่งคอนกรีต'} <i className="fas fa-arrow-right ml-1"></i>
+                style={{
+                  width: '100%', padding: '18px', borderRadius: '99px', fontWeight: 900, fontSize: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px',
+                  backgroundColor: isPhase1Ready ? '#2563EB' : '#E2E8F0',
+                  color: isPhase1Ready ? '#ffffff' : '#94A3B8',
+                  border: 'none',
+                  boxShadow: isPhase1Ready ? '0 12px 30px -6px rgba(37,99,235,0.5)' : 'none',
+                  cursor: isPhase1Ready ? 'pointer' : 'not-allowed',
+                  marginTop: '12px'
+                }}>
+                {currentIndex < selectedJobs.length - 1 ? `ถัดไป (คิวที่ ${currentIndex + 2}/${selectedJobs.length})` : 'สรุปเพื่อสั่งคอนกรีต'} <i className="fas fa-arrow-right" style={{ marginLeft: '4px' }}></i>
               </button>
             </div>
           )}
 
           {/* SECTION: Phase 1.5 Concrete Summary */}
           {activeSection === 'concreteSummary' && (
-            <div className="p-4 pb-10">
-              <div className="bg-white rounded-[24px] border border-black/[0.03] p-8 relative overflow-hidden fade-in"
-                style={{ boxShadow: '0 10px 30px -5px rgba(0,0,0,0.08)' }}>
-                <div className="absolute top-0 left-0 w-full h-2 bg-blue-600"></div>
-                <div className="text-center mb-8 mt-2">
-                  <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-100 shadow-sm">
-                    <i className="fas fa-receipt text-3xl text-blue-500"></i>
+            <div style={{ padding: '24px 20px', maxWidth: '480px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.04)', padding: '32px', position: 'relative', overflow: 'hidden', boxShadow: '0 15px 35px -5px rgba(0,0,0,0.08)' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '8px', backgroundColor: '#2563EB' }}></div>
+                <div style={{ textAlign: 'center', marginBottom: '32px', marginTop: '8px' }}>
+                  <div style={{ width: '72px', height: '72px', backgroundColor: '#EFF6FF', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', border: '1px solid #DBEAFE', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                    <i className="fas fa-receipt" style={{ fontSize: '32px', color: '#3B82F6' }}></i>
                   </div>
-                  <h2 className="text-xl font-black text-slate-900">สรุปใบสั่งคอนกรีต</h2>
-                  <p className="text-[12px] text-slate-400 font-bold uppercase tracking-wider mt-1">Ready-Mixed Concrete Order</p>
+                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.3px' }}>สรุปใบสั่งคอนกรีต</h2>
+                  <p style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '4px' }}>Ready-Mixed Concrete Order</p>
                 </div>
                 
-                <div className="border-t-2 border-dashed border-slate-100 pt-6 mb-6 space-y-4">
-                  <div className="space-y-3 mb-6 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                <div style={{ borderTop: '2px dashed #F1F5F9', paddingTop: '24px', marginBottom: '24px' }}>
+                  <div style={{ marginBottom: '24px', maxHeight: '200px', overflowY: 'auto', paddingRight: '8px' }} className="custom-scrollbar">
                     {selectedJobs.map(j => (
-                      <div key={j.id} className="flex justify-between items-center py-3 border-b border-slate-50 last:border-0">
+                      <div key={j.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #F8FAFC' }}>
                         <div>
-                          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">แท่น: {j.bed}</div>
-                          <div className="text-sm font-extrabold text-slate-800">{j.plan_item?.product?.name}</div>
+                          <div style={{ fontSize: '11px', fontWeight: 900, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>โรงผลิต: {j.bed}</div>
+                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#1E293B' }}>{j.plan_item?.product?.name}</div>
                         </div>
-                        <div className="text-base font-black text-blue-600">{((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target).toFixed(1)} <span className="text-[10px] uppercase ml-0.5 text-blue-400">คิว</span></div>
+                        <div style={{ fontSize: '18px', fontWeight: 900, color: '#2563EB' }}>{((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target).toFixed(1)} <span style={{ fontSize: '12px', textTransform: 'uppercase', marginLeft: '2px', color: '#60A5FA', fontWeight: 800 }}>คิว</span></div>
                       </div>
                     ))}
                   </div>
                   
-                  <div className="bg-[#0F172A] p-5 rounded-2xl flex justify-between items-center w-full shadow-lg shadow-slate-900/10">
-                    <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">ปริมาณสั่งรวม</span>
-                    <span className="text-3xl font-black text-blue-400">
-                      {selectedJobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0).toFixed(1)} <span className="text-sm font-bold text-slate-500 uppercase ml-1">คิว</span>
+                  <div style={{ backgroundColor: '#0F172A', padding: '24px', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.4)' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ปริมาณสั่งรวม</span>
+                    <span style={{ fontSize: '36px', fontWeight: 900, color: '#60A5FA' }}>
+                      {selectedJobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0).toFixed(1)} <span style={{ fontSize: '16px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', marginLeft: '6px' }}>คิว</span>
                     </span>
                   </div>
                 </div>
               </div>
-              <div className="flex gap-3 mt-6">
+              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
                 <button onClick={() => { setCurrentIndex(0); setActiveSection('phase1') }} 
-                  className="flex-1 bg-white border border-slate-200 text-slate-500 py-4 rounded-2xl font-black text-sm shadow-sm active:scale-95 transition-all">แก้ไข</button>
+                  style={{ flex: 1, backgroundColor: '#ffffff', border: '1px solid #E2E8F0', color: '#64748B', padding: '16px', borderRadius: '16px', fontWeight: 800, fontSize: '15px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                  แก้ไข
+                </button>
                 <button onClick={() => setActiveSection('phase2')} 
-                  className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black text-sm shadow-xl shadow-blue-600/30 flex items-center justify-center gap-2 active:scale-95 transition-all">
-                  ส่งคำสั่งปูน <i className="fas fa-paper-plane"></i>
+                  style={{ flex: 2, backgroundColor: '#2563EB', color: '#ffffff', padding: '16px', borderRadius: '16px', fontWeight: 900, fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: 'pointer', boxShadow: '0 10px 20px -5px rgba(37,99,235,0.4)', border: 'none' }}>
+                  ส่งคำสั่งปูน <i className="fas fa-paper-plane" style={{ marginLeft: '4px' }}></i>
                 </button>
               </div>
             </div>
@@ -674,145 +706,204 @@ export default function WorkerClient({ jobOrders }: { jobOrders: Job[] }) {
 
           {/* SECTION: Phase 2 Pouring */}
           {activeSection === 'phase2' && (
-            <div className="p-4 pb-10">
-              <div className="mb-4"><span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-3 py-1 rounded-full border border-indigo-200">ขั้นที่ 2: เทคอนกรีต</span></div>
-              <div className="bg-white rounded-[24px] border border-black/[0.03] p-8 text-center mb-6 fade-in"
-                style={{ boxShadow: '0 10px 30px -5px rgba(0,0,0,0.08)' }}>
-                <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-blue-100 shadow-sm">
-                  <i className="fas fa-truck-monster text-4xl text-blue-500 animate-bounce"></i>
+            <div style={{ padding: '24px 20px', maxWidth: '480px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <span style={{ backgroundColor: '#E0E7FF', color: '#4338CA', fontSize: '11px', fontWeight: 800, padding: '6px 14px', borderRadius: '99px', border: '1px solid #C7D2FE' }}>
+                  ขั้นที่ 2: เทคอนกรีต
+                </span>
+              </div>
+              
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.04)', padding: '32px', textAlign: 'center', marginBottom: '24px', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.06)' }}>
+                <div style={{ width: '96px', height: '96px', backgroundColor: '#EEF2FF', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '4px solid #E0E7FF', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                  <i className="fas fa-truck-monster" style={{ fontSize: '36px', color: '#6366F1' }}></i>
                 </div>
-                <h2 className="text-xl font-black text-slate-900 mb-2">ส่งคำสั่งปูนเรียบร้อยแล้ว</h2>
-                <p className="text-sm text-slate-500 font-medium mb-6">รถโม่กำลังจัดส่ง {selectedJobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0).toFixed(1)} คิว</p>
-                <div className="bg-amber-50/50 border border-amber-100 rounded-2xl p-5 text-left">
-                  <p className="font-black text-amber-800 text-[13px] mb-3 uppercase tracking-wider flex items-center gap-2"><i className="fas fa-exclamation-triangle text-amber-600"></i> ข้อควรปฏิบัติ:</p>
-                  <ul className="text-xs text-amber-700 space-y-2 list-none">
-                    <li className="flex items-start gap-2"><i className="fas fa-check text-[10px] mt-1"></i> ควบคุมการเทคอนกรีตลงแบบให้ทั่วถึง</li>
-                    <li className="flex items-start gap-2"><i className="fas fa-check text-[10px] mt-1"></i> ใช้เครื่องจี้ปูนไล่ฟองอากาศให้หมด</li>
-                    <li className="flex items-start gap-2"><i className="fas fa-check text-[10px] mt-1"></i> ปาดหน้าคอนกรีตให้เรียบสม่ำเสมอ</li>
+                <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', marginBottom: '8px' }}>ส่งคำสั่งปูนเรียบร้อยแล้ว</h2>
+                <p style={{ fontSize: '14px', color: '#64748B', fontWeight: 600, marginBottom: '24px' }}>
+                  รถโม่กำลังจัดส่ง {selectedJobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0).toFixed(1)} คิว
+                </p>
+                <div style={{ backgroundColor: 'rgba(254, 252, 232, 0.6)', border: '1px solid #FEF08A', borderRadius: '16px', padding: '20px', textAlign: 'left' }}>
+                  <p style={{ fontWeight: 900, color: '#92400E', fontSize: '13px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <i className="fas fa-exclamation-triangle" style={{ color: '#D97706' }}></i> ข้อควรปฏิบัติ:
+                  </p>
+                  <ul style={{ fontSize: '12px', color: '#B45309', margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', fontWeight: 600 }}>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}><i className="fas fa-check" style={{ fontSize: '10px', marginTop: '4px' }}></i> ควบคุมการเทคอนกรีตลงแบบให้ทั่วถึง</li>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}><i className="fas fa-check" style={{ fontSize: '10px', marginTop: '4px' }}></i> ใช้เครื่องจี้ปูนไล่ฟองอากาศให้หมด</li>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}><i className="fas fa-check" style={{ fontSize: '10px', marginTop: '4px' }}></i> ปาดหน้าคอนกรีตให้เรียบสม่ำเสมอ</li>
                   </ul>
                 </div>
               </div>
               
-              <h3 className="font-bold text-gray-600 mb-2 text-xs uppercase tracking-wide px-1">ถ่ายภาพยืนยันการเท <span className="text-red-500">*</span></h3>
-              <div className="bg-white rounded-2xl border border-gray-100 p-2 mb-5 relative fade-in">
-                <input type="file" accept="image/*" capture="environment" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onChange={e => handlePhotoSelect(e, 'phase2')} />
-                <div className={`w-full h-24 rounded-xl border-2 flex flex-col items-center justify-center ${photos['phase2'] ? 'border-indigo-300 text-indigo-500 overflow-hidden relative' : 'border-dashed border-gray-200 text-gray-400 bg-gray-50'}`}>
+              <h3 style={{ fontWeight: 800, color: '#475569', marginBottom: '12px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>ถ่ายภาพยืนยันการเท <span style={{ color: '#EF4444' }}>*</span></h3>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.05)', padding: '10px', position: 'relative', marginBottom: '24px', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)' }}>
+                {!photos['phase2'] && <input type="file" accept="image/*" capture="environment" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10 }} onChange={e => handlePhotoSelect(e, 'phase2')} />}
+                <div style={{ 
+                  width: '100%', height: '120px', borderRadius: '16px', border: photos['phase2'] ? '2px solid #818CF8' : '2px dashed #E2E8F0', 
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
+                  color: photos['phase2'] ? '#6366F1' : '#94A3B8', backgroundColor: photos['phase2'] ? 'transparent' : '#F8FAFC',
+                  position: 'relative', overflow: 'hidden'
+                }}>
                   {photos['phase2'] ? (
-                    <img src={photos['phase2'].preview} alt="preview" className="absolute inset-0 w-full h-full object-cover" />
+                    <>
+                      <img src={photos['phase2'].preview} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <button onClick={(e) => { e.stopPropagation(); setPhotos(p => { const newP = {...p}; delete newP['phase2']; return newP; }) }} 
+                          style={{ width: '40px', height: '40px', backgroundColor: 'rgba(239, 68, 68, 0.95)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 20px -3px rgba(0,0,0,0.2)', position: 'absolute', top: '12px', right: '12px', border: 'none', cursor: 'pointer', zIndex: 20 }}>
+                          <i className="fas fa-trash" style={{ color: '#ffffff', fontSize: '14px' }}></i>
+                        </button>
+                        <i className="fas fa-check-double" style={{ color: '#ffffff', fontSize: '36px', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))' }}></i>
+                      </div>
+                    </>
                   ) : (
-                    <><i className="fas fa-camera text-2xl mb-1"></i><span className="text-[10px] font-bold">แตะเพื่อถ่ายภาพหน้างาน</span></>
+                    <><i className="fas fa-camera" style={{ fontSize: '28px', marginBottom: '8px' }}></i><span style={{ fontSize: '11px', fontWeight: 800 }}>แตะเพื่อถ่ายภาพหน้างาน</span></>
                   )}
-                  {photos['phase2'] && <div className="absolute inset-0 bg-black/20 flex items-center justify-center"><i className="fas fa-check-double text-white text-2xl drop-shadow-md"></i></div>}
                 </div>
               </div>
 
-              <button disabled={!isPhase2Ready || saving} onClick={handlePhase2Submit} className={`w-full py-4 rounded-2xl font-bold text-base flex justify-center items-center gap-2 transition ${isPhase2Ready ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 active:scale-95' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}>
-                {saving ? <i className="fas fa-spinner fa-spin text-xl"></i> : <><i className="fas fa-check-double text-lg"></i> ยืนยันการเทคอนกรีตเสร็จสิ้น</>}
+              <button disabled={!isPhase2Ready || saving} onClick={handlePhase2Submit} 
+                style={{ 
+                  width: '100%', padding: '18px', borderRadius: '99px', fontWeight: 900, fontSize: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px',
+                  backgroundColor: isPhase2Ready ? '#4F46E5' : '#E2E8F0',
+                  color: isPhase2Ready ? '#ffffff' : '#94A3B8',
+                  border: 'none',
+                  boxShadow: isPhase2Ready ? '0 12px 30px -6px rgba(79,70,229,0.5)' : 'none',
+                  cursor: isPhase2Ready ? 'pointer' : 'not-allowed',
+                }}>
+                {saving ? <i className="fas fa-spinner fa-spin" style={{ fontSize: '20px' }}></i> : <><i className="fas fa-check-double" style={{ fontSize: '18px' }}></i> ยืนยันการเทคอนกรีตเสร็จสิ้น</>}
               </button>
             </div>
           )}
 
           {/* SECTION: Phase 3 */}
           {activeSection === 'phase3' && currentJob && (
-            <div className="p-4 pb-10">
-              <div className="flex items-center justify-between mb-4">
-                <button onClick={resetScanner} className="text-blue-600 font-semibold text-sm flex items-center px-3 py-1.5 bg-blue-50 rounded-xl active:bg-blue-100"><i className="fas fa-chevron-left mr-1"></i> สแกนใหม่</button>
-                <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-3 py-1 rounded-full border border-emerald-200">ขั้นที่ 3: ถอดแบบ ({currentIndex + 1}/{selectedJobs.length})</span>
+            <div style={{ padding: '24px 20px', maxWidth: '480px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <button onClick={resetScanner} style={{ color: '#2563EB', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', padding: '8px 14px', backgroundColor: '#EFF6FF', borderRadius: '12px', border: 'none', cursor: 'pointer' }}>
+                  <i className="fas fa-chevron-left" style={{ marginRight: '6px' }}></i> สแกนใหม่
+                </button>
+                <span style={{ backgroundColor: '#D1FAE5', color: '#047857', fontSize: '12px', fontWeight: 700, padding: '6px 14px', borderRadius: '99px', border: '1px solid #A7F3D0' }}>
+                  ขั้นที่ 3: ถอดแบบ ({currentIndex + 1}/{selectedJobs.length})
+                </span>
               </div>
               
-              <div className="bg-white rounded-[20px] p-5 mb-6 relative overflow-hidden fade-in border border-black/[0.03]" 
-                style={{ boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07), 0 15px 30px -5px rgba(0,0,0,0.05)' }}>
-                <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
-                <div className="pl-3">
-                  <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mb-1">แท่นผลิต: {currentJob.bed}</p>
-                  <h2 className="text-xl font-extrabold text-slate-900 mt-0.5">{currentJob.plan_item?.product?.name}</h2>
-                  <div className="bg-emerald-50/50 rounded-xl p-3 mt-4 flex items-center gap-2 border border-emerald-100/50">
-                    <i className="fas fa-clock text-emerald-500 text-xs"></i>
-                    <span className="text-[11px] font-black text-emerald-700 uppercase tracking-wider">พร้อมถอดแบบ (เป้าหมาย {currentJob.qty_target} {currentJob.plan_item?.product?.unit})</span>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '24px', position: 'relative', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.04)', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.06)' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, width: '6px', height: '100%', backgroundColor: '#10B981' }}></div>
+                <div style={{ paddingLeft: '8px' }}>
+                  <p style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>โรงผลิต: {currentJob.bed}</p>
+                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', marginTop: '2px', lineHeight: 1.3 }}>{currentJob.plan_item?.product?.name}</h2>
+                  <div style={{ backgroundColor: 'rgba(209, 250, 229, 0.5)', borderRadius: '16px', padding: '16px', marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid rgba(167, 243, 208, 0.5)' }}>
+                    <i className="fas fa-clock" style={{ color: '#10B981', fontSize: '14px' }}></i>
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.05em' }}>พร้อมถอดแบบ (เป้าหมาย {currentJob.qty_target} {currentJob.plan_item?.product?.unit})</span>
                   </div>
                 </div>
               </div>
 
-              <h3 className="font-bold text-gray-600 mb-3 text-xs uppercase tracking-wide px-1">บันทึกผลการถอดแบบ (QC)</h3>
-              
-              <div className="bg-white rounded-[20px] p-5 mb-4 fade-in border border-emerald-100/50" 
-                style={{ boxShadow: '0 4px 10px rgba(16,185,129,0.05)' }}>
-                <div className="flex justify-between items-center mb-4">
-                  <label className="font-black text-emerald-700 flex items-center gap-2 text-[13px] uppercase tracking-wider"><i className="fas fa-check-circle text-lg"></i> ยอดงานดี (QC PASS)</label>
-                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">เป้า: {currentJob.qty_target}</span>
-                </div>
-                <div className="flex items-center justify-between bg-emerald-50/50 rounded-2xl p-3 border border-emerald-100/50">
-                  <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'good', -1)} className="w-14 h-14 bg-white rounded-xl shadow-sm text-emerald-600 text-2xl active:bg-emerald-100 active:scale-90 transition-all flex items-center justify-center border border-emerald-100"><i className="fas fa-minus"></i></button>
-                  <input type="number" readOnly value={demoldingData[currentJob.id]?.good || 0} className="w-24 bg-transparent text-center text-5xl font-black text-emerald-800 outline-none" />
-                  <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'good', 1)} className="w-14 h-14 bg-white rounded-xl shadow-sm text-emerald-600 text-2xl active:bg-emerald-100 active:scale-90 transition-all flex items-center justify-center border border-emerald-100"><i className="fas fa-plus"></i></button>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-[20px] p-5 mb-5 fade-in border border-red-100/50" 
-                style={{ boxShadow: '0 4px 10px rgba(239,68,68,0.05)' }}>
-                <label className="font-black text-red-600 flex items-center gap-2 text-[13px] mb-4 uppercase tracking-wider"><i className="fas fa-heart-broken text-lg"></i> ยอดของเสีย (DEFECT)</label>
-                <div className="flex items-center justify-between bg-red-50/50 rounded-2xl p-3 border border-red-100/50 mb-4">
-                  <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'defect', -1)} className="w-14 h-14 bg-white rounded-xl shadow-sm text-red-500 text-2xl active:bg-red-100 active:scale-90 transition-all flex items-center justify-center border border-red-100"><i className="fas fa-minus"></i></button>
-                  <input type="number" readOnly value={demoldingData[currentJob.id]?.defect || 0} className="w-24 bg-transparent text-center text-5xl font-black text-red-700 outline-none" />
-                  <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'defect', 1)} className="w-14 h-14 bg-white rounded-xl shadow-sm text-red-500 text-2xl active:bg-red-100 active:scale-90 transition-all flex items-center justify-center border border-red-100"><i className="fas fa-plus"></i></button>
-                </div>
-                {demoldingData[currentJob.id]?.defect > 0 && (
-                  <div>
-                    <label className="block text-[11px] font-black text-red-800 mb-2 uppercase tracking-widest">ระบุสาเหตุความเสียหาย <span className="text-red-500">*</span></label>
-                    <select value={demoldingData[currentJob.id]?.reason} onChange={e => setDemoldingData(p => ({...p, [currentJob.id]: {...p[currentJob.id], reason: e.target.value}}))} 
-                      className="w-full bg-slate-50 border border-red-100 text-slate-900 rounded-xl p-4 outline-none text-base font-bold appearance-none transition-all focus:border-red-300">
-                      <option value="" disabled>-- เลือกสาเหตุ --</option>
-                      {DEFECT_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                    </select>
+              <div>
+                <h3 style={{ fontWeight: 800, color: '#475569', marginBottom: '14px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>บันทึกผลการถอดแบบ (QC)</h3>
+                
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '24px', border: '1px solid rgba(16, 185, 129, 0.2)', boxShadow: '0 10px 25px -5px rgba(16,185,129,0.08)', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <label style={{ fontWeight: 900, color: '#047857', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      <i className="fas fa-check-circle" style={{ fontSize: '20px' }}></i> ยอดงานดี (QC PASS)
+                    </label>
+                    <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>เป้า: {currentJob.qty_target}</span>
                   </div>
-                )}
-              </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(209, 250, 229, 0.3)', borderRadius: '20px', padding: '12px', border: '1px solid rgba(167, 243, 208, 0.5)' }}>
+                    <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'good', -1)} style={{ width: '56px', height: '56px', backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', color: '#059669', fontSize: '24px', border: '1px solid #D1FAE5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-minus"></i></button>
+                    <input type="number" readOnly value={demoldingData[currentJob.id]?.good || 0} style={{ width: '96px', backgroundColor: 'transparent', textAlign: 'center', fontSize: '48px', fontWeight: 900, color: '#065F46', outline: 'none', border: 'none' }} />
+                    <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'good', 1)} style={{ width: '56px', height: '56px', backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', color: '#059669', fontSize: '24px', border: '1px solid #D1FAE5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
+                  </div>
+                </div>
 
-              <h3 className="font-bold text-gray-600 mb-2 text-xs uppercase tracking-wide px-1">ถ่ายภาพยืนยัน <span className="text-red-500">*</span></h3>
-              <div className="bg-white rounded-2xl border border-gray-100 p-2 mb-5 relative fade-in">
-                <input type="file" accept="image/*" capture="environment" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onChange={e => handlePhotoSelect(e, `phase3-${currentJob.id}`)} />
-                <div className={`w-full h-24 rounded-xl border-2 flex flex-col items-center justify-center ${photos[`phase3-${currentJob.id}`] ? 'border-emerald-300 text-emerald-500 overflow-hidden relative' : 'border-dashed border-gray-200 text-gray-400 bg-gray-50'}`}>
-                  {photos[`phase3-${currentJob.id}`] ? (
-                    <img src={photos[`phase3-${currentJob.id}`].preview} alt="preview" className="absolute inset-0 w-full h-full object-cover" />
-                  ) : (
-                    <><i className="fas fa-camera text-2xl mb-1"></i><span className="text-[10px] font-bold">แตะเพื่อถ่ายภาพสินค้า (FG / Defect)</span></>
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '24px', border: '1px solid rgba(239, 68, 68, 0.2)', boxShadow: '0 10px 25px -5px rgba(239,68,68,0.08)' }}>
+                  <label style={{ fontWeight: 900, color: '#DC2626', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '20px' }}>
+                    <i className="fas fa-heart-broken" style={{ fontSize: '20px' }}></i> ยอดของเสีย (DEFECT)
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(254, 226, 226, 0.3)', borderRadius: '20px', padding: '12px', border: '1px solid rgba(254, 202, 202, 0.5)', marginBottom: demoldingData[currentJob.id]?.defect > 0 ? '20px' : '0' }}>
+                    <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'defect', -1)} style={{ width: '56px', height: '56px', backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', color: '#EF4444', fontSize: '24px', border: '1px solid #FEE2E2', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-minus"></i></button>
+                    <input type="number" readOnly value={demoldingData[currentJob.id]?.defect || 0} style={{ width: '96px', backgroundColor: 'transparent', textAlign: 'center', fontSize: '48px', fontWeight: 900, color: '#B91C1C', outline: 'none', border: 'none' }} />
+                    <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'defect', 1)} style={{ width: '56px', height: '56px', backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', color: '#EF4444', fontSize: '24px', border: '1px solid #FEE2E2', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
+                  </div>
+                  {demoldingData[currentJob.id]?.defect > 0 && (
+                    <div style={{ marginTop: '16px' }}>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 900, color: '#991B1B', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ระบุสาเหตุความเสียหาย <span style={{ color: '#EF4444' }}>*</span></label>
+                      <select value={demoldingData[currentJob.id]?.reason} onChange={e => setDemoldingData(p => ({...p, [currentJob.id]: {...p[currentJob.id], reason: e.target.value}}))} 
+                        style={{ width: '100%', backgroundColor: '#F8FAFC', border: '1px solid #FECACA', color: '#0F172A', borderRadius: '16px', padding: '16px', outline: 'none', fontSize: '16px', fontWeight: 700, appearance: 'none' }}>
+                        <option value="" disabled>-- เลือกสาเหตุ --</option>
+                        {DEFECT_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                      </select>
+                    </div>
                   )}
-                  {photos[`phase3-${currentJob.id}`] && <div className="absolute inset-0 bg-black/20 flex items-center justify-center"><i className="fas fa-check-circle text-white text-2xl drop-shadow-md"></i></div>}
                 </div>
               </div>
 
-              <button disabled={!isPhase3Ready} onClick={handlePhase3Next} className={`w-full py-4 rounded-2xl font-bold text-base flex justify-center items-center gap-2 transition ${isPhase3Ready ? 'bg-emerald-600 text-white shadow-xl shadow-emerald-600/30 active:scale-95' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}>
-                {currentIndex < selectedJobs.length - 1 ? 'ถัดไป' : 'สรุปยืนยันข้อมูลทั้งหมด'} <i className="fas fa-save ml-1"></i>
+              <div>
+                <h3 style={{ fontWeight: 800, color: '#475569', marginBottom: '14px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>ถ่ายภาพยืนยัน <span style={{ color: '#EF4444' }}>*</span></h3>
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.05)', padding: '10px', position: 'relative', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)' }}>
+                  {!photos[`phase3-${currentJob.id}`] && <input type="file" accept="image/*" capture="environment" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10 }} onChange={e => handlePhotoSelect(e, `phase3-${currentJob.id}`)} />}
+                  <div style={{ 
+                    width: '100%', height: '140px', borderRadius: '16px', border: photos[`phase3-${currentJob.id}`] ? '2px solid #34D399' : '2px dashed #CBD5E1', 
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
+                    color: photos[`phase3-${currentJob.id}`] ? '#10B981' : '#94A3B8', backgroundColor: photos[`phase3-${currentJob.id}`] ? 'transparent' : '#F8FAFC',
+                    position: 'relative', overflow: 'hidden'
+                  }}>
+                    {photos[`phase3-${currentJob.id}`] ? (
+                      <>
+                        <img src={photos[`phase3-${currentJob.id}`].preview} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <button onClick={(e) => { e.stopPropagation(); setPhotos(p => { const newP = {...p}; delete newP[`phase3-${currentJob.id}`]; return newP; }) }} 
+                            style={{ width: '44px', height: '44px', backgroundColor: 'rgba(239, 68, 68, 0.95)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 20px -3px rgba(0,0,0,0.2)', position: 'absolute', top: '12px', right: '12px', border: 'none', cursor: 'pointer', zIndex: 20 }}>
+                            <i className="fas fa-trash" style={{ color: '#ffffff', fontSize: '16px' }}></i>
+                          </button>
+                          <i className="fas fa-check-circle" style={{ color: '#ffffff', fontSize: '42px', filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))' }}></i>
+                        </div>
+                      </>
+                    ) : (
+                      <><i className="fas fa-camera" style={{ fontSize: '36px', marginBottom: '10px' }}></i><span style={{ fontSize: '12px', fontWeight: 800 }}>แตะเพื่อถ่ายภาพสินค้า (FG / Defect)</span></>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <button disabled={!isPhase3Ready} onClick={handlePhase3Next} 
+                style={{ 
+                  width: '100%', padding: '18px', borderRadius: '99px', fontWeight: 900, fontSize: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px',
+                  backgroundColor: isPhase3Ready ? '#059669' : '#E2E8F0',
+                  color: isPhase3Ready ? '#ffffff' : '#94A3B8',
+                  border: 'none',
+                  boxShadow: isPhase3Ready ? '0 12px 30px -6px rgba(5,150,105,0.5)' : 'none',
+                  cursor: isPhase3Ready ? 'pointer' : 'not-allowed',
+                  marginTop: '12px'
+                }}>
+                {currentIndex < selectedJobs.length - 1 ? 'ถัดไป' : 'สรุปยืนยันข้อมูลทั้งหมด'} <i className="fas fa-save" style={{ marginLeft: '4px' }}></i>
               </button>
             </div>
           )}
 
           {/* SECTION: Phase 3 Summary */}
           {activeSection === 'phase3Summary' && (
-            <div className="p-4 pb-10">
-              <div className="bg-white rounded-[24px] border border-black/[0.03] p-8 relative overflow-hidden fade-in"
-                style={{ boxShadow: '0 10px 30px -5px rgba(0,0,0,0.08)' }}>
-                <div className="absolute top-0 left-0 w-full h-2 bg-emerald-600"></div>
-                <div className="text-center mb-8 mt-2">
-                  <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-100 shadow-sm">
-                    <i className="fas fa-list-check text-3xl text-emerald-500"></i>
+            <div style={{ padding: '24px 20px', maxWidth: '480px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.04)', padding: '32px', position: 'relative', overflow: 'hidden', boxShadow: '0 15px 35px -5px rgba(0,0,0,0.08)' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '8px', backgroundColor: '#059669' }}></div>
+                <div style={{ textAlign: 'center', marginBottom: '32px', marginTop: '8px' }}>
+                  <div style={{ width: '72px', height: '72px', backgroundColor: '#ECFDF5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', border: '1px solid #D1FAE5', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                    <i className="fas fa-list-check" style={{ fontSize: '32px', color: '#10B981' }}></i>
                   </div>
-                  <h2 className="text-xl font-black text-slate-900">สรุปยอดถอดแบบ</h2>
-                  <p className="text-[12px] text-slate-400 font-bold uppercase tracking-wider mt-1">Demolding & QC Summary</p>
+                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.3px' }}>สรุปยอดถอดแบบ</h2>
+                  <p style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '4px' }}>Demolding & QC Summary</p>
                 </div>
                 
-                <div className="border-t-2 border-dashed border-slate-100 pt-6 mb-6 space-y-3">
+                <div style={{ borderTop: '2px dashed #F1F5F9', paddingTop: '24px', marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {selectedJobs.map(j => {
                     const entry = demoldingData[j.id];
                     return (
-                      <div key={j.id} className="bg-slate-50/50 rounded-2xl p-4 mb-3 border border-slate-100/50 flex justify-between items-center transition-all">
+                      <div key={j.id} style={{ backgroundColor: '#F8FAFC', borderRadius: '16px', padding: '16px 20px', border: '1px solid rgba(226, 232, 240, 0.6)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">แท่น {j.bed}</div>
-                          <div className="text-sm font-extrabold text-slate-800">{j.plan_item?.product?.name}</div>
+                          <div style={{ fontSize: '11px', fontWeight: 900, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>โรงผลิต {j.bed}</div>
+                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#1E293B' }}>{j.plan_item?.product?.name}</div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-base font-black text-emerald-600"><i className="fas fa-check-circle mr-1"></i>{entry.good}</div>
-                          {entry.defect > 0 && <div className="text-[11px] font-bold text-red-500"><i className="fas fa-times-circle mr-1"></i>{entry.defect}</div>}
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '18px', fontWeight: 900, color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}><i className="fas fa-check-circle"></i>{entry.good}</div>
+                          {entry.defect > 0 && <div style={{ fontSize: '13px', fontWeight: 800, color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', marginTop: '4px' }}><i className="fas fa-times-circle"></i>{entry.defect}</div>}
                         </div>
                       </div>
                     )
@@ -820,11 +911,15 @@ export default function WorkerClient({ jobOrders }: { jobOrders: Job[] }) {
                 </div>
                 
                 <button disabled={saving} onClick={handlePhase3Submit} 
-                  className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-emerald-600/30 flex justify-center items-center gap-2 active:scale-95 transition-all text-sm uppercase tracking-wider">
-                  {saving ? <i className="fas fa-spinner fa-spin text-xl"></i> : <>บันทึกและเข้าคลัง FG <i className="fas fa-paper-plane ml-1"></i></>}
+                  style={{ 
+                    width: '100%', backgroundColor: '#059669', color: '#ffffff', padding: '18px', borderRadius: '16px', fontWeight: 900, fontSize: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 10px 25px -5px rgba(5,150,105,0.4)', border: 'none', textTransform: 'uppercase', letterSpacing: '0.05em' 
+                  }}>
+                  {saving ? <i className="fas fa-spinner fa-spin" style={{ fontSize: '20px' }}></i> : <>บันทึกและเข้าคลัง FG <i className="fas fa-paper-plane" style={{ marginLeft: '4px' }}></i></>}
                 </button>
                 <button onClick={() => { setCurrentIndex(0); setActiveSection('phase3'); }} 
-                  className="w-full mt-4 bg-white border border-slate-200 text-slate-500 py-4 rounded-2xl font-black text-sm active:scale-95 transition-all uppercase tracking-wider">ย้อนกลับ</button>
+                  style={{ width: '100%', marginTop: '16px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', color: '#64748B', padding: '18px', borderRadius: '16px', fontWeight: 800, fontSize: '15px', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  ย้อนกลับ
+                </button>
               </div>
             </div>
           )}
@@ -939,7 +1034,7 @@ export default function WorkerClient({ jobOrders }: { jobOrders: Job[] }) {
                           </h4>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <i className="fas fa-map-marker-alt" style={{ color: '#3B82F6' }}></i> แท่น {j.bed}
+                              <i className="fas fa-map-marker-alt" style={{ color: '#3B82F6' }}></i> โรงผลิต {j.bed}
                             </span>
                             <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <i className="fas fa-bullseye" style={{ color: '#10B981' }}></i> เป้า: {j.qty_target}

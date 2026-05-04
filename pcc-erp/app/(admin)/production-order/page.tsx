@@ -22,10 +22,17 @@ export default async function ProductionOrdersPage() {
     .order('plan_date', { ascending: false })
     .limit(60)
 
+  const { data: { user } } = await supabase.auth.getUser()
+  let userRole = 'worker'
+  if (user) {
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+    userRole = profile?.role || 'worker'
+  }
+
   return (
     <>
       <Header title="ใบสั่งผลิต (Production Orders)" subtitle="รายการสั่งผลิตทั้งหมด — คลิกเพื่อดูรายละเอียดและพิมพ์ใบสั่งผลิต" />
-      <ProductionOrdersClient plans={plans ?? []} />
+      <ProductionOrdersClient plans={plans ?? []} userRole={userRole} />
     </>
   )
 }

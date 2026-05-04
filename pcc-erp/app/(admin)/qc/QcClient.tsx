@@ -167,7 +167,7 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ background: 'var(--bg)' }}>
-                  {['สินค้า', 'แท่น', 'ชิ้นดี', 'ของเสีย', 'สาเหตุ', 'พนักงาน', 'เวลา'].map((h, i) => (
+                  {['สินค้า', 'โรงผลิต', 'ชิ้นดี', 'ของเสีย', 'สาเหตุ', 'พนักงาน', 'เวลา'].map((h, i) => (
                     <th key={h} style={{ padding: '10px 12px', textAlign: i >= 2 && i <= 3 ? 'center' : 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
