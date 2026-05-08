@@ -17,6 +17,10 @@ interface PlanItem {
   qty: number
   unit?: string
   concrete: number
+  bomCode?: string | null
+  wire: number
+  mesh: number
+  rebar: number
 }
 
 interface ProductionOrderPrintClientProps {
@@ -188,10 +192,16 @@ export default function ProductionOrderPrintClient({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2.5px solid #111827', paddingBottom: 16, marginBottom: 20 }}>
             {/* Logo */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ background: '#2563EB', borderRadius: 10, padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M4 4H10V10H4V4ZM20 4V10H14V4H20ZM14 15.5V14H20V15.5H14ZM14 20V18.5H20V20H14ZM4 20V14H10V20H4Z" fill="white"/>
-                </svg>
+              <div style={{ background: '#2563EB', borderRadius: 10, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                <img 
+                  src="/logo.png" 
+                  alt="PCC Logo" 
+                  style={{ width: '28px', height: '28px', objectFit: 'contain' }}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                    e.currentTarget.parentElement?.insertAdjacentHTML('beforeend', '<i class="fas fa-industry" style="color: #fff; font-size: 20px"></i>');
+                  }}
+                />
               </div>
               <div>
                 <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1.1 }}>
@@ -271,7 +281,7 @@ export default function ProductionOrderPrintClient({
                     <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>{item.productCode}</div>
                   </td>
                   <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontFamily: 'monospace', fontSize: 11, color: '#6B7280', verticalAlign: 'top' }}>
-                    BOM-{item.productCode.substring(0, 7)}
+                    {item.bomCode || '-'}
                   </td>
                   <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontSize: 13, verticalAlign: 'top' }}>
                     <span style={{ background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 4, padding: '2px 8px', fontSize: 12, fontWeight: 600, color: '#475569' }}>
@@ -285,7 +295,7 @@ export default function ProductionOrderPrintClient({
                     {item.unit || 'ชิ้น'}
                   </td>
                   <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'right', fontSize: 12, color: '#6B7280', verticalAlign: 'top' }}>
-                    ~ {item.concrete.toFixed(1)}
+                    ~ {item.concrete.toFixed(2)}
                   </td>
                 </tr>
               ))}
@@ -302,7 +312,7 @@ export default function ProductionOrderPrintClient({
                   ชิ้น
                 </td>
                 <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'right', fontWeight: 800, color: '#2563EB', fontSize: 14 }}>
-                  ~ {totalConcrete.toFixed(1)} Q
+                  ~ {totalConcrete.toFixed(2)} Q
                 </td>
               </tr>
             </tfoot>
@@ -354,12 +364,15 @@ export default function ProductionOrderPrintClient({
               <div style={{ fontSize: 9, color: '#9CA3AF' }}>เอกสารนี้สร้างโดยระบบ PCC POSTENTION ERP อัตโนมัติ</div>
               <div style={{ fontSize: 9, color: '#9CA3AF', marginTop: 3 }}>สร้างเมื่อ: {date} เวลา {time} น. | Ref: SYS-AUTO-GEN</div>
             </div>
-            <div style={{ textAlign: 'right' }}>
+            <div style={{ textAlign: 'center', marginRight: 20 }}>
+              <div style={{ width: 140, borderBottom: '1px dashed #9CA3AF', marginBottom: 8, height: 30 }}></div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>{userFullName}</div>
-              <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>ผู้ดูแลระบบ (Admin)</div>
+              <div style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>ผู้สร้างแผนการผลิต</div>
             </div>
           </div>
         </div>
+
+
 
         {/* ─── ACTION TOOLBAR (hidden on print) ─── */}
         <div

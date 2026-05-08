@@ -3,6 +3,7 @@
 import { useState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { clearOldPlanData } from '@/app/actions/planner'
 import toast from 'react-hot-toast'
 
 interface Product {
@@ -15,14 +16,21 @@ interface Product {
   unit: string
   bom_code: string | null
   wip_code: string | null
+  length: number | null
+  wire_per_unit: number
+  mesh_per_unit: number
+  rebar_per_unit: number
 }
 
 interface RawMaterial {
   id: string
+  material_code: string | null
   name: string
   qty_on_hand: number
   unit: string
   min_stock: number
+  weight_per_meter: number | null
+  category: string
 }
 
 interface WipItem {
@@ -41,6 +49,9 @@ interface PlanItem {
   qty: number
   unit?: string
   concrete: number
+  wire: number
+  mesh: number
+  rebar: number
 }
 
 interface Props {
@@ -53,6 +64,15 @@ interface Props {
 }
 
 const beds = ['1', '2', '3', '4']
+
+const CATEGORIES = [
+  'A13 แผ่นพื้นตัน',
+  'A30 ผนังรั้วสำเร็จรูป',
+  'A35 รั้วสำเร็จรูป',
+  'A36 เสา คาน บันได',
+  'A41 เสาเข็ม',
+  'A42 กำแพงกันดิน',
+]
 
 export default function PlannerClient({ products, todayPlan, rawMaterials, wipInventory = [], today, workerToken = '' }: Props) {
   const supabase = createClient()
@@ -67,18 +87,25 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
   const [selectedBed, setSelectedBed] = useState('1')
   const [qty, setQty] = useState(1)
   const [planItems, setPlanItems] = useState<PlanItem[]>(
-    todayPlan?.items?.map((item: any) => ({
-      id: item.id,
-      productId: item.product_id,
-      productCode: item.product?.code ?? '',
-      productName: item.product?.name ?? '',
-      size: item.product?.size ?? '',
-      category: item.product?.category ?? '',
-      unit: item.product?.unit ?? 'ชิ้น',
-      bed: item.bed,
-      qty: item.qty_target,
-      concrete: (item.product?.concrete_per_unit ?? 0) * item.qty_target,
-    })) ?? []
+    todayPlan?.items?.map((item: any) => {
+      const p = item.product || {};
+      const wireVal = p.wire_per_unit || p.length || 0;
+      return {
+        id: item.id,
+        productId: item.product_id,
+        productCode: p.code ?? '',
+        productName: p.name ?? '',
+        size: p.size ?? '',
+        category: p.category ?? '',
+        unit: p.unit ?? 'ชิ้น',
+        bed: item.bed,
+        qty: item.qty_target,
+        concrete: (p.concrete_per_unit ?? 0) * item.qty_target,
+        wire: wireVal * item.qty_target,
+        mesh: (p.mesh_per_unit ?? 0) * item.qty_target,
+        rebar: (p.rebar_per_unit ?? 0) * item.qty_target,
+      }
+    }) ?? []
   )
 
   const supabaseRouter = useRouter()
@@ -86,19 +113,48 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
   const [confirming, setConfirming] = useState(false)
 
   // Derived cascade options
-  const cats = useMemo(() => Array.from(new Set(products.map(p => p.category))), [products])
+  const cats = CATEGORIES
   
   const names = useMemo(() => {
-    return Array.from(new Set(products.filter(p => !selCat || p.category === selCat).map(p => p.name)))
+    const prefix = selCat ? selCat.split(' ')[0] : '';
+    return Array.from(new Set(products.filter(p => !prefix || p.category.startsWith(prefix)).map(p => p.name)))
   }, [products, selCat])
   
   const sizes = useMemo(() => {
-    return Array.from(new Set(products.filter(p => (!selCat || p.category === selCat) && (!selName || p.name === selName)).map(p => p.size || '-')))
+    const prefix = selCat ? selCat.split(' ')[0] : '';
+    const sizeList = Array.from(new Set(products.filter(p => (!prefix || p.category.startsWith(prefix)) && (!selName || p.name === selName)).map(p => p.size || '-')))
+    
+    return sizeList.sort((a, b) => {
+      if (a === '-' && b !== '-') return 1;
+      if (b === '-' && a !== '-') return -1;
+      
+      const parseValue = (val: string) => {
+        const parts = val.toLowerCase().split('x');
+        if (parts.length > 1) {
+           const numStr = parts[parts.length - 1].replace(/[^0-9.]/g, '');
+           const num = parseFloat(numStr);
+           return isNaN(num) ? Infinity : num;
+        }
+        const numStr = val.replace(/[^0-9.]/g, '');
+        const num = parseFloat(numStr);
+        return isNaN(num) ? Infinity : num;
+      };
+
+      const valA = parseValue(a);
+      const valB = parseValue(b);
+
+      if (valA !== Infinity || valB !== Infinity) {
+         if (valA !== valB) return valA - valB;
+      }
+      
+      return a.localeCompare(b);
+    })
   }, [products, selCat, selName])
   
   const codes = useMemo(() => {
+    const prefix = selCat ? selCat.split(' ')[0] : '';
     return products.filter(p => 
-      (!selCat || p.category === selCat) && 
+      (!prefix || p.category.startsWith(prefix)) && 
       (!selName || p.name === selName) && 
       (!selSize || (p.size || '-') === selSize)
     )
@@ -111,15 +167,22 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
   const actOnSize = (val: string) => { setSelSize(val); setSelCode(''); }
   
   const totalConcrete = planItems.reduce((s, i) => s + i.concrete, 0)
+  const totalWire = planItems.reduce((s, i) => s + i.wire, 0)
+  const totalMesh = planItems.reduce((s, i) => s + i.mesh, 0)
+  const totalRebar = planItems.reduce((s, i) => s + i.rebar, 0)
   const totalQty = planItems.reduce((s, i) => s + i.qty, 0)
 
   const handleAddProduct = () => {
     if (!selectedProduct) return
+    const wireVal = selectedProduct.wire_per_unit || selectedProduct.length || 0;
     const existing = planItems.findIndex(i => i.productId === selectedProduct.id && i.bed === selectedBed)
     if (existing >= 0) {
       const updated = [...planItems]
       updated[existing].qty += qty
       updated[existing].concrete = updated[existing].qty * selectedProduct.concrete_per_unit
+      updated[existing].wire = updated[existing].qty * wireVal
+      updated[existing].mesh = updated[existing].qty * selectedProduct.mesh_per_unit
+      updated[existing].rebar = updated[existing].qty * selectedProduct.rebar_per_unit
       setPlanItems(updated)
     } else {
       setPlanItems([...planItems, {
@@ -132,6 +195,9 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
         bed: selectedBed,
         qty,
         concrete: qty * selectedProduct.concrete_per_unit,
+        wire: qty * wireVal,
+        mesh: qty * selectedProduct.mesh_per_unit,
+        rebar: qty * selectedProduct.rebar_per_unit,
       }])
     }
     setQty(1)
@@ -163,13 +229,8 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
       .single()
     if (planError) throw planError
 
-    // Safe deletion: delete job_orders first to avoid FK violations
-    const { data: oldItems } = await supabase.from('production_plan_items').select('id').eq('plan_id', plan.id)
-    if (oldItems && oldItems.length > 0) {
-      const itemIds = oldItems.map(i => i.id)
-      await supabase.from('job_orders').delete().in('plan_item_id', itemIds)
-    }
-    await supabase.from('production_plan_items').delete().eq('plan_id', plan.id)
+    // Safe deletion using service role to bypass RLS limits
+    await clearOldPlanData(plan.id)
 
     let createdItems: any[] = []
     if (planItems.length > 0) {
@@ -186,15 +247,47 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
       createdItems = items || []
     }
 
-    const pcWireLocal = rawMaterials.find(r => r.name.toLowerCase().includes('ลวด') || r.name.toLowerCase().includes('pc wire'))
-    if (pcWireLocal && totalQty > 0) {
-      const pcWireReq = totalQty * 18.5
-      const { error: pmError } = await supabase.from('plan_materials').upsert({
-        plan_id: plan.id,
-        raw_material_id: pcWireLocal.id,
-        qty_required: pcWireReq,
-        status: 'pending'
-      }, { onConflict: 'plan_id,raw_material_id' })
+    const materialReqs: Record<string, number> = {}
+
+    // ค้นหา fallback โดยใช้ category และ name
+    const fallbackWire = rawMaterials.find(r => r.category === 'ลวด' || r.name.toLowerCase().includes('ลวด') || r.name.toLowerCase().includes('pc wire'))
+    const fallbackMesh = rawMaterials.find(r => r.category === 'เมช' || r.name.includes('เมช') || r.category === 'Mesh')
+    const fallbackRebar = rawMaterials.find(r => r.category === 'เหล็กเส้น' || r.name.includes('เหล็กเส้น'))
+
+    planItems.forEach(item => {
+      const product = products.find(p => p.id === item.productId)
+      if (!product) return
+
+      // Wire
+      const wireNeeded = (product.wire_per_unit || product.length || 0) * item.qty
+      if (wireNeeded > 0) {
+        const specificWire = rawMaterials.find(r => r.name === product.bom_code)
+        const wireId = specificWire?.id || fallbackWire?.id
+        if (wireId) materialReqs[wireId] = (materialReqs[wireId] || 0) + wireNeeded
+      }
+
+      // Mesh
+      const meshNeeded = (product.mesh_per_unit || 0) * item.qty
+      if (meshNeeded > 0 && fallbackMesh?.id) {
+        materialReqs[fallbackMesh.id] = (materialReqs[fallbackMesh.id] || 0) + meshNeeded
+      }
+
+      // Rebar
+      const rebarNeeded = (product.rebar_per_unit || 0) * item.qty
+      if (rebarNeeded > 0 && fallbackRebar?.id) {
+        materialReqs[fallbackRebar.id] = (materialReqs[fallbackRebar.id] || 0) + rebarNeeded
+      }
+    })
+
+    const pmPayloads = Object.entries(materialReqs).map(([rmId, qty]) => ({
+      plan_id: plan.id,
+      raw_material_id: rmId,
+      qty_required: qty,
+      status: 'pending'
+    }))
+
+    if (pmPayloads.length > 0) {
+      const { error: pmError } = await supabase.from('plan_materials').insert(pmPayloads)
       if (pmError) throw new Error('plan_materials error: ' + pmError.message)
     }
 
@@ -229,26 +322,28 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
 
       const { data: { user } } = await supabase.auth.getUser()
 
-      // Generate order number
-      const datePart = today.replace(/-/g, '')
-      const { count } = await supabase.from('production_orders').select('*', { count: 'exact', head: true }).like('order_number', `PO-${datePart}-%`)
-      const seq = String((count || 0) + 1).padStart(3, '0')
-      const orderNumber = `PO-${datePart}-${seq}`
-
-      const { data: prodOrder, error: prodOrderErr } = await supabase.from('production_orders').insert({
-        order_number: orderNumber,
-        plan_id: plan.id,
-        confirmed_by: user?.id,
-        status: 'active'
-      }).select().single()
+      // Check if order already exists
+      let finalOrderId;
+      const { data: existing } = await supabase.from('production_orders').select('id').eq('plan_id', plan.id).single();
       
-      if (prodOrderErr && !prodOrderErr.message.includes('duplicate')) throw prodOrderErr
+      if (existing) {
+         finalOrderId = existing.id;
+      } else {
+        // Generate order number
+        const datePart = today.replace(/-/g, '')
+        const { count } = await supabase.from('production_orders').select('*', { count: 'exact', head: true }).like('order_number', `PO-${datePart}-%`)
+        const seq = String((count || 0) + 1).padStart(3, '0')
+        const orderNumber = `PO-${datePart}-${seq}`
 
-      // If it already exists due to a duplicate run, fetch it instead
-      let finalOrderId = prodOrder?.id;
-      if (!finalOrderId) {
-         const { data: existing } = await supabase.from('production_orders').select('id').eq('plan_id', plan.id).single();
-         finalOrderId = existing?.id;
+        const { data: prodOrder, error: prodOrderErr } = await supabase.from('production_orders').insert({
+          order_number: orderNumber,
+          plan_id: plan.id,
+          confirmed_by: user?.id,
+          status: 'active'
+        }).select().single()
+        
+        if (prodOrderErr) throw prodOrderErr
+        finalOrderId = prodOrder.id;
       }
 
       if (items && items.length > 0 && finalOrderId) {
@@ -473,15 +568,15 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
                      </div>
                      <div>
                         <p className="text-[12px] text-gray-500 font-medium mb-1">ลวดรวม</p>
-                        <p className="font-extrabold text-blue-600 text-[20px]">{(totalQty > 0 ? totalQty * 2.5 : 0).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">กก.</span></p>
+                        <p className="font-extrabold text-blue-600 text-[20px]">{totalWire.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">เมตร</span></p>
                      </div>
                      <div>
                         <p className="text-[12px] text-gray-500 font-medium mb-1">เมชรวม</p>
-                        <p className="font-extrabold text-blue-600 text-[20px]">{(totalQty > 0 ? totalQty * 1.2 : 0).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">ตร.ม.</span></p>
+                        <p className="font-extrabold text-blue-600 text-[20px]">{totalMesh.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">ตร.ม.</span></p>
                      </div>
                      <div>
                         <p className="text-[12px] text-gray-500 font-medium mb-1">เหล็กเส้นรวม</p>
-                        <p className="font-extrabold text-blue-600 text-[20px]">{(totalQty > 0 ? totalQty * 4.0 : 0).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">เมตร</span></p>
+                        <p className="font-extrabold text-blue-600 text-[20px]">{totalRebar.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">เมตร</span></p>
                      </div>
                   </div>
                </div>

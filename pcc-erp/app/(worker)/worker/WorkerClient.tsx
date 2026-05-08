@@ -13,7 +13,18 @@ interface Job {
   qty_target: number
   qty_cast: number
   expected_demold_at: string | null
-  plan_item: { product: { id: string; code: string; name: string; category: string; unit: string; concrete_per_unit?: number } | null } | null
+  plan_item_id?: string
+  plan_item: {
+    id?: string
+    plan_id?: string
+    product: { id: string; code: string; name: string; size?: string; category: string; unit: string; concrete_per_unit?: number } | null
+  } | null
+}
+
+interface PlanMaterial {
+  name: string
+  qty: number
+  unit: string
 }
 
 const DEFECT_REASONS = [
@@ -23,7 +34,15 @@ const DEFECT_REASONS = [
   { value: 'other', label: 'อื่นๆ' },
 ]
 
-export default function WorkerClient({ jobOrders }: { jobOrders: Job[] }) {
+export default function WorkerClient({
+  jobOrders,
+  planMaterialsMap = {},
+  planItemToPlanMap = {},
+}: {
+  jobOrders: Job[]
+  planMaterialsMap?: Record<string, PlanMaterial[]>
+  planItemToPlanMap?: Record<string, string>
+}) {
   const supabase = createClient()
   const router = useRouter()
 
@@ -568,7 +587,10 @@ export default function WorkerClient({ jobOrders }: { jobOrders: Job[] }) {
                 <div style={{ position: 'absolute', top: 0, left: 0, width: '6px', height: '100%', backgroundColor: '#2563EB' }}></div>
                 <div style={{ paddingLeft: '8px' }}>
                   <p style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>โรงผลิต: {currentJob.bed}</p>
-                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', marginTop: '2px', lineHeight: 1.3 }}>{currentJob.plan_item?.product?.name}</h2>
+                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', marginTop: '2px', lineHeight: 1.3 }}>
+                    {currentJob.plan_item?.product?.name}
+                    {currentJob.plan_item?.product?.size && <span style={{ display: 'block', fontSize: '15px', fontWeight: 600, color: '#64748B', marginTop: '4px' }}>ขนาด: {currentJob.plan_item?.product?.size}</span>}
+                  </h2>
                   <div style={{ backgroundColor: 'rgba(239, 246, 255, 0.6)', borderRadius: '16px', padding: '16px 20px', marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgba(219, 234, 254, 0.8)' }}>
                     <span style={{ fontSize: '13px', fontWeight: 700, color: '#1E3A8A' }}>เป้าหมายผลิตวันนี้</span>
                     <span style={{ fontSize: '26px', fontWeight: 900, color: '#2563EB' }}>{currentJob.qty_target} <span style={{ fontSize: '13px', fontWeight: 800, color: '#60A5FA', textTransform: 'uppercase' }}>{currentJob.plan_item?.product?.unit}</span></span>
@@ -589,9 +611,31 @@ export default function WorkerClient({ jobOrders }: { jobOrders: Job[] }) {
                   </label>
                   <label style={{ display: 'flex', alignItems: 'flex-start', padding: '18px', borderRadius: '16px', cursor: 'pointer' }}>
                     <input type="checkbox" style={{ marginTop: '4px', marginRight: '16px', flexShrink: 0, width: '20px', height: '20px', accentColor: '#2563EB' }} checked={phase1Checks.wip} onChange={e => setPhase1Checks(p => ({...p, wip: e.target.checked}))} />
-                    <div>
-                      <p style={{ fontWeight: 800, color: '#1E293B', fontSize: '15px' }}>จัดวางโครงเหล็ก (WIP) ครบถ้วน</p>
-                      <p style={{ fontSize: '13px', color: '#94A3B8', fontWeight: 500, marginTop: '4px' }}>ตรวจสอบรหัสและจำนวนโครงเหล็กให้ตรงตามแผน</p>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontWeight: 800, color: '#1E293B', fontSize: '15px' }}>จัดวางโครงเหล็กครบถ้วน</p>
+                      {/* Show real material info from dispensed stock */}
+                      {(() => {
+                        const planId = currentJob.plan_item?.plan_id || planItemToPlanMap[currentJob.plan_item_id || ''] || ''
+                        const mats = planMaterialsMap[planId] || []
+                        // Filter only wire/steel categories
+                        const steelMats = mats.filter(m =>
+                          !m.name.toLowerCase().includes('คอน') &&
+                          !m.name.toLowerCase().includes('concrete')
+                        )
+                        if (steelMats.length > 0) {
+                          return (
+                            <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                              {steelMats.map((m, i) => (
+                                <p key={i} style={{ fontSize: '12px', color: '#2563EB', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <i className="fas fa-check" style={{ fontSize: '9px', color: '#93C5FD' }} />
+                                  {m.name}
+                                </p>
+                              ))}
+                            </div>
+                          )
+                        }
+                        return <p style={{ fontSize: '13px', color: '#94A3B8', fontWeight: 500, marginTop: '4px' }}>ตรวจสอบรหัสและจำนวนโครงเหล็กให้ตรงตามแผน</p>
+                      })()}
                     </div>
                   </label>
                 </div>
@@ -676,7 +720,10 @@ export default function WorkerClient({ jobOrders }: { jobOrders: Job[] }) {
                       <div key={j.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #F8FAFC' }}>
                         <div>
                           <div style={{ fontSize: '11px', fontWeight: 900, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>โรงผลิต: {j.bed}</div>
-                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#1E293B' }}>{j.plan_item?.product?.name}</div>
+                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#1E293B' }}>
+                            {j.plan_item?.product?.name}
+                            {j.plan_item?.product?.size && <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748B', marginLeft: '6px' }}>(ขนาด: {j.plan_item?.product?.size})</span>}
+                          </div>
                         </div>
                         <div style={{ fontSize: '18px', fontWeight: 900, color: '#2563EB' }}>{((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target).toFixed(1)} <span style={{ fontSize: '12px', textTransform: 'uppercase', marginLeft: '2px', color: '#60A5FA', fontWeight: 800 }}>คิว</span></div>
                       </div>
@@ -789,7 +836,10 @@ export default function WorkerClient({ jobOrders }: { jobOrders: Job[] }) {
                 <div style={{ position: 'absolute', top: 0, left: 0, width: '6px', height: '100%', backgroundColor: '#10B981' }}></div>
                 <div style={{ paddingLeft: '8px' }}>
                   <p style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>โรงผลิต: {currentJob.bed}</p>
-                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', marginTop: '2px', lineHeight: 1.3 }}>{currentJob.plan_item?.product?.name}</h2>
+                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', marginTop: '2px', lineHeight: 1.3 }}>
+                    {currentJob.plan_item?.product?.name}
+                    {currentJob.plan_item?.product?.size && <span style={{ display: 'block', fontSize: '15px', fontWeight: 600, color: '#64748B', marginTop: '4px' }}>ขนาด: {currentJob.plan_item?.product?.size}</span>}
+                  </h2>
                   <div style={{ backgroundColor: 'rgba(209, 250, 229, 0.5)', borderRadius: '16px', padding: '16px', marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid rgba(167, 243, 208, 0.5)' }}>
                     <i className="fas fa-clock" style={{ color: '#10B981', fontSize: '14px' }}></i>
                     <span style={{ fontSize: '12px', fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.05em' }}>พร้อมถอดแบบ (เป้าหมาย {currentJob.qty_target} {currentJob.plan_item?.product?.unit})</span>
@@ -899,7 +949,10 @@ export default function WorkerClient({ jobOrders }: { jobOrders: Job[] }) {
                       <div key={j.id} style={{ backgroundColor: '#F8FAFC', borderRadius: '16px', padding: '16px 20px', border: '1px solid rgba(226, 232, 240, 0.6)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <div style={{ fontSize: '11px', fontWeight: 900, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>โรงผลิต {j.bed}</div>
-                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#1E293B' }}>{j.plan_item?.product?.name}</div>
+                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#1E293B' }}>
+                            {j.plan_item?.product?.name}
+                            {j.plan_item?.product?.size && <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748B', marginLeft: '6px' }}>(ขนาด: {j.plan_item?.product?.size})</span>}
+                          </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '18px', fontWeight: 900, color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}><i className="fas fa-check-circle"></i>{entry.good}</div>
@@ -1031,6 +1084,7 @@ export default function WorkerClient({ jobOrders }: { jobOrders: Job[] }) {
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <h4 style={{ fontSize: '15px', fontWeight: 800, color: '#1E293B', margin: '0 0 6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {j.plan_item?.product?.name}
+                            {j.plan_item?.product?.size && <div style={{ fontSize: '12px', fontWeight: 500, color: '#64748B', marginTop: '2px' }}>ขนาด: {j.plan_item?.product?.size}</div>}
                           </h4>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>

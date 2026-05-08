@@ -13,13 +13,18 @@ export default async function ProductsPage() {
     .order('category')
     .order('code')
 
+  const { data: rawMaterials } = await supabase
+    .from('raw_materials')
+    .select('*')
+    .order('name')
+
   return (
     <>
       <Header 
         title="จัดการข้อมูลสินค้า (Product Master Data)" 
         subtitle="จัดการข้อมูลสินค้า Precast Concrete ทุกประเภท" 
       />
-      <ProductsClient products={products ?? []} />
+      <ProductsClient products={products ?? []} rawMaterials={rawMaterials ?? []} />
     </>
   )
 }

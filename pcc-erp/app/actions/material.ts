@@ -51,14 +51,20 @@ export async function upsertPlanMaterial(
 }
 
 /**
- * ลบรายการวัตถุดิบออกจากแผน (โดย Planner)
+ * ลบรายการวัตถุดิบออกจากแผน (เฉพาะ Admin)
  */
 export async function removePlanMaterial(planMaterialId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
 
-  const { error } = await supabase
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'admin') throw new Error('Unauthorized: Only admin can delete materials')
+
+  const { createClient: createServiceClient } = await import('@supabase/supabase-js')
+  const serviceClient = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+
+  const { error } = await serviceClient
     .from('plan_materials')
     .delete()
     .eq('id', planMaterialId)
@@ -84,21 +90,39 @@ export async function dispenseMaterial(
   // ดึงข้อมูลรายการ
   const { data: planMat, error: fetchErr } = await supabase
     .from('plan_materials')
-    .select('*, raw_material:raw_materials(qty_on_hand)')
+    .select('*, raw_material:raw_materials(id, name, material_code, category, unit, qty_on_hand, weight_per_meter)')
     .eq('id', planMaterialId)
     .single()
 
   if (fetchErr || !planMat) throw new Error('ไม่พบรายการวัตถุดิบ')
 
-  const rawMat = planMat.raw_material as { qty_on_hand: number } | null
+  const rawMat = planMat.raw_material as {
+    id: string
+    name: string
+    material_code: string | null
+    category: string
+    unit: string
+    qty_on_hand: number
+    weight_per_meter: number | null
+  } | null
   const currentStock = rawMat?.qty_on_hand ?? 0
+  
+  // ใช้ weight_per_meter จากฐานข้อมูลโดยตรง แทนการ parse regex จาก name
+  const isWire = rawMat?.category === 'ลวด' || rawMat?.category === 'Wire'
+  const wireFactor = rawMat?.weight_per_meter ?? 0.0989
+  
+  let requiredTarget = planMat.qty_required;
+  if (isWire && wireFactor) {
+    requiredTarget = planMat.qty_required * wireFactor;
+  }
+  
   if (currentStock < qtyDispensed) {
-    throw new Error(`สต็อกไม่เพียงพอ (มีอยู่ ${currentStock} ${planMat.unit ?? ''})`)
+    throw new Error(`สต็อกไม่เพียงพอ (ต้องการหัก ${qtyDispensed.toFixed(2)} หน่วย, มีอยู่ ${currentStock} หน่วย)`)
   }
 
   const newQtyDispensed = (planMat.qty_dispensed ?? 0) + qtyDispensed
-  const newStatus =
-    newQtyDispensed >= planMat.qty_required ? 'dispensed' : 'partial'
+  // We use - 0.01 to avoid floating point precision issues
+  const newStatus = newQtyDispensed >= (requiredTarget - 0.01) ? 'dispensed' : 'partial'
 
   // อัปเดต plan_materials
   const { error: updateErr } = await supabase
@@ -134,12 +158,13 @@ export async function getPendingRequisitions() {
     .from('plan_materials')
     .select(`
       *,
-      raw_material:raw_materials(id, name, unit, qty_on_hand),
-      plan:production_plans(id, plan_date, status)
+      raw_material:raw_materials(id, name, material_code, unit, qty_on_hand, category, weight_per_meter),
+      plan:production_plans!inner(id, plan_date, status, total_concrete)
     `)
-    .in('status', ['pending', 'partial'])
-    .order('created_at', { ascending: true })
+    .in('plan.status', ['confirmed', 'completed'])
+    .order('created_at', { ascending: false })
 
   if (error) throw new Error(error.message)
   return data
 }
+

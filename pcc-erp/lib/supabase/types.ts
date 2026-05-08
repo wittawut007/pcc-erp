@@ -61,6 +61,10 @@ export interface Product {
   concrete_per_unit: number
   bom_code: string | null
   wip_code: string | null
+  length: number | null
+  wire_per_unit: number
+  mesh_per_unit: number
+  rebar_per_unit: number
   is_active: boolean
   created_at: string
 }
@@ -230,11 +234,13 @@ export interface FgInventory {
 
 export interface RawMaterial {
   id: string
+  material_code: string | null  // รหัสวัตถุดิบ เช่น "D1-003-004"
   name: string
   category: string
   unit: string
   qty_on_hand: number
   min_stock: number
+  weight_per_meter: number | null  // น้ำหนักต่อเมตร (kg/m) สำหรับลวด
   updated_at: string
 }
 

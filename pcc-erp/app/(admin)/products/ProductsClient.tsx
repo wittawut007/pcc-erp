@@ -14,6 +14,7 @@ interface Product {
   concrete_per_unit: number
   bom_code: string | null
   wip_code: string | null
+  length: number | null
   is_active: boolean
   created_at: string
 }
@@ -38,10 +39,11 @@ const CAT_STYLES = [
 
 const EMPTY_FORM = {
   code: '', name: '', category: CATEGORIES[0], size: '',
-  unit: 'ชิ้น', concrete_per_unit: 0, bom_code: '', wip_code: '',
+  unit: 'ชิ้น', concrete_per_unit: 0, bom_code: '', wip_code: '', length: 0,
+  wire_per_unit: 0, mesh_per_unit: 0, rebar_per_unit: 0
 }
 
-export default function ProductsClient({ products: initial }: { products: Product[] }) {
+export default function ProductsClient({ products: initial, rawMaterials }: { products: Product[], rawMaterials: any[] }) {
   const supabase = createClient()
   const [products, setProducts] = useState<Product[]>(initial)
   
@@ -82,7 +84,11 @@ export default function ProductsClient({ products: initial }: { products: Produc
 
   const openEdit = (p: Product) => {
     setEditProduct(p)
-    setForm({ code: p.code, name: p.name, category: p.category, size: p.size, unit: p.unit, concrete_per_unit: p.concrete_per_unit, bom_code: p.bom_code ?? '', wip_code: p.wip_code ?? '' })
+    setForm({ 
+      code: p.code, name: p.name, category: p.category, size: p.size, unit: p.unit, 
+      concrete_per_unit: p.concrete_per_unit, bom_code: p.bom_code ?? '', wip_code: p.wip_code ?? '', length: p.length ?? 0,
+      wire_per_unit: p.wire_per_unit ?? 0, mesh_per_unit: p.mesh_per_unit ?? 0, rebar_per_unit: p.rebar_per_unit ?? 0
+    })
     setShowModal(true)
   }
 
@@ -90,13 +96,20 @@ export default function ProductsClient({ products: initial }: { products: Produc
     if (!form.code || !form.name) { toast.error('กรุณากรอกรหัสและชื่อสินค้า'); return }
     setSaving(true)
     try {
+      const payload = { 
+        ...form, 
+        bom_code: form.bom_code || null, 
+        wip_code: form.category.startsWith('A13') ? null : (form.wip_code || null),
+        length: form.category.startsWith('A13') ? (form.length || null) : null
+      }
+      
       if (editProduct) {
-        const { error } = await supabase.from('products').update({ ...form, bom_code: form.bom_code || null, wip_code: form.wip_code || null }).eq('id', editProduct.id)
+        const { error } = await supabase.from('products').update(payload).eq('id', editProduct.id)
         if (error) throw error
-        setProducts(prev => prev.map(p => p.id === editProduct.id ? { ...p, ...form } : p))
+        setProducts(prev => prev.map(p => p.id === editProduct.id ? { ...p, ...payload } : p))
         toast.success('แก้ไขข้อมูลสินค้าสำเร็จ!')
       } else {
-        const { data, error } = await supabase.from('products').insert({ ...form, bom_code: form.bom_code || null, wip_code: form.wip_code || null, is_active: true }).select().single()
+        const { data, error } = await supabase.from('products').insert({ ...payload, is_active: true }).select().single()
         if (error) throw error
         setProducts(prev => [data, ...prev])
         toast.success('เพิ่มสินค้าใหม่สำเร็จ!')
@@ -370,17 +383,35 @@ export default function ProductsClient({ products: initial }: { products: Produc
                 { label: 'ชื่อสินค้า *', key: 'name', type: 'text', placeholder: 'เสาเข็ม .15x.15 2.00 ม.', colSpan: 2 },
                 { label: 'ขนาด', key: 'size', type: 'text', placeholder: '0.15x0.15 2.00 ม.' },
                 { label: 'คอนกรีต/หน่วย (ม.³)', key: 'concrete_per_unit', type: 'number', placeholder: '0.05' },
-                { label: 'BOM Code', key: 'bom_code', type: 'text', placeholder: 'BOM-IP22-10' },
-                { label: 'WIP Code', key: 'wip_code', type: 'text', placeholder: 'WIP-A41' },
+                { label: 'ลวด/หน่วย (ม.)', key: 'wire_per_unit', type: 'number', placeholder: '0' },
+                { label: 'เมช/หน่วย (ตร.ม.)', key: 'mesh_per_unit', type: 'number', placeholder: '0' },
+                { label: 'เหล็กเส้น/หน่วย (ม.)', key: 'rebar_per_unit', type: 'number', placeholder: '0' },
+                { label: 'BOM Code (วัตถุดิบ)', key: 'bom_code', type: 'select', options: rawMaterials },
+                form.category.startsWith('A13') 
+                  ? { label: 'ระบุความยาว (ม.)', key: 'length', type: 'number', placeholder: 'เช่น 2.50' }
+                  : { label: 'WIP Code', key: 'wip_code', type: 'text', placeholder: 'WIP-A41' },
               ].map(f => (
                 <div key={f.key} style={{ gridColumn: (f as any).colSpan === 2 ? 'span 2' : undefined }}>
                   <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>{f.label}</label>
+                  {f.type === 'select' && f.key === 'bom_code' ? (
+                    <select
+                      value={(form as any)[f.key] || ''}
+                      onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                      style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white', boxSizing: 'border-box' }}
+                    >
+                      <option value="">-- ไม่ระบุ (No BOM) --</option>
+                      {(f as any).options?.map((rm: any) => (
+                        <option key={rm.id} value={rm.name}>{rm.name}</option>
+                      ))}
+                    </select>
+                  ) : (
                   <input
                     type={f.type} placeholder={f.placeholder}
                     value={(form as any)[f.key]}
                     onChange={e => setForm(prev => ({ ...prev, [f.key]: f.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value }))}
                     style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
                   />
+                  )}
                 </div>
               ))}
               <div style={{ gridColumn: 'span 2' }}>

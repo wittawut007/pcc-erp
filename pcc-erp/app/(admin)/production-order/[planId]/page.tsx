@@ -20,7 +20,7 @@ export default async function ProductionOrderPrintPage({ params }: PageProps) {
       profile:profiles!production_plans_created_by_fkey(full_name, role),
       items:production_plan_items(
         *,
-        product:products(id, code, name, size, category, unit, concrete_per_unit)
+        product:products(id, code, name, size, category, unit, concrete_per_unit, bom_code, wire_per_unit, mesh_per_unit, rebar_per_unit, length)
       )
     `)
     .eq('id', planId)
@@ -60,18 +60,26 @@ export default async function ProductionOrderPrintPage({ params }: PageProps) {
   const orderNumber = `PO-${datePart}-001`
 
   // Map plan items to the shape used by print client
-  const items = (plan.items ?? []).map((item: any) => ({
-    id: item.id,
-    productId: item.product_id,
-    productCode: item.product?.code ?? '',
-    productName: item.product?.name ?? '',
-    size: item.product?.size ?? '',
-    category: item.product?.category ?? '',
-    unit: item.product?.unit ?? 'ชิ้น',
-    bed: item.bed,
-    qty: item.qty_target,
-    concrete: (item.product?.concrete_per_unit ?? 0) * item.qty_target,
-  }))
+  const items = (plan.items ?? []).map((item: any) => {
+    const p = item.product || {}
+    const wireVal = p.wire_per_unit || p.length || 0;
+    return {
+      id: item.id,
+      productId: item.product_id,
+      productCode: p.code ?? '',
+      productName: p.name ?? '',
+      size: p.size ?? '',
+      category: p.category ?? '',
+      unit: p.unit ?? 'ชิ้น',
+      bed: item.bed,
+      qty: item.qty_target,
+      concrete: (p.concrete_per_unit ?? 0) * item.qty_target,
+      bomCode: p.bom_code,
+      wire: wireVal * item.qty_target,
+      mesh: (p.mesh_per_unit ?? 0) * item.qty_target,
+      rebar: (p.rebar_per_unit ?? 0) * item.qty_target,
+    }
+  })
 
   const userFullName = plan.profile?.full_name || 'ผู้ดูแลระบบ (Admin)'
 

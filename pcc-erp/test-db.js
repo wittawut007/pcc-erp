@@ -1,10 +1,14 @@
 const { createClient } = require('@supabase/supabase-js');
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+require('dotenv').config({ path: '.env.local' });
 
-async function test() {
-  const { data, error } = await supabase.from('raw_materials').select('*');
-  console.log('raw_materials:', data, error);
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
+async function run() {
+  const { data: plans } = await supabase.from('production_plans').select('*').order('created_at', {ascending: false}).limit(1);
+  console.log("Latest Plan:", plans);
+  if (plans && plans.length > 0) {
+    const { data: mats } = await supabase.from('plan_materials').select('*').eq('plan_id', plans[0].id);
+    console.log("Materials for plan:", mats);
+  }
 }
-test();
+run();

@@ -5,8 +5,15 @@ import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
 interface RawMaterial {
-  id: string; name: string; category: string; unit: string
-  qty_on_hand: number; min_stock: number; updated_at: string
+  id: string
+  material_code: string | null
+  name: string
+  category: string
+  unit: string
+  qty_on_hand: number
+  min_stock: number
+  weight_per_meter: number | null
+  updated_at: string
 }
 
 const CATEGORIES = ['ทั้งหมด', 'เหล็กเส้น', 'ลวด', 'น้ำยา', 'ปูน', 'เมช', 'อื่นๆ']
@@ -23,11 +30,14 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
   const [adjustMode, setAdjustMode] = useState<'add' | 'sub' | 'set'>('add')
   const [adjustNote, setAdjustNote] = useState('')
   const [saving, setSaving] = useState(false)
-  const [newForm, setNewForm] = useState({ name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0 })
+  const [newForm, setNewForm] = useState({ material_code: '', name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0, weight_per_meter: '' })
 
   const filtered = materials.filter(m => {
     const matchCat = filterCat === 'ทั้งหมด' || m.category === filterCat
-    const matchSearch = !search || m.name.toLowerCase().includes(search.toLowerCase())
+    const q = search.toLowerCase()
+    const matchSearch = !search
+      || m.name.toLowerCase().includes(q)
+      || (m.material_code ?? '').toLowerCase().includes(q)
     return matchCat && matchSearch
   })
 
@@ -53,7 +63,7 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
         action_type: adjustMode === 'add' ? 'รับวัตถุดิบ (เพิ่ม)' : adjustMode === 'sub' ? 'เบิกวัตถุดิบ (ลด)' : 'ปรับสต็อก',
         entity_type: 'raw_material',
         entity_id: adjustModal.id,
-        detail: `${adjustModal.name}: ${adjustModal.qty_on_hand} → ${newQty} ${adjustModal.unit} (ขั้นต่ำ: ${adjustMinStock})${adjustNote ? ' | ' + adjustNote : ''}`,
+        detail: `[${adjustModal.material_code ?? '-'}] ${adjustModal.name}: ${adjustModal.qty_on_hand} → ${newQty} ${adjustModal.unit} (ขั้นต่ำ: ${adjustMinStock})${adjustNote ? ' | ' + adjustNote : ''}`,
       })
 
       setMaterials(prev => prev.map(m => m.id === adjustModal.id ? { ...m, qty_on_hand: newQty, min_stock: adjustMinStock, updated_at: new Date().toISOString() } : m))
@@ -67,12 +77,21 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
     if (!newForm.name || !newForm.unit) { toast.error('กรุณากรอกชื่อและหน่วย'); return }
     setSaving(true)
     try {
-      const { data, error } = await supabase.from('raw_materials').insert(newForm).select().single()
+      const payload = {
+        material_code: newForm.material_code || null,
+        name: newForm.name,
+        category: newForm.category,
+        unit: newForm.unit,
+        qty_on_hand: newForm.qty_on_hand,
+        min_stock: newForm.min_stock,
+        weight_per_meter: newForm.weight_per_meter ? parseFloat(newForm.weight_per_meter) : null,
+      }
+      const { data, error } = await supabase.from('raw_materials').insert(payload).select().single()
       if (error) throw error
       setMaterials(prev => [...prev, data])
       toast.success('เพิ่มวัตถุดิบใหม่สำเร็จ!')
       setAddModal(false)
-      setNewForm({ name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0 })
+      setNewForm({ material_code: '', name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0, weight_per_meter: '' })
     } catch (e: any) { toast.error('เกิดข้อผิดพลาด: ' + e.message) }
     finally { setSaving(false) }
   }
@@ -158,8 +177,8 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr>
-              {['ชื่อวัตถุดิบ', 'หมวดหมู่', 'คงเหลือ', 'สต็อกขั้นต่ำ', 'สถานะ', 'จัดการ'].map((h, i) => (
-                <th key={h} style={{ padding: '10px 14px', textAlign: i >= 5 ? 'center' : 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>{h}</th>
+              {['รหัส', 'ชื่อวัตถุดิบ', 'หมวดหมู่', 'น้ำหนัก/ม.', 'คงเหลือ', 'สต็อกขั้นต่ำ', 'สถานะ', 'จัดการ'].map((h, i) => (
+                <th key={h} style={{ padding: '10px 14px', textAlign: i >= 7 ? 'center' : 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -167,7 +186,7 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
             {Array.from(new Set(filtered.map(m => m.category))).sort().map(category => (
               <Fragment key={category}>
                 <tr>
-                  <td colSpan={6} style={{ padding: '12px 14px', background: 'var(--bg)', fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>
+                  <td colSpan={8} style={{ padding: '12px 14px', background: 'var(--bg)', fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>
                     <i className="fas fa-folder-open" style={{ marginRight: 8, color: 'var(--text-muted)' }}></i>
                     หมวดหมู่: {category}
                   </td>
@@ -179,9 +198,15 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
                   return (
                     <tr key={m.id} className="hover:bg-[var(--bg)] transition-colors">
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                        <div style={{ fontWeight: 600, paddingLeft: 10 }}>{m.name}</div>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--bg)', padding: '2px 6px', borderRadius: 4 }}>{m.material_code ?? '—'}</span>
+                      </td>
+                      <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ fontWeight: 600 }}>{m.name}</div>
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 11 }}>{m.category}</td>
+                      <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>
+                        {m.weight_per_meter != null ? `${m.weight_per_meter} kg/m` : '—'}
+                      </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ fontWeight: 700, fontSize: 14, color: isCritical ? 'var(--red)' : isLow ? '#B45309' : 'var(--text-primary)' }}>
                           {m.qty_on_hand.toLocaleString()} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>{m.unit}</span>
@@ -220,6 +245,7 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
         {filtered.length === 0 && (
           <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 12 }}>ไม่พบรายการ</div>
         )}
+
       </div>
 
       {/* Adjust Modal */}
@@ -288,9 +314,23 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
               <button onClick={() => setAddModal(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}>✕</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {/* รหัสวัตถุดิบ */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>รหัสวัตถุดิบ (Material Code)</label>
+                <input type="text" placeholder="เช่น D1-003-004" value={newForm.material_code}
+                  onChange={e => setNewForm(p => ({ ...p, material_code: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box', fontFamily: 'monospace' }} />
+              </div>
+              {/* น้ำหนัก/ม. */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>น้ำหนัก/เมตร (kg/m) — สำหรับลวด</label>
+                <input type="number" step="0.0001" placeholder="เช่น 0.0989" value={newForm.weight_per_meter}
+                  onChange={e => setNewForm(p => ({ ...p, weight_per_meter: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
               {[
-                { label: 'ชื่อวัตถุดิบ *', key: 'name', colSpan: 2, type: 'text', placeholder: 'เช่น เหล็กเส้น DB16' },
-                { label: 'หน่วย *', key: 'unit', type: 'text', placeholder: 'เส้น / ถัง / ม้วน' },
+                { label: 'ชื่อวัตถุดิบ *', key: 'name', colSpan: 2, type: 'text', placeholder: 'เช่น ลวด PC-Wire 4 มม.' },
+                { label: 'หน่วย *', key: 'unit', type: 'text', placeholder: 'กก. / เมตร / ตร.ม.' },
                 { label: 'สต็อกเริ่มต้น', key: 'qty_on_hand', type: 'number', placeholder: '0' },
                 { label: 'สต็อกขั้นต่ำ (alert)', key: 'min_stock', type: 'number', placeholder: '10' },
               ].map(f => (

@@ -10,7 +10,7 @@ export default async function PlannerPage() {
 
   const { data: products } = await supabase
     .from('products')
-    .select('id, code, name, category, size, concrete_per_unit, unit, bom_code, wip_code')
+    .select('id, code, name, category, size, concrete_per_unit, unit, bom_code, wip_code, length, wire_per_unit, mesh_per_unit, rebar_per_unit')
     .eq('is_active', true)
     .order('category')
 
@@ -22,7 +22,7 @@ export default async function PlannerPage() {
 
   const { data: rawMaterials } = await supabase
     .from('raw_materials')
-    .select('id, name, qty_on_hand, unit, min_stock')
+    .select('id, material_code, name, qty_on_hand, unit, min_stock, weight_per_meter, category')
     .order('category')
 
   const { data: wipInventory } = await supabase

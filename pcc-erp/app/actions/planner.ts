@@ -3,6 +3,21 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+export async function clearOldPlanData(planId: string) {
+  const { createClient: createServiceClient } = await import('@supabase/supabase-js')
+  const supabase = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  
+  // Safe deletion: delete job_orders first to avoid FK violations
+  const { data: oldItems } = await supabase.from('production_plan_items').select('id').eq('plan_id', planId)
+  if (oldItems && oldItems.length > 0) {
+    const itemIds = oldItems.map(i => i.id)
+    await supabase.from('job_orders').delete().in('plan_item_id', itemIds)
+  }
+  
+  await supabase.from('production_plan_items').delete().eq('plan_id', planId)
+  await supabase.from('plan_materials').delete().eq('plan_id', planId)
+}
+
 export async function deleteProductionPlan(planId: string) {
   try {
     const supabase = await createClient()
