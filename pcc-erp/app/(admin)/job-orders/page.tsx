@@ -7,30 +7,27 @@ import { createClient } from '@/lib/supabase/server'
 export default async function JobOrdersPage() {
   const supabase = await createClient()
 
+  const today = new Date().toISOString().split('T')[0]
+
   const { data: jobOrders } = await supabase
     .from('job_orders')
     .select(`
       *,
-      plan_item:production_plan_items(
+      plan_item:production_plan_items!inner(
         qty_target, bed,
-        product:products(id, code, name, category, unit)
+        product:products(id, code, name, category, unit),
+        plan:production_plans!inner(plan_date)
       ),
       worker:profiles(full_name, employee_code)
     `)
+    .eq('plan_item.plan.plan_date', today)
     .order('created_at', { ascending: false })
     .limit(100)
-
-  const { data: workers } = await supabase
-    .from('profiles')
-    .select('id, full_name, employee_code')
-    .eq('is_active', true)
-    .in('role', ['worker', 'admin', 'planner'])
-    .order('full_name')
 
   return (
     <>
       <Header title="คิวงานเทคอนกรีต" subtitle="ติดตามสถานะการเทและบ่มคอนกรีตทุกโรงผลิต" />
-      <JobOrdersClient jobOrders={jobOrders ?? []} workers={workers ?? []} />
+      <JobOrdersClient jobOrders={jobOrders ?? []} workers={[]} />
     </>
   )
 }

@@ -27,11 +27,13 @@ export default async function WorkerPage() {
   plans?.forEach((p: any) => {
     if (!validPlanIds.includes(p.id)) return;
     planMaterialsMap[p.id] = (p.materials || []).map((m: any) => ({
-      name: m.raw_material?.name || '',
+      name: m.raw_material?.name || 'Unknown Material',
       qty: m.qty_dispensed || m.qty_required || 0,
       unit: m.raw_material?.unit || '',
-    })).filter((m: any) => m.name)
+    }))
   })
+  
+  console.log('SERVER SIDE planMaterialsMap:', JSON.stringify(planMaterialsMap, null, 2))
 
   const { data: planItems } = await supabase
     .from('production_plan_items')
@@ -48,10 +50,11 @@ export default async function WorkerPage() {
   const { data: jobOrders } = await supabase
     .from('job_orders')
     .select(`
-      id, bed, status, qty_target, qty_cast, expected_demold_at, plan_item_id,
+      id, bed, status, qty_target, qty_cast, expected_demold_at, plan_item_id, order_id,
+      production_order:production_orders(order_number),
       plan_item:production_plan_items(
         id, plan_id,
-        product:products(id, code, name, category, size, unit, concrete_per_unit)
+        product:products(id, code, name, category, size, unit, concrete_per_unit, wire_per_unit, mesh_per_unit, rebar_per_unit)
       )
     `)
     .in('status', ['pending', 'ready_demold', 'curing', 'casting'])

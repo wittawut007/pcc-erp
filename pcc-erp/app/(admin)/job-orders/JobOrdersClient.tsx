@@ -1,8 +1,6 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import toast from 'react-hot-toast'
 
 interface JobOrder {
   id: string
@@ -19,6 +17,7 @@ interface JobOrder {
     qty_target: number
     bed: string
     product: { id: string; code: string; name: string; category: string; unit: string }
+    plan?: { plan_date: string }
   } | null
   worker: { full_name: string; employee_code: string | null } | null
 }
@@ -89,19 +88,13 @@ const STATUS_CONFIG = {
 
 type StatusKey = keyof typeof STATUS_CONFIG
 
-const beds = ['all', 'A', 'B', 'C', 'D', 'E', 'F']
+const beds = ['all', '1', '2', '3', '4']
 
 export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOrders: JobOrder[]; workers: Worker[] }) {
-  const supabase = createClient()
-  const [jobs, setJobs] = useState<JobOrder[]>(initial)
+  const jobs = initial
   const [filterStatus, setFilterStatus] = useState<StatusKey | 'all'>('all')
   const [filterBed, setFilterBed] = useState('all')
   const [search, setSearch] = useState('')
-  const [updating, setUpdating] = useState<string | null>(null)
-  const [showDetail, setShowDetail] = useState<JobOrder | null>(null)
-  const [castQty, setCastQty] = useState(0)
-  const [selectedWorker, setSelectedWorker] = useState('')
-  const [curingHours, setCuringHours] = useState(24)
 
   // ── KPI counts ──
   const statusCounts = useMemo(() => ({
@@ -122,56 +115,6 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
       j.bed.toLowerCase().includes(search.toLowerCase())
     return matchStatus && matchBed && matchSearch
   }), [jobs, filterStatus, filterBed, search])
-
-  const openDetail = (job: JobOrder) => {
-    setShowDetail(job)
-    setCastQty(job.qty_cast || job.qty_target)
-    setSelectedWorker('')
-    setCuringHours(24)
-  }
-
-  const handleAdvanceStatus = async (job: JobOrder) => {
-    const cfg = STATUS_CONFIG[job.status as StatusKey]
-    if (!cfg.next) return
-    setUpdating(job.id)
-    try {
-      const now = new Date().toISOString()
-      const updates: any = { status: cfg.next }
-      if (job.status === 'pending') {
-        updates.started_at = now
-        updates.qty_cast = castQty
-        if (selectedWorker) updates.worker_id = selectedWorker
-      }
-      if (job.status === 'casting') {
-        updates.cast_at = now
-        updates.qty_cast = castQty
-        updates.expected_demold_at = new Date(Date.now() + curingHours * 3600000).toISOString()
-      }
-      if (job.status === 'ready_demold') { updates.demolded_at = now }
-
-      const { error } = await supabase.from('job_orders').update(updates).eq('id', job.id)
-      if (error) throw error
-
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        await supabase.from('activity_logs').insert({
-          user_id: user.id,
-          action_type: cfg.nextLabel,
-          entity_type: 'job_order',
-          entity_id: job.id,
-          detail: `${job.plan_item?.product?.name ?? '—'} | โรงผลิต ${job.bed} | ${castQty} ${job.plan_item?.product?.unit ?? 'ชิ้น'}`,
-        })
-      }
-
-      setJobs(prev => prev.map(j => j.id === job.id ? { ...j, ...updates } : j))
-      toast.success(`อัปเดตสถานะเป็น "${STATUS_CONFIG[cfg.next as StatusKey].label}" สำเร็จ!`)
-      setShowDetail(null)
-    } catch (e: any) {
-      toast.error('เกิดข้อผิดพลาด: ' + e.message)
-    } finally {
-      setUpdating(null)
-    }
-  }
 
   const fmtDate = (iso: string | null) => {
     if (!iso) return '—'
@@ -296,7 +239,6 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
                   <th style={thStyle}>พนักงาน</th>
                   <th style={thStyle}>เริ่ม / เทปูน</th>
                   <th style={{ ...thStyle, textAlign: 'center' }}>ถอดแบบได้</th>
-                  <th style={{ ...thStyle, textAlign: 'center' }}>ดำเนินการ</th>
                 </tr>
               </thead>
               <tbody>
@@ -335,6 +277,7 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
                         </div>
                         <div style={{ fontSize: 10, color: '#9CA3AF', fontFamily: 'monospace', marginTop: 2 }}>
                           {job.plan_item?.product?.code ?? ''}
+                          {job.plan_item?.plan?.plan_date && <span style={{ marginLeft: 6, color: '#6B7280' }}>| แผน: {fmtDate(job.plan_item.plan.plan_date).split(',')[0]}</span>}
                         </div>
                         {elapsed && (
                           <div style={{ fontSize: 10, color: cfg.kpiText, marginTop: 3, display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -431,38 +374,6 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
                           <span style={{ color: '#D1D5DB', fontSize: 12 }}>—</span>
                         )}
                       </td>
-
-                      {/* Action */}
-                      <td style={{ padding: '12px 20px', textAlign: 'center' }}>
-                        {cfg.next ? (
-                          <button
-                            onClick={() => openDetail(job)}
-                            disabled={updating === job.id}
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 6,
-                              padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                              background: '#2563EB', color: '#fff',
-                              fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-                              transition: 'background 0.15s',
-                              opacity: updating === job.id ? 0.6 : 1,
-                            }}
-                            onMouseEnter={e => (e.currentTarget.style.background = '#1D4ED8')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#2563EB')}
-                          >
-                            <i className="fas fa-arrow-right" style={{ fontSize: 10 }} />
-                            {cfg.nextLabel}
-                          </button>
-                        ) : (
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 5,
-                            padding: '6px 12px', borderRadius: 8, fontSize: 11,
-                            background: '#F0FDF4', color: '#16A34A', fontWeight: 600,
-                          }}>
-                            <i className="fas fa-check" style={{ fontSize: 10 }} />
-                            เสร็จสิ้น
-                          </span>
-                        )}
-                      </td>
                     </tr>
                   )
                 })}
@@ -494,135 +405,6 @@ export default function JobOrdersClient({ jobOrders: initial, workers }: { jobOr
           </div>
         )}
       </div>
-
-      {/* ── Update Status Modal ── */}
-      {showDetail && (() => {
-        const cfg = STATUS_CONFIG[showDetail.status as StatusKey]
-        const nextCfg = cfg.next ? STATUS_CONFIG[cfg.next as StatusKey] : null
-        return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-            <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-
-              {/* Modal Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-                <div>
-                  <h2 style={{ fontSize: 15, fontWeight: 700, color: '#111827', margin: 0 }}>
-                    อัปเดตสถานะ — โรงผลิต {showDetail.bed}
-                  </h2>
-                  <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
-                    {showDetail.plan_item?.product?.name}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowDetail(null)}
-                  style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#9CA3AF', lineHeight: 1, padding: 4 }}
-                >✕</button>
-              </div>
-
-              {/* Status flow visualizer */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: '#F9FAFB', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
-                <span style={{ padding: '5px 14px', borderRadius: 50, fontSize: 12, fontWeight: 700, background: cfg.badgeBg, color: cfg.badgeText, border: `1px solid ${cfg.badgeBorder}` }}>
-                  <i className={`fas ${cfg.icon}`} style={{ marginRight: 5, fontSize: 10 }} />{cfg.label}
-                </span>
-                <i className="fas fa-arrow-right" style={{ color: '#D1D5DB', fontSize: 12 }} />
-                {nextCfg && (
-                  <span style={{ padding: '5px 14px', borderRadius: 50, fontSize: 12, fontWeight: 700, background: nextCfg.badgeBg, color: nextCfg.badgeText, border: `1px solid ${nextCfg.badgeBorder}` }}>
-                    <i className={`fas ${nextCfg.icon}`} style={{ marginRight: 5, fontSize: 10 }} />{nextCfg.label}
-                  </span>
-                )}
-              </div>
-
-              {/* Fields */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {showDetail.status === 'pending' && (
-                  <>
-                    <div>
-                      <label style={labelStyle}>จำนวนที่จะเท ({showDetail.plan_item?.product?.unit ?? 'ชิ้น'})</label>
-                      <input
-                        type="number" min={1} value={castQty}
-                        onChange={e => setCastQty(parseInt(e.target.value) || 0)}
-                        onFocus={e => e.target.select()}
-                        style={inputStyle}
-                      />
-                      <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>เป้าหมาย: {showDetail.qty_target} {showDetail.plan_item?.product?.unit}</p>
-                    </div>
-                    <div>
-                      <label style={labelStyle}>พนักงานผู้เท (ไม่บังคับ)</label>
-                      <select value={selectedWorker} onChange={e => setSelectedWorker(e.target.value)} style={inputStyle}>
-                        <option value="">— เลือกพนักงาน —</option>
-                        {workers.map(w => <option key={w.id} value={w.id}>{w.full_name}{w.employee_code ? ` (${w.employee_code})` : ''}</option>)}
-                      </select>
-                    </div>
-                  </>
-                )}
-                {showDetail.status === 'casting' && (
-                  <>
-                    <div>
-                      <label style={labelStyle}>จำนวนที่เทจริง ({showDetail.plan_item?.product?.unit ?? 'ชิ้น'})</label>
-                      <input type="number" min={0} value={castQty} onChange={e => setCastQty(parseInt(e.target.value) || 0)} onFocus={e => e.target.select()} style={inputStyle} />
-                    </div>
-                    <div>
-                      <label style={labelStyle}>ระยะเวลาบ่ม (ชั่วโมง)</label>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
-                        {[16, 24, 48, 72].map(h => (
-                          <button
-                            key={h}
-                            onClick={() => setCuringHours(h)}
-                            style={{
-                              flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                              border: curingHours === h ? '1px solid transparent' : '1px solid #E5E7EB',
-                              background: curingHours === h ? '#2563EB' : '#F9FAFB',
-                              color: curingHours === h ? '#fff' : '#6B7280',
-                            }}
-                          >{h} ชม.</button>
-                        ))}
-                      </div>
-                      <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>
-                        ถอดแบบได้: {new Date(Date.now() + curingHours * 3600000).toLocaleString('th-TH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  </>
-                )}
-                {(showDetail.status === 'curing' || showDetail.status === 'ready_demold') && (
-                  <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 10, padding: '12px 16px', display: 'flex', gap: 12 }}>
-                    <i className="fas fa-info-circle" style={{ color: '#10B981', fontSize: 18, marginTop: 2 }} />
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#065F46' }}>ยืนยันการ{cfg.nextLabel}</div>
-                      <div style={{ fontSize: 12, color: '#059669', marginTop: 4 }}>
-                        {showDetail.plan_item?.product?.name} | {showDetail.qty_cast} {showDetail.plan_item?.product?.unit} | โรงผลิต {showDetail.bed}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Modal Actions */}
-              <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-                <button
-                  onClick={() => setShowDetail(null)}
-                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: '1px solid #E5E7EB', background: '#fff', fontSize: 13, cursor: 'pointer', fontWeight: 500, color: '#374151' }}
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  onClick={() => handleAdvanceStatus(showDetail)}
-                  disabled={updating === showDetail.id}
-                  style={{
-                    flex: 2, padding: '10px 0', borderRadius: 10, border: 'none', cursor: 'pointer',
-                    background: '#2563EB', color: '#fff', fontSize: 13, fontWeight: 700,
-                    opacity: updating === showDetail.id ? 0.7 : 1,
-                  }}
-                >
-                  {updating === showDetail.id
-                    ? <><i className="fas fa-spinner fa-spin" style={{ marginRight: 6 }} />กำลังบันทึก...</>
-                    : <><i className="fas fa-check" style={{ marginRight: 6 }} />ยืนยัน — {cfg.nextLabel}</>
-                  }
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
     </div>
   )
 }
