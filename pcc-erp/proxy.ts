@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
 import { canAccess, getDefaultPath } from '@/lib/rbac'
 import type { UserRole } from '@/lib/supabase/types'
@@ -24,7 +25,6 @@ export async function proxy(request: NextRequest) {
     }
 
     try {
-      const { createClient: createAdminClient } = await import('@supabase/supabase-js')
       const adminSupabase = createAdminClient(supabaseUrl, serviceRoleKey || supabaseKey)
       const { data: profile } = await adminSupabase
         .from('profiles')
@@ -61,7 +61,6 @@ export async function proxy(request: NextRequest) {
 
     // Validate cookie token ยังอยู่ใน DB
     try {
-      const { createClient: createAdminClient } = await import('@supabase/supabase-js')
       const adminSupabase = createAdminClient(supabaseUrl, serviceRoleKey || supabaseKey)
       const { data: profile } = await adminSupabase
         .from('profiles')

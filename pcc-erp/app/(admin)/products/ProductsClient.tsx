@@ -12,6 +12,9 @@ interface Product {
   size: string
   unit: string
   concrete_per_unit: number
+  wire_per_unit?: number | null
+  mesh_per_unit?: number | null
+  rebar_per_unit?: number | null
   bom_code: string | null
   wip_code: string | null
   length: number | null

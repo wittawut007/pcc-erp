@@ -2,30 +2,41 @@ export const dynamic = 'force-dynamic'
 
 import Header from '@/components/layout/Header'
 import ConcreteClient from './ConcreteClient'
-import { getPendingConcreteOrders, getTodayConcreteHistory } from '@/app/actions/concrete'
+import { getPendingConcreteOrders, getConcreteHistoryByDate } from '@/app/actions/concrete'
 
-export default async function ConcretePage() {
+interface Props {
+  searchParams: Promise<{ date?: string }>
+}
+
+export default async function ConcretePage({ searchParams }: Props) {
+  const params = await searchParams
+  const today = new Date().toISOString().split('T')[0]
+  const selectedDate = params.date ?? today
+
   let pending: Awaited<ReturnType<typeof getPendingConcreteOrders>> = []
-  let history: Awaited<ReturnType<typeof getTodayConcreteHistory>> = []
+  let history: Awaited<ReturnType<typeof getConcreteHistoryByDate>> = []
 
   try {
     ;[pending, history] = await Promise.all([
       getPendingConcreteOrders(),
-      getTodayConcreteHistory(),
+      getConcreteHistoryByDate(selectedDate),
     ])
-  } catch {
-    // Supabase not configured
+  } catch (e) {
+    console.error('[ConcretePage] fetch error:', e)
   }
 
   return (
     <>
       <Header
         title="คิวผสมคอนกรีต"
-        subtitle="ตรวจสอบและยืนยันการจ่ายคอนกรีตให้แต่ละโรงผลิต"
+        subtitle="ติดตามและยืนยันการจ่ายคอนกรีตแต่ละรอบให้โรงผลิต"
       />
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 36px' }}>
-        <ConcreteClient pending={pending} history={history} />
-      </div>
+      <ConcreteClient
+        pending={pending}
+        history={history}
+        selectedDate={selectedDate}
+        today={today}
+      />
     </>
   )
 }

@@ -1,189 +1,409 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { supplyConcreteOrder } from '@/app/actions/concrete'
+import { useState, useTransition, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import { supplyConcreteRound } from '@/app/actions/concrete'
 import toast from 'react-hot-toast'
 
-interface Profile { full_name: string; employee_code?: string | null }
-interface ProductInfo { name: string; code: string }
-interface PlanItem { product: ProductInfo | null }
-interface JobOrderInfo { id: string; bed: string; qty_target: number; plan_item: PlanItem | null }
+interface RoundItem {
+  id: string
+  round_number: number
+  qty_per_round: number
+  status: string
+  supplied_at: string | null
+  supplier?: { full_name: string } | null
+}
 
 interface ConcreteOrder {
   id: string
-  job_order_id: string
   qty_requested: number
-  mix_ratio: string | null
+  round_count: number
   status: string
-  notes: string | null
   requested_at: string
   supplied_at: string | null
-  requested_by_profile: Profile | null
-  supplied_by_profile: Profile | null
-  job_order: JobOrderInfo | null
+  requested_by_profile?: { full_name: string; employee_code?: string | null } | null
+  supplied_by_profile?: { full_name: string } | null
+  job_order?: {
+    id: string
+    bed: string
+    qty_target: number
+    plan_item?: { product?: { name: string; code: string; concrete_per_unit?: number } | null } | null
+  } | null
+  rounds?: RoundItem[]
 }
 
 interface Props {
   pending: ConcreteOrder[]
   history: ConcreteOrder[]
+  selectedDate: string
+  today: string
 }
 
-export default function ConcreteClient({ pending: initialPending, history }: Props) {
-  const [pendingItems, setPendingItems] = useState(initialPending)
-  const [isPending, startTransition] = useTransition()
-  const [activeId, setActiveId] = useState<string | null>(null)
+const thStyle: React.CSSProperties = {
+  padding: '10px 16px',
+  textAlign: 'left',
+  fontWeight: 700,
+  color: '#6B7280',
+  fontSize: 11,
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  whiteSpace: 'nowrap',
+}
 
-  const handleSupply = (orderId: string) => {
-    setActiveId(orderId)
+function fmtTime(iso: string | null) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('th-TH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtDateInput(iso: string) {
+  return iso.split('T')[0]
+}
+
+// ── Round Card inside each order ──────────────────────────────────────────────
+function RoundRow({
+  round, onSupply, loading, isLocked, isNext,
+}: {
+  round: RoundItem
+  onSupply: (id: string) => void
+  loading: boolean
+  isLocked: boolean
+  isNext: boolean
+}) {
+  const supplied = round.status === 'supplied' || round.status === 'received'
+  const isReceived = round.status === 'received'
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: '10px 16px',
+      borderBottom: '1px solid #F3F4F6',
+      background: supplied ? '#F0FDF4' : isNext ? '#FAFEFF' : '#FAFAFA',
+      opacity: isLocked ? 0.45 : 1,
+    }}>
+      {/* Round badge */}
+      <div style={{
+        width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+        background: supplied ? '#D1FAE5' : isNext ? '#EFF6FF' : '#F3F4F6',
+        color: supplied ? '#059669' : isNext ? '#2563EB' : '#9CA3AF',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontWeight: 800, fontSize: 13,
+      }}>
+        {supplied
+          ? <i className="fas fa-check" />
+          : isLocked
+          ? <i className="fas fa-lock" style={{ fontSize: 11 }} />
+          : round.round_number}
+      </div>
+
+      <div style={{ flex: 1 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: isLocked ? '#9CA3AF' : '#374151' }}>รอบที่ {round.round_number}</span>
+        <span style={{ fontSize: 12, color: '#9CA3AF', marginLeft: 8 }}>{round.qty_per_round.toFixed(2)} คิว</span>
+        {isNext && !supplied && <div style={{ fontSize: 11, color: '#3B82F6', fontWeight: 600, marginTop: 2 }}>รอบถัดไป</div>}
+        {isLocked && <div style={{ fontSize: 11, color: '#D1D5DB', fontWeight: 600, marginTop: 2 }}>รอรอบก่อนหน้า</div>}
+      </div>
+
+      {supplied ? (
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: isReceived ? '#059669' : '#D97706', fontSize: 12, fontWeight: 600 }}>
+            <i className={isReceived ? "fas fa-check-double" : "fas fa-truck"} style={{ fontSize: 13 }} />
+            {isReceived ? 'พนักงานรับแล้ว' : 'ส่งแล้ว (รอรับ)'}
+          </div>
+          <div style={{ fontSize: 11, color: '#94A3B8' }}>{fmtTime(round.supplied_at)}</div>
+          {round.supplier?.full_name && <div style={{ fontSize: 11, color: '#94A3B8' }}>โดย {round.supplier.full_name}</div>}
+        </div>
+      ) : isLocked ? (
+        <div style={{ fontSize: 12, color: '#D1D5DB', fontWeight: 600 }}>ล็อค</div>
+      ) : (
+        <button
+          onClick={() => onSupply(round.id)}
+          disabled={loading}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '7px 18px', borderRadius: 8,
+            background: loading ? '#93C5FD' : '#2563EB', color: '#fff',
+            border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
+            fontSize: 12, fontWeight: 700, transition: 'all 0.15s',
+          }}
+        >
+          {loading ? <i className="fas fa-spinner fa-spin" /> : <i className="fas fa-check" />}
+          ยืนยันจ่าย
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ── Order Card (expandable) ───────────────────────────────────────────────────
+function OrderCard({ order, onSupply, loadingRoundId }: {
+  order: ConcreteOrder
+  onSupply: (roundId: string) => void
+  loadingRoundId: string | null
+}) {
+  const [expanded, setExpanded] = useState(true)
+  const rounds = order.rounds ?? []
+  const suppliedCount = rounds.filter(r => r.status === 'supplied' || r.status === 'received').length
+  const receivedCount = rounds.filter(r => r.status === 'received').length
+  const totalRounds = order.round_count
+  const pct = totalRounds > 0 ? Math.round((suppliedCount / totalRounds) * 100) : 0
+  const product = order.job_order?.plan_item?.product
+  const nextPending = rounds.find(r => r.status === 'pending')
+
+  return (
+    <div style={{ border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+      {/* Header */}
+      <button
+        onClick={() => setExpanded(v => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 20px',
+          background: '#F9FAFB', borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+          borderBottom: expanded ? '1px solid #E5E7EB' : 'none',
+          cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <i className={`fas fa-chevron-${expanded ? 'down' : 'right'}`} style={{ fontSize: 11, color: '#9CA3AF', width: 12, flexShrink: 0 }} />
+
+        {/* Bed badge */}
+        <div style={{ width: 40, height: 40, borderRadius: 8, background: '#EFF6FF', color: '#2563EB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
+          <span style={{ fontSize: 9, letterSpacing: '0.03em' }}>โรง</span>
+          <span style={{ fontSize: 18, lineHeight: 1 }}>{order.job_order?.bed ?? '?'}</span>
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, color: '#111827', fontSize: 14 }}>{product?.name ?? '—'}</div>
+          <div style={{ fontSize: 12, color: '#6B7280', display: 'flex', gap: 12, marginTop: 2 }}>
+            <span><i className="fas fa-user" style={{ marginRight: 4, fontSize: 10 }} />{order.requested_by_profile?.full_name ?? '—'}</span>
+            <span><i className="fas fa-clock" style={{ marginRight: 4, fontSize: 10 }} />{fmtTime(order.requested_at)}</span>
+          </div>
+        </div>
+
+        {/* Volume & Progress */}
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: '#2563EB', lineHeight: 1 }}>
+            {order.qty_requested.toFixed(2)} <span style={{ fontSize: 12, fontWeight: 400, color: '#9CA3AF' }}>คิว</span>
+          </div>
+          <div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>
+            จ่าย {suppliedCount}/{totalRounds} (รับแล้ว {receivedCount})
+          </div>
+          <div style={{ width: 120, height: 4, background: '#E5E7EB', borderRadius: 99, marginTop: 6, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#10B981' : '#2563EB', borderRadius: 99, transition: 'width 0.4s' }} />
+          </div>
+        </div>
+      </button>
+
+      {/* Rounds list */}
+      {expanded && (
+        <div>
+          {rounds.map((r, idx) => {
+            const isSupplied = r.status === 'supplied' || r.status === 'received'
+            const isNext = !isSupplied && (idx === 0 || rounds[idx - 1]?.status === 'received')
+            const isLocked = !isSupplied && !isNext
+            return (
+              <RoundRow
+                key={r.id}
+                round={r}
+                onSupply={onSupply}
+                loading={loadingRoundId === r.id}
+                isLocked={isLocked}
+                isNext={isNext}
+              />
+            )
+          })}
+          {rounds.length === 0 && (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>ยังไม่มีข้อมูลรอบ</div>
+          )}
+          {/* Next round hint */}
+          {nextPending && (
+            <div style={{ padding: '8px 16px 12px', background: '#FFFBEB', fontSize: 12, color: '#D97706', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <i className="fas fa-info-circle" />
+              {rounds.find(r => r.status === 'supplied') 
+                ? `รอพนักงานกดยืนยันรับรอบที่ ${rounds.find(r => r.status === 'supplied')?.round_number}`
+                : `รอบถัดไป: รอบที่ ${nextPending.round_number} (${nextPending.qty_per_round.toFixed(2)} คิว)`}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── History Section ───────────────────────────────────────────────────────────
+function HistorySection({ orders }: { orders: ConcreteOrder[] }) {
+  if (orders.length === 0) {
+    return (
+      <div style={{ padding: '60px 24px', textAlign: 'center' }}>
+        <i className="fas fa-history" style={{ fontSize: 40, color: '#E5E7EB', display: 'block', marginBottom: 12 }} />
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#9CA3AF' }}>ไม่มีข้อมูลในวันที่เลือก</div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead>
+          <tr style={{ background: '#F9FAFB', borderBottom: '2px solid #E5E7EB' }}>
+            {['เวลาสั่ง', 'โรงผลิต', 'สินค้า', 'ปริมาณ', 'รอบทั้งหมด', 'จ่ายแล้ว', 'ผู้สั่ง', 'สถานะ'].map(h => (
+              <th key={h} style={thStyle}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map((o, idx) => {
+            const rounds = o.rounds ?? []
+            const suppliedCount = rounds.filter(r => r.status === 'supplied' || r.status === 'received').length
+            const isAllDone = suppliedCount === o.round_count
+            return (
+              <tr key={o.id} style={{ borderBottom: '1px solid #F3F4F6', background: idx % 2 === 0 ? '#fff' : '#FAFAFA' }}>
+                <td style={{ padding: '12px 16px', color: '#6B7280', fontSize: 12 }}>{fmtTime(o.requested_at)}</td>
+                <td style={{ padding: '12px 16px', fontWeight: 700 }}>โรงผลิต {o.job_order?.bed ?? '?'}</td>
+                <td style={{ padding: '12px 16px' }}>{o.job_order?.plan_item?.product?.name ?? '—'}</td>
+                <td style={{ padding: '12px 16px', fontWeight: 700, color: '#2563EB' }}>{o.qty_requested.toFixed(2)} คิว</td>
+                <td style={{ padding: '12px 16px', textAlign: 'center' }}>{o.round_count}</td>
+                <td style={{ padding: '12px 16px', textAlign: 'center', color: isAllDone ? '#059669' : '#D97706', fontWeight: 700 }}>{suppliedCount}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12 }}>{o.requested_by_profile?.full_name ?? '—'}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  <span style={{
+                    padding: '3px 10px', borderRadius: 50, fontSize: 11, fontWeight: 700,
+                    background: isAllDone ? '#D1FAE5' : '#FEF3C7',
+                    color: isAllDone ? '#065F46' : '#B45309',
+                    border: `1px solid ${isAllDone ? '#A7F3D0' : '#FDE68A'}`,
+                  }}>
+                    {isAllDone ? 'จ่ายครบแล้ว' : `รอจ่าย ${o.round_count - suppliedCount} รอบ`}
+                  </span>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+export default function ConcreteClient({ pending: initialPending, history: initialHistory, selectedDate, today }: Props) {
+  const router = useRouter()
+  const [tab, setTab] = useState<'queue' | 'today' | 'history'>('queue')
+  const [pendingOrders, setPendingOrders] = useState(initialPending)
+  const [loadingRoundId, setLoadingRoundId] = useState<string | null>(null)
+  const [historyDate, setHistoryDate] = useState(selectedDate)
+  const [isPending, startTransition] = useTransition()
+
+  const totalPending = pendingOrders.reduce((s, o) => s + (o.rounds ?? []).filter(r => r.status === 'pending').length, 0)
+  const todaySupplied = initialHistory.filter(o => o.status === 'supplied').length
+  const todayM3 = initialHistory.reduce((s, o) => s + (o.qty_requested ?? 0), 0)
+
+  const handleSupply = useCallback((roundId: string) => {
+    setLoadingRoundId(roundId)
     startTransition(async () => {
       try {
-        await supplyConcreteOrder(orderId)
-        toast.success('ยืนยันจ่ายคอนกรีตเรียบร้อย')
-        setPendingItems(prev => prev.filter(o => o.id !== orderId))
+        await supplyConcreteRound(roundId)
+        toast.success('ยืนยันจ่ายคอนกรีตสำเร็จ')
+        // Update local state
+        setPendingOrders(prev => prev.map(order => ({
+          ...order,
+          rounds: (order.rounds ?? []).map(r =>
+            r.id === roundId ? { ...r, status: 'supplied', supplied_at: new Date().toISOString() } : r
+          ),
+        })).filter(order => (order.rounds ?? []).some(r => r.status === 'pending' || r.status === 'supplied')))
+        router.refresh()
       } catch (e) {
         toast.error((e as Error).message)
       } finally {
-        setActiveId(null)
+        setLoadingRoundId(null)
       }
     })
+  }, [router])
+
+  const handleDateChange = (date: string) => {
+    setHistoryDate(date)
+    router.push(`/concrete?date=${date}`)
   }
 
-  const formatTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+  const kpis = [
+    { label: 'รอบรอจ่าย', value: totalPending, icon: 'fa-hourglass-half', color: '#EA580C', bg: '#FFF7ED' },
+    { label: 'จ่ายครบแล้ว', value: todaySupplied, icon: 'fa-check-circle', color: '#16A34A', bg: '#F0FDF4' },
+    { label: 'รวม คิว วันนี้', value: todayM3.toFixed(2), icon: 'fa-tint', color: '#2563EB', bg: '#EFF6FF' },
+  ]
+
+  const TAB_STYLE = (active: boolean): React.CSSProperties => ({
+    padding: '10px 20px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+    background: active ? '#2563EB' : 'transparent',
+    color: active ? '#fff' : '#6B7280',
+    border: 'none', transition: 'all 0.15s',
+  })
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {/* KPI Row */}
+    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', background: '#F7F8FA', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* KPI */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-        {[
-          { label: 'รอจ่าย',       value: pendingItems.length,                          icon: 'fa-hourglass-half', color: '#EA580C', bg: '#FFF7ED' },
-          { label: 'จ่ายแล้ววันนี้', value: history.filter(h => h.status === 'supplied').length, icon: 'fa-check-circle',   color: '#16A34A', bg: '#F0FDF4' },
-          { label: 'รวม m³ วันนี้',  value: history.reduce((s, h) => s + (h.qty_requested ?? 0), 0).toFixed(2), icon: 'fa-tint', color: '#2563EB', bg: '#EFF4FF' },
-        ].map(kpi => (
-          <div key={kpi.label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 10, background: kpi.bg, color: kpi.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
-              <i className={`fas ${kpi.icon}`} />
+        {kpis.map(k => (
+          <div key={k.label} style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <div style={{ width: 48, height: 48, borderRadius: 10, background: k.bg, color: k.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+              <i className={`fas ${k.icon}`} />
             </div>
             <div>
-              <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{kpi.value}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>{kpi.label}</div>
+              <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1, color: '#111827' }}>{k.value}</div>
+              <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>{k.label}</div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Pending Queue */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <i className="fas fa-fill-drip" style={{ color: '#EA580C', fontSize: 15 }} />
-          <span style={{ fontSize: 14, fontWeight: 700 }}>คิวรอจ่ายคอนกรีต</span>
-          {pendingItems.length > 0 && (
-            <span style={{ marginLeft: 'auto', background: '#FFF7ED', color: '#EA580C', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10 }}>
-              {pendingItems.length} รายการ
-            </span>
+      {/* Tabs */}
+      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', gap: 4, background: '#F9FAFB' }}>
+          <button style={TAB_STYLE(tab === 'queue')} onClick={() => setTab('queue')}>
+            <i className="fas fa-fill-drip" style={{ marginRight: 6 }} />
+            คิวรออยู่ {totalPending > 0 && <span style={{ background: '#EF4444', color: '#fff', borderRadius: 50, padding: '1px 7px', fontSize: 11, marginLeft: 4 }}>{totalPending}</span>}
+          </button>
+          <button style={TAB_STYLE(tab === 'today')} onClick={() => setTab('today')}>
+            <i className="fas fa-calendar-day" style={{ marginRight: 6 }} />
+            วันนี้
+          </button>
+          <button style={TAB_STYLE(tab === 'history')} onClick={() => setTab('history')}>
+            <i className="fas fa-history" style={{ marginRight: 6 }} />
+            ย้อนหลัง
+          </button>
+          {tab === 'history' && (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <i className="fas fa-calendar-alt" style={{ fontSize: 12, color: '#9CA3AF' }} />
+              <input
+                type="date"
+                value={historyDate}
+                max={today}
+                onChange={e => handleDateChange(e.target.value)}
+                style={{ border: '1px solid #E5E7EB', borderRadius: 8, padding: '6px 10px', fontSize: 13, outline: 'none', color: '#374151', background: '#fff' }}
+              />
+            </div>
           )}
         </div>
 
-        {pendingItems.length === 0 ? (
-          <div style={{ padding: '48px 0', textAlign: 'center' }}>
-            <i className="fas fa-check-circle" style={{ fontSize: 36, color: '#16A34A', marginBottom: 12, display: 'block' }} />
-            <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>ไม่มีคิวรอดำเนินการ</p>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {pendingItems.map((order, idx) => {
-              const isLoading = activeId === order.id && isPending
-              const product = order.job_order?.plan_item?.product
-              const bed = order.job_order?.bed
-
-              return (
-                <div key={order.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px',
-                  borderBottom: idx < pendingItems.length - 1 ? '1px solid var(--border)' : 'none',
-                  background: idx % 2 === 0 ? '#fff' : '#FAFAFA',
-                }}>
-                  {/* Bed Badge */}
-                  <div style={{
-                    width: 48, height: 48, borderRadius: 10, background: '#EFF4FF', color: '#2563EB',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    flexShrink: 0, fontWeight: 800,
-                  }}>
-                    <span style={{ fontSize: 8, letterSpacing: '0.05em', marginBottom: -2 }}>โรงผลิต</span>
-                    <span style={{ fontSize: 20 }}>{bed ?? '?'}</span>
-                  </div>
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
-                      {product?.name ?? '—'}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', gap: 12 }}>
-                      <span><i className="fas fa-user" style={{ marginRight: 4 }} />{order.requested_by_profile?.full_name ?? '—'}</span>
-                      <span><i className="fas fa-clock" style={{ marginRight: 4 }} />{formatTime(order.requested_at)}</span>
-                      {order.mix_ratio && <span><i className="fas fa-blender" style={{ marginRight: 4 }} />{order.mix_ratio}</span>}
-                    </div>
-                    {order.notes && <div style={{ fontSize: 11, color: '#D97706', marginTop: 4 }}><i className="fas fa-comment" style={{ marginRight: 4 }} />{order.notes}</div>}
-                  </div>
-
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: '#2563EB', lineHeight: 1 }}>
-                      {order.qty_requested} <span style={{ fontSize: 13, fontWeight: 400 }}>m³</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => handleSupply(order.id)}
-                    disabled={isLoading}
-                    style={{
-                      padding: '10px 20px', borderRadius: 8, fontSize: 13, fontWeight: 700,
-                      background: '#2563EB', color: '#fff', border: 'none', cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0,
-                      opacity: isLoading ? 0.7 : 1,
-                    }}
-                  >
-                    {isLoading ? <i className="fas fa-spinner fa-spin" /> : <i className="fas fa-check" />}
-                    ยืนยันจ่าย
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* History */}
-      {history.length > 0 && (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>ประวัติการจ่ายวันนี้</span>
-          </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                {['เวลา', 'โรงผลิต', 'สินค้า', 'ปริมาณ (m³)', 'ผู้สั่ง', 'ผู้จ่าย', 'สถานะ'].map(th => (
-                  <th key={th} style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '10px 16px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{th}</th>
+        <div style={{ flex: 1, overflowY: 'auto', padding: tab === 'queue' ? '20px' : 0 }}>
+          {tab === 'queue' && (
+            pendingOrders.length === 0 ? (
+              <div style={{ padding: '80px 24px', textAlign: 'center' }}>
+                <i className="fas fa-check-circle" style={{ fontSize: 48, color: '#10B981', display: 'block', marginBottom: 16 }} />
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#374151' }}>ไม่มีคิวรอดำเนินการ</div>
+                <div style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}>จ่ายคอนกรีตครบทุกรอบแล้ว</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {pendingOrders.map(order => (
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    onSupply={handleSupply}
+                    loadingRoundId={loadingRoundId}
+                  />
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {history.map(h => (
-                <tr key={h.id}>
-                  <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{formatTime(h.requested_at)}</td>
-                  <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 700, borderBottom: '1px solid var(--border)' }}>โรงผลิต {h.job_order?.bed}</td>
-                  <td style={{ padding: '10px 16px', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{h.job_order?.plan_item?.product?.name ?? '—'}</td>
-                  <td style={{ padding: '10px 16px', fontSize: 13, fontFamily: 'monospace', borderBottom: '1px solid var(--border)' }}>{h.qty_requested}</td>
-                  <td style={{ padding: '10px 16px', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{h.requested_by_profile?.full_name ?? '—'}</td>
-                  <td style={{ padding: '10px 16px', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{h.supplied_by_profile?.full_name ?? '—'}</td>
-                  <td style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ padding: '2px 10px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: h.status === 'supplied' ? '#F0FDF4' : '#FFF7ED', color: h.status === 'supplied' ? '#16A34A' : '#EA580C' }}>
-                      {h.status === 'supplied' ? 'จ่ายแล้ว' : 'รอจ่าย'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </div>
+            )
+          )}
+          {tab === 'today' && <HistorySection orders={initialHistory} />}
+          {tab === 'history' && <HistorySection orders={initialHistory} />}
         </div>
-      )}
+      </div>
     </div>
   )
 }

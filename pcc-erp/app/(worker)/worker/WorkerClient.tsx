@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
+import { receiveConcreteRound } from '@/app/actions/concrete'
 import MobileLogoutButton from '@/components/shared/MobileLogoutButton'
 
 interface Job {
@@ -49,8 +50,8 @@ export default function WorkerClient({
   const supabase = createClient()
   const router = useRouter()
 
-  const [activeTab, setActiveTab] = useState<'scanner'|'dailyJobs'|'receiveConcreteTab'|'history'>('scanner')
-  const [activeSection, setActiveSection] = useState<'scanner'|'phase1'|'concreteSummary'|'phase2'|'phase3'|'phase3Summary'|'success'>('scanner')
+  const [activeTab, setActiveTab] = useState<'dailyJobs'|'receiveConcreteTab'|'history'>('dailyJobs')
+  const [activeSection, setActiveSection] = useState<'phase1'|'concreteSummary'|'phase2'|'phase3'|'phase3Summary'|'success' | null>(null)
   
   const [phaseMode, setPhaseMode] = useState<'casting' | 'demolding' | null>(null)
   const [selectedJobs, setSelectedJobs] = useState<Job[]>([])
@@ -60,7 +61,6 @@ export default function WorkerClient({
   const [phase1Checks, setPhase1Checks] = useState({ clean: false, wip: false })
   const [photos, setPhotos] = useState<Record<string, { file: File, preview: string }>>({})
   const [demoldingData, setDemoldingData] = useState<Record<string, { good: number, defect: number, reason: string }>>({})
-  const [scanInput, setScanInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [userProfile, setUserProfile] = useState<{full_name: string, role: string} | null>(null)
 
@@ -70,9 +70,15 @@ export default function WorkerClient({
   const [materialsByPlan, setMaterialsByPlan] = useState<Record<string, {name: string}[]>>({})
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
 
-  // Receive Concrete
+  // Receive Concrete — DB-driven
   const [concreteSent, setConcreteSent] = useState(false)
   const [concreteRoundsReceived, setConcreteRoundsReceived] = useState(0)
+  const [activeConcreteOrders, setActiveConcreteOrders] = useState<{
+    id: string; job_order_id: string; qty_requested: number; round_count: number; requested_at: string;
+    job_order?: { bed: string; status: string; plan_item?: { product?: { name: string } | null } | null } | null
+    rounds: { id: string; round_number: number; qty_per_round: number; status: string; supplied_at: string | null }[]
+  }[]>([])
+  const [concreteLoading, setConcreteLoading] = useState(false)
 
   useEffect(() => {
     async function fetchMaterials() {
@@ -103,19 +109,17 @@ export default function WorkerClient({
     })
   }, [supabase])
 
-  const castingJobs = jobOrders.filter(j => j.status === 'pending')
-  const demoldingJobs = jobOrders.filter(j => j.status === 'curing' || j.status === 'ready_demold')
+
 
   const resetScanner = () => {
-    setActiveTab('scanner')
-    setActiveSection('scanner')
+    setActiveTab('dailyJobs')
+    setActiveSection(null)
     setPhaseMode(null)
     setSelectedJobs([])
     setCurrentIndex(0)
     setPhase1Checks({ clean: false, wip: false })
     setPhotos({})
     setDemoldingData({})
-    setScanInput('')
   }
 
   // ── Computed: คอนกรีตรวม & จำนวนรอบ ──────────────────────────────────
@@ -147,24 +151,40 @@ export default function WorkerClient({
       for (const job of jobOrders) {
         const photo = jobItemPhotos[job.id]
         const photoUrl = photo ? await uploadPhoto(photo.file, 'preparation') : null
+        const jobConcreteQty = (job.plan_item?.product?.concrete_per_unit || 0) * job.qty_target
+        const jobRounds = Math.ceil(jobConcreteQty)
+
         await supabase.from('job_orders').update({
-          status: 'casting',
+          status: 'concrete_ordered',
           cast_at: new Date().toISOString(),
           qty_cast: job.qty_target,
           photo_ready_url: photoUrl,
         }).eq('id', job.id)
-      }
 
-      await supabase.from('activity_logs').insert({
-        user_id: user.id,
-        action_type: 'สั่งคอนกรีต (Mobile)',
-        entity_type: 'job_orders',
-        entity_id: null,
-        detail: `สั่งคอนกรีตรวม ${totalConcreteQty.toFixed(1)} คิว | ${totalRounds} รอบ`,
-      })
+        if (jobRounds > 0) {
+          const { data: order } = await supabase.from('concrete_orders').insert({
+            job_order_id: job.id,
+            requested_by: user.id,
+            qty_requested: jobConcreteQty,
+            round_count: jobRounds,
+            status: 'requested',
+          }).select('id').single()
+
+          if (order?.id) {
+            const rounds = Array.from({ length: jobRounds }, (_, i) => ({
+              concrete_order_id: order.id,
+              round_number: i + 1,
+              qty_per_round: i < jobRounds - 1 ? 1 : jobConcreteQty - Math.floor(jobConcreteQty) || 1,
+              status: 'pending',
+            }))
+            await supabase.from('concrete_rounds').insert(rounds)
+          }
+        }
+      }
 
       setConcreteSent(true)
       setConcreteRoundsReceived(0)
+      await fetchActiveConcreteOrders()
       setActiveTab('receiveConcreteTab')
       toast.success('ส่งคำสั่งคอนกรีตเรียบร้อย!')
     } catch (e: any) {
@@ -174,76 +194,52 @@ export default function WorkerClient({
     }
   }
 
-  const handleConfirmConcreteRound = () => {
-    const nextRound = concreteRoundsReceived + 1
-    setConcreteRoundsReceived(nextRound)
-    if (nextRound < totalRounds) {
-      toast.success(`✅ ยืนยันรับรอบที่ ${nextRound} สำเร็จ`)
-    } else {
-      toast.success('🎉 รับคอนกรีตครบทุกรอบแล้ว!')
+  const fetchActiveConcreteOrders = async () => {
+    setConcreteLoading(true)
+    try {
+      const { data } = await supabase
+        .from('concrete_orders')
+        .select(`id, job_order_id, qty_requested, round_count, requested_at,
+          job_order:job_orders(id, bed, status, plan_item:production_plan_items(product:products(name))),
+          rounds:concrete_rounds(id, round_number, qty_per_round, status, supplied_at)`)
+        .eq('status', 'requested')
+        .order('requested_at', { ascending: true })
+      if (data) {
+        const sorted = data.map((o: any) => ({
+          ...o,
+          rounds: (o.rounds ?? []).sort((a: any, b: any) => a.round_number - b.round_number),
+        }))
+        setActiveConcreteOrders(sorted)
+        const allReceived = sorted.reduce((s: number, o: any) => s + o.rounds.filter((r: any) => r.status === 'received').length, 0)
+        setConcreteRoundsReceived(allReceived)
+        if (sorted.length > 0) setConcreteSent(true)
+      }
+    } finally {
+      setConcreteLoading(false)
     }
   }
 
-  const handleScanInput = () => {
-    if (!scanInput.trim()) {
-      toast.error('กรุณาระบุเลขที่ PO')
-      return
-    }
-    const foundJobs = jobOrders.filter(j => j.id.toLowerCase().includes(scanInput.toLowerCase().trim()))
-    if (foundJobs.length === 0) {
-      toast.error('ไม่พบใบสั่งผลิต (PO) นี้ในระบบ หรือไม่มีงานที่พร้อมดำเนินการ')
-      return
-    }
-    
-    const firstStatus = foundJobs[0].status
-    const mode = (firstStatus === 'pending') ? 'casting' : ((firstStatus === 'curing' || firstStatus === 'ready_demold') ? 'demolding' : null)
-    
-    if (!mode) {
-      toast.error('สถานะของงานนี้ยังไม่สามารถเริ่มหล่อหรือถอดแบบได้')
-      return
-    }
-
-    setPhaseMode(mode)
-    setSelectedJobs(foundJobs)
-    setCurrentIndex(0)
-    
-    if (mode === 'casting') {
-      setPhase1Checks({ clean: false, wip: false })
-      setActiveSection('phase1')
-    } else {
-      const initData: Record<string, any> = {}
-      foundJobs.forEach(j => {
-        initData[j.id] = { good: j.qty_cast || j.qty_target, defect: 0, reason: '' }
-      })
-      setDemoldingData(initData)
-      setActiveSection('phase3')
-    }
-    setScanInput('')
-  }
-
-  const simulateScan = (mode: 'casting' | 'demolding') => {
-    const jobs = mode === 'casting' ? castingJobs : demoldingJobs
-    if (jobs.length === 0) {
-      toast.error('ไม่มีคิวงานสำหรับโหมดนี้ในขณะนี้')
-      return
-    }
-    
-    setPhaseMode(mode)
-    setSelectedJobs(jobs)
-    setCurrentIndex(0)
-    
-    if (mode === 'casting') {
-      setPhase1Checks({ clean: false, wip: false })
-      setActiveSection('phase1')
-    } else {
-      const initData: Record<string, any> = {}
-      jobs.forEach(j => {
-        initData[j.id] = { good: j.qty_cast || j.qty_target, defect: 0, reason: '' }
-      })
-      setDemoldingData(initData)
-      setActiveSection('phase3')
+  const [receivingId, setReceivingId] = useState<string | null>(null)
+  const handleReceiveRound = async (roundId: string) => {
+    setReceivingId(roundId)
+    try {
+      await receiveConcreteRound(roundId)
+      toast.success('รับคอนกรีตสำเร็จ')
+      await fetchActiveConcreteOrders()
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setReceivingId(null)
     }
   }
+
+  useEffect(() => {
+    fetchActiveConcreteOrders()
+    const interval = setInterval(fetchActiveConcreteOrders, 8000)
+    return () => clearInterval(interval)
+  }, [])
+
+
 
   const uploadPhoto = async (file: File, folder: string) => {
     const ext = file.name.split('.').pop()
@@ -474,194 +470,7 @@ export default function WorkerClient({
           }}
         >
           
-          {/* Active Tab: SCANNER */}
-          {activeTab === 'scanner' && activeSection === 'scanner' && (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                width: '100%',
-                maxWidth: '420px',
-                margin: '0 auto',
-                padding: '8px 24px 0',
-                paddingBottom: 'calc(100px + env(safe-area-inset-bottom))',
-              }}
-            >
-              {/* Title */}
-              <div style={{ textAlign: 'center', marginBottom: '28px', width: '100%' }}>
-                <h2 style={{
-                  fontSize: '24px',
-                  fontWeight: 900,
-                  color: '#0F172A',
-                  marginBottom: '6px',
-                  letterSpacing: '-0.5px',
-                  lineHeight: 1.2,
-                }}>สแกนใบสั่งผลิต</h2>
-                <p style={{
-                  fontSize: '14px',
-                  color: '#64748B',
-                  fontWeight: 500,
-                  lineHeight: 1.4,
-                }}>นำกล้องสแกน QR Code เพื่อดึงข้อมูลงาน</p>
-              </div>
 
-              {/* Scanner Box */}
-              <div style={{
-                position: 'relative',
-                width: '100%',
-                aspectRatio: '1 / 1',
-                backgroundColor: '#0D1117',
-                borderRadius: '28px',
-                overflow: 'hidden',
-                marginBottom: '32px',
-                boxShadow: '0 20px 60px -10px rgba(15, 23, 42, 0.35)',
-              }}>
-                {/* Corner — top-left */}
-                <div style={{ position: 'absolute', top: '24px', left: '24px', width: '48px', height: '48px',
-                  borderTop: '3px solid #3B82F6', borderLeft: '3px solid #3B82F6', borderRadius: '12px 0 0 0' }} />
-                {/* Corner — top-right */}
-                <div style={{ position: 'absolute', top: '24px', right: '24px', width: '48px', height: '48px',
-                  borderTop: '3px solid #3B82F6', borderRight: '3px solid #3B82F6', borderRadius: '0 12px 0 0' }} />
-                {/* Corner — bottom-left */}
-                <div style={{ position: 'absolute', bottom: '24px', left: '24px', width: '48px', height: '48px',
-                  borderBottom: '3px solid #3B82F6', borderLeft: '3px solid #3B82F6', borderRadius: '0 0 0 12px' }} />
-                {/* Corner — bottom-right */}
-                <div style={{ position: 'absolute', bottom: '24px', right: '24px', width: '48px', height: '48px',
-                  borderBottom: '3px solid #3B82F6', borderRight: '3px solid #3B82F6', borderRadius: '0 0 12px 0' }} />
-
-                {/* Scan line */}
-                <div className="animate-scan" style={{
-                  position: 'absolute',
-                  left: '40px',
-                  right: '40px',
-                  top: '62%',
-                  height: '2.5px',
-                  borderRadius: '99px',
-                  background: 'linear-gradient(90deg, transparent, #10B981, transparent)',
-                  boxShadow: '0 0 16px 4px rgba(16,185,129,0.55)',
-                  zIndex: 10,
-                }} />
-
-                {/* Center QR icon */}
-                <div style={{
-                  position: 'absolute', inset: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  opacity: 0.12,
-                }}>
-                  <i className="fas fa-qrcode" style={{ fontSize: '100px', color: '#ffffff' }}></i>
-                </div>
-              </div>
-
-              {/* Label above buttons */}
-              <p style={{
-                fontSize: '11px',
-                fontWeight: 800,
-                color: '#94A3B8',
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-                marginBottom: '14px',
-                alignSelf: 'center',
-              }}>จำลองการสแกน</p>
-
-              {/* Action Buttons */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%' }}>
-                <button
-                  onClick={() => simulateScan('casting')}
-                  style={{
-                    width: '100%',
-                    height: '56px',
-                    backgroundColor: '#2563EB',
-                    color: '#ffffff',
-                    borderRadius: '99px',
-                    border: 'none',
-                    fontSize: '15px',
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    boxShadow: '0 8px 24px -4px rgba(37, 99, 235, 0.45)',
-                    cursor: 'pointer',
-                    transition: 'transform 0.1s, opacity 0.1s',
-                  }}
-                  onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.97)')}
-                  onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-                >
-                  <i className="fas fa-play-circle" style={{ fontSize: '18px' }}></i>
-                  สแกนเริ่มงาน (ขั้น 1-2)
-                </button>
-
-                <button
-                  onClick={() => simulateScan('demolding')}
-                  style={{
-                    width: '100%',
-                    height: '56px',
-                    backgroundColor: '#10B981',
-                    color: '#ffffff',
-                    borderRadius: '99px',
-                    border: 'none',
-                    fontSize: '15px',
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    boxShadow: '0 8px 24px -4px rgba(16, 185, 129, 0.40)',
-                    cursor: 'pointer',
-                    transition: 'transform 0.1s',
-                  }}
-                  onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.97)')}
-                  onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-                >
-                  <i className="fas fa-wrench" style={{ fontSize: '16px' }}></i>
-                  สแกนถอดแบบ (ขั้น 3)
-                </button>
-              </div>
-
-              {/* PO manual input */}
-              <div style={{ width: '100%', marginTop: '32px', opacity: 0.65 }}>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input
-                    type="text"
-                    placeholder="กรอกเลขที่ PO..."
-                    style={{
-                      flex: 1,
-                      height: '44px',
-                      padding: '0 18px',
-                      borderRadius: '99px',
-                      border: '1.5px solid #E2E8F0',
-                      background: 'rgba(255,255,255,0.6)',
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      color: '#334155',
-                      outline: 'none',
-                    }}
-                    value={scanInput}
-                    onChange={e => setScanInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleScanInput()}
-                  />
-                  <button
-                    onClick={handleScanInput}
-                    style={{
-                      height: '44px',
-                      padding: '0 20px',
-                      backgroundColor: '#1E293B',
-                      color: '#ffffff',
-                      borderRadius: '99px',
-                      border: 'none',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                    }}
-                  >
-                    ค้นหา
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* SECTION: Phase 1 */}
           {activeSection === 'phase1' && currentJob && (
@@ -1319,82 +1128,151 @@ export default function WorkerClient({
             </div>
           )}
 
-          {/* Active Tab: RECEIVE CONCRETE */}
-          {activeTab === 'receiveConcreteTab' && (
-            <div style={{ padding: '24px 20px', maxWidth: '480px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                <div style={{ width: '64px', height: '64px', backgroundColor: '#EFF6FF', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', border: '1px solid #BFDBFE' }}>
-                  <i className="fas fa-truck-monster" style={{ fontSize: '26px', color: '#2563EB' }}></i>
+          {/* Active Tab: RECEIVE CONCRETE — DB-driven */}
+          {activeTab === 'receiveConcreteTab' && (() => {
+            const totalAllRounds = activeConcreteOrders.reduce((s, o) => s + o.round_count, 0)
+            const totalReceived = activeConcreteOrders.reduce((s, o) => s + o.rounds.filter(r => r.status === 'received').length, 0)
+            const totalQty = activeConcreteOrders.reduce((s, o) => s + Number(o.qty_requested), 0)
+            const allDone = totalAllRounds > 0 && totalReceived >= totalAllRounds
+            return (
+            <div style={{ padding: '16px 16px 100px', maxWidth: '480px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#0F172A', margin: 0 }}>รับคอนกรีต</h2>
+                  <p style={{ fontSize: '12px', color: '#64748B', margin: '2px 0 0' }}>ซิงค์กับฝ่ายผสมทุก 8 วินาที</p>
                 </div>
-                <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', margin: '0 0 4px' }}>รับคอนกรีต</h2>
-                <p style={{ fontSize: '13px', color: '#64748B', fontWeight: 500, margin: 0 }}>ยืนยันการรับคอนกรีตทีละรอบ (1 คิว/รอบ)</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {concreteLoading ? <i className="fas fa-spinner fa-spin" style={{ color: '#94A3B8', fontSize: 13 }} /> : <i className="fas fa-sync-alt" style={{ color: '#10B981', fontSize: 12 }} />}
+                  <span style={{ fontSize: 11, color: concreteLoading ? '#94A3B8' : '#10B981', fontWeight: 700 }}>{concreteLoading ? 'กำลังโหลด...' : 'อัปเดตแล้ว'}</span>
+                </div>
               </div>
 
-              {/* Progress Bar */}
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '20px', padding: '20px 24px', border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '12px' }}>
-                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#64748B' }}>ความคืบหน้า</span>
-                  <span style={{ fontSize: '22px', fontWeight: 900, color: '#2563EB' }}>{concreteRoundsReceived}<span style={{ fontSize: '14px', color: '#94A3B8', fontWeight: 700 }}>/{totalRounds} รอบ</span></span>
-                </div>
-                <div style={{ height: '10px', backgroundColor: '#F1F5F9', borderRadius: '99px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: totalRounds > 0 ? `${Math.round((concreteRoundsReceived/totalRounds)*100)}%` : '0%', backgroundColor: '#2563EB', borderRadius: '99px', transition: 'width 0.4s ease' }} />
-                </div>
-                <p style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 700, marginTop: '8px', textAlign: 'right' }}>{totalConcreteQty.toFixed(1)} คิวรวม</p>
-              </div>
-
-              {/* Rounds List or Completed */}
-              {concreteRoundsReceived >= totalRounds ? (
-                <div style={{ textAlign: 'center', padding: '40px 24px', backgroundColor: '#F0FDF4', borderRadius: '24px', border: '1px solid #A7F3D0' }}>
-                  <div style={{ width: '80px', height: '80px', backgroundColor: '#DCFCE7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-                    <i className="fas fa-check" style={{ fontSize: '36px', color: '#10B981' }}></i>
+              {/* Summary */}
+              {totalAllRounds > 0 && (
+                <div style={{ backgroundColor: '#fff', borderRadius: 16, padding: '14px 18px', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>รวมทุกคำสั่ง</span>
+                    <span style={{ fontSize: 16, fontWeight: 900, color: '#2563EB' }}>{totalReceived}<span style={{ color: '#94A3B8', fontWeight: 600, fontSize: 12 }}>/{totalAllRounds} รอบ</span></span>
                   </div>
-                  <h3 style={{ fontSize: '20px', fontWeight: 900, color: '#047857', margin: '0 0 8px' }}>รับคอนกรีตครบแล้ว!</h3>
-                  <p style={{ fontSize: '14px', color: '#6EE7B7', fontWeight: 600, margin: '0 0 24px' }}>รับครบ {totalRounds} รอบ · {totalConcreteQty.toFixed(1)} คิว</p>
-                  <p style={{ fontSize: '13px', color: '#059669', fontWeight: 700, margin: 0 }}>🎉 กระบวนการของพนักงานเสร็จสิ้นแล้ว</p>
-                </div>
-              ) : (
-                <>
-                  {/* Confirmed rounds */}
-                  {concreteRoundsReceived > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {Array.from({ length: concreteRoundsReceived }).map((_, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 18px', backgroundColor: '#F0FDF4', borderRadius: '14px', border: '1px solid #A7F3D0' }}>
-                          <i className="fas fa-check-circle" style={{ color: '#10B981', fontSize: '18px' }}></i>
-                          <span style={{ fontWeight: 700, color: '#047857', fontSize: '14px' }}>รอบที่ {i + 1} — 1 คิว</span>
-                          <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#6EE7B7', fontWeight: 800 }}>รับแล้ว</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Current round */}
-                  <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '2px solid #BFDBFE', padding: '24px', boxShadow: '0 8px 24px rgba(37,99,235,0.1)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
-                      <div style={{ width: '44px', height: '44px', backgroundColor: '#2563EB', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <i className="fas fa-truck" style={{ color: '#fff', fontSize: '18px' }}></i>
-                      </div>
-                      <div>
-                        <p style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', margin: '0 0 2px' }}>รอยืนยัน</p>
-                        <p style={{ fontSize: '18px', fontWeight: 900, color: '#1E293B', margin: 0 }}>รอบที่ {concreteRoundsReceived + 1} จาก {totalRounds}</p>
-                      </div>
-                      <span style={{ marginLeft: 'auto', padding: '6px 14px', backgroundColor: '#EFF6FF', color: '#2563EB', borderRadius: '99px', fontSize: '13px', fontWeight: 800 }}>1 คิว</span>
-                    </div>
-                    <button onClick={handleConfirmConcreteRound}
-                      style={{ width: '100%', padding: '16px', backgroundColor: '#2563EB', color: '#ffffff', borderRadius: '99px', border: 'none', fontSize: '16px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', boxShadow: '0 8px 24px -4px rgba(37,99,235,0.45)' }}>
-                      <i className="fas fa-check-double"></i> ยืนยันรับคอนกรีตรอบนี้
-                    </button>
+                  <div style={{ height: 8, background: '#F1F5F9', borderRadius: 99, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${totalAllRounds > 0 ? Math.round((totalReceived/totalAllRounds)*100) : 0}%`, background: allDone ? '#10B981' : '#2563EB', borderRadius: 99, transition: 'width 0.4s' }} />
                   </div>
+                  <p style={{ margin: '6px 0 0', fontSize: 11, color: '#94A3B8', fontWeight: 600 }}>รวม {totalQty.toFixed(2)} คิว</p>
 
-                  {/* Remaining rounds */}
-                  {totalRounds - concreteRoundsReceived - 1 > 0 && (
-                    <p style={{ textAlign: 'center', fontSize: '13px', color: '#94A3B8', fontWeight: 600 }}>
-                      รอรับอีก {totalRounds - concreteRoundsReceived - 1} รอบ
-                    </p>
-                  )}
-                </>
+                </div>
+              )}
+
+              {/* Loading */}
+              {concreteLoading && activeConcreteOrders.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+                  <i className="fas fa-spinner fa-spin" style={{ fontSize: 32, color: '#CBD5E1', display: 'block', marginBottom: 12 }} />
+                  <p style={{ fontSize: 14, color: '#94A3B8', fontWeight: 600 }}>กำลังโหลดข้อมูล...</p>
+                </div>
+              )}
+
+              {/* Empty */}
+              {!concreteLoading && activeConcreteOrders.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '48px 24px', backgroundColor: '#F8FAFC', borderRadius: 20, border: '1px dashed #CBD5E1' }}>
+                  <i className="fas fa-truck-monster" style={{ fontSize: 40, color: '#CBD5E1', display: 'block', marginBottom: 12 }} />
+                  <p style={{ fontWeight: 800, color: '#94A3B8', margin: '0 0 4px', fontSize: 15 }}>ยังไม่มีคำสั่งคอนกรีต</p>
+                  <p style={{ fontSize: 12, color: '#CBD5E1', fontWeight: 500, margin: 0 }}>เมื่อกดสั่งคอนกรีต ข้อมูลจะปรากฏที่นี่</p>
+                </div>
+              )}
+
+              {/* All done */}
+              {allDone && (
+                <div style={{ textAlign: 'center', padding: '32px 24px', backgroundColor: '#F0FDF4', borderRadius: 20, border: '1px solid #A7F3D0' }}>
+                  <i className="fas fa-check-circle" style={{ fontSize: 40, color: '#10B981', display: 'block', marginBottom: 10 }} />
+                  <p style={{ fontWeight: 900, color: '#047857', margin: '0 0 4px', fontSize: 16 }}>รับคอนกรีตครบทุกรอบแล้ว!</p>
+                  <p style={{ fontSize: 12, color: '#6EE7B7', fontWeight: 600, margin: 0 }}>รอฝ่าย QC ยืนยันก่อนเริ่มเทคอนกรีต</p>
+                </div>
+              )}
+
+              {/* Order cards */}
+              {activeConcreteOrders.map(order => {
+                const suppliedCount = order.rounds.filter(r => r.status === 'supplied').length
+                const receivedCount = order.rounds.filter(r => r.status === 'received').length
+                const pct = order.round_count > 0 ? Math.round(((suppliedCount + receivedCount) / order.round_count) * 100) : 0
+                const productName = (order.job_order as any)?.plan_item?.product?.name ?? 'ไม่ระบุ'
+                const bed = (order.job_order as any)?.bed ?? '?'
+                return (
+                  <div key={order.id} style={{ backgroundColor: '#fff', borderRadius: 20, border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                    <div style={{ padding: '14px 18px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 10, background: '#EFF6FF', color: '#2563EB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
+                        <span style={{ fontSize: 8, color: '#93C5FD' }}>โรง</span>
+                        <span style={{ fontSize: 17, lineHeight: 1 }}>{bed}</span>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontWeight: 800, fontSize: 14, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{productName}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
+                          สั่ง {new Date(order.requested_at).toLocaleString('th-TH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#2563EB', lineHeight: 1 }}>{Number(order.qty_requested).toFixed(2)} <span style={{ fontSize: 11, color: '#94A3B8' }}>คิว</span></p>
+                        <p style={{ margin: '4px 0 0', fontSize: 11, color: '#64748B' }}>รับแล้ว {receivedCount}/{order.round_count} รอบ</p>
+                      </div>
+                    </div>
+                    <div style={{ height: 4, background: '#F1F5F9' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#10B981' : '#2563EB', transition: 'width 0.4s' }} />
+                    </div>
+                    <div style={{ padding: '8px 0' }}>
+                      {order.rounds.map((r, idx) => {
+                        const isSupplied = r.status === 'supplied' || r.status === 'received'
+                        const isReceived = r.status === 'received'
+                        const isNext = !isSupplied && (idx === 0 || order.rounds[idx - 1]?.status === 'received')
+                        const isLocked = !isSupplied && !isNext
+                        return (
+                          <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', borderBottom: idx < order.rounds.length - 1 ? '1px solid #F8FAFC' : 'none', background: isReceived ? '#F0FDF4' : isSupplied ? '#FFFBEB' : 'transparent', opacity: isLocked ? 0.4 : 1 }}>
+                            <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, background: isReceived ? '#D1FAE5' : isSupplied ? '#FEF3C7' : isNext ? '#DBEAFE' : '#F3F4F6', color: isReceived ? '#059669' : isSupplied ? '#D97706' : isNext ? '#2563EB' : '#9CA3AF' }}>
+                              {isReceived ? <i className="fas fa-check-double" style={{ fontSize: 10 }} /> : isSupplied ? <i className="fas fa-truck" style={{ fontSize: 10 }} /> : isLocked ? <i className="fas fa-lock" style={{ fontSize: 9 }} /> : r.round_number}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: isReceived ? '#047857' : isLocked ? '#9CA3AF' : '#1E293B' }}>รอบที่ {r.round_number}</span>
+                              <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 6 }}>{Number(r.qty_per_round).toFixed(2)} คิว</span>
+                              {isReceived ? (
+                                <div style={{ fontSize: 10, color: '#10B981', fontWeight: 700, marginTop: 1 }}>รับเรียบร้อยแล้ว</div>
+                              ) : isSupplied ? (
+                                <div style={{ fontSize: 10, color: '#D97706', fontWeight: 700, marginTop: 1 }}>คอนกรีตมาถึงแล้ว! กรุณากดรับ</div>
+                              ) : isNext ? (
+                                <div style={{ fontSize: 10, color: '#60A5FA', fontWeight: 700, marginTop: 1 }}>รอฝ่ายผสมยืนยัน...</div>
+                              ) : null}
+                            </div>
+                            {isSupplied && !isReceived ? (
+                              <button
+                                onClick={() => handleReceiveRound(r.id)}
+                                disabled={!!receivingId}
+                                style={{
+                                  padding: '6px 14px', borderRadius: '10px', background: '#D97706', color: '#fff', border: 'none',
+                                  fontSize: '11px', fontWeight: 800, cursor: receivingId === r.id ? 'not-allowed' : 'pointer',
+                                  boxShadow: '0 4px 10px rgba(217,119,6,0.2)'
+                                }}
+                              >
+                                {receivingId === r.id ? <i className="fas fa-spinner fa-spin" /> : 'กดยืนยันรับ'}
+                              </button>
+                            ) : isReceived && r.supplied_at && (
+                              <span style={{ fontSize: 10, color: '#6EE7B7', fontWeight: 700 }}>{new Date(r.supplied_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+
+              {activeConcreteOrders.length > 0 && !allDone && (
+                <div style={{ padding: '12px 16px', backgroundColor: '#FFFBEB', borderRadius: 14, border: '1px solid #FDE68A', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <i className="fas fa-info-circle" style={{ color: '#D97706', flexShrink: 0, marginTop: 1 }} />
+                  <p style={{ margin: 0, fontSize: 12, color: '#92400E', fontWeight: 600 }}>สถานะอัปเดตอัตโนมัติหลังฝ่ายผสมกดยืนยันจ่ายแต่ละรอบ ไม่ต้องกดรีเฟรช</p>
+                </div>
               )}
             </div>
-          )}
+            )
+          })()}
+
         </main>
 
         <nav style={{
@@ -1411,23 +1289,7 @@ export default function WorkerClient({
           borderRadius: '24px 24px 0 0',
           boxShadow: '0 -4px 30px rgba(0,0,0,0.06)',
         }}>
-          {/* Tab: สแกนงาน */}
-          <button onClick={() => { setActiveTab('scanner'); setActiveSection('scanner') }}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', background: 'none', border: 'none', cursor: 'pointer', paddingBottom: 0 }}>
-            {activeTab === 'scanner' ? (
-              <>
-                <div style={{ position: 'absolute', top: '-40px', width: '54px', height: '54px', backgroundColor: '#2563EB', borderRadius: '99px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 16px rgba(37,99,235,0.45)', border: '4px solid #ffffff', zIndex: 10 }}>
-                  <i className="fas fa-th-large" style={{ color: '#fff', fontSize: '18px' }}></i>
-                </div>
-                <span style={{ fontSize: '10px', fontWeight: 800, color: '#2563EB', marginTop: '22px' }}>สแกนงาน</span>
-              </>
-            ) : (
-              <>
-                <i className="fas fa-th-large" style={{ fontSize: '20px', color: '#94A3B8', marginBottom: '4px' }}></i>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: '#94A3B8' }}>สแกนงาน</span>
-              </>
-            )}
-          </button>
+
 
           {/* Tab: งานวันนี้ */}
           <button onClick={() => setActiveTab('dailyJobs')}

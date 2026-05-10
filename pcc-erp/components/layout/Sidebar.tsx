@@ -34,7 +34,7 @@ const allNavItems: NavSection[] = [
     links: [
       { href: '/planner',          icon: 'fa-calendar-alt',   label: 'แผนการผลิต',      roles: ['admin', 'planner'] },
       { href: '/production-order', icon: 'fa-file-invoice',   label: 'ใบสั่งผลิต',      roles: ['admin', 'planner'] },
-      { href: '/job-orders',       icon: 'fa-clipboard-list', label: 'คิวงานเทปูน',     roles: ['admin', 'planner'] },
+      { href: '/job-orders',       icon: 'fa-clipboard-list', label: 'คิวงานเทคอนกรีต',     roles: ['admin', 'planner'] },
       { href: '/demolding',        icon: 'fa-hammer',         label: 'งานตัดยก',         roles: ['admin', 'planner'] },
     ],
   },
