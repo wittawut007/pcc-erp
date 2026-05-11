@@ -1,287 +1,1003 @@
-// ─── User Roles ───────────────────────────────────────────────
-export type UserRole =
-  | 'admin'
-  | 'planner'
-  | 'material'    // พนักงานคลังวัตถุดิบ
-  | 'warehouse'   // พนักงานคลังสินค้า (FG)
-  | 'worker'      // พนักงานหน้างาน (QR Login)
-  | 'qc'          // พนักงานตรวจสอบคุณภาพ (Mobile Login)
-  | 'concrete'    // พนักงานผสมคอนกรีต
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
 
-export type ProductCategory =
-  | 'A13 แผ่นพื้นตัน'
-  | 'A30 ผนังรั้วสำเร็จรูป'
-  | 'A35 รั้วสำเร็จรูป'
-  | 'A36 เสา คาน บันได'
-  | 'A41 เสาเข็ม'
-  | 'A42 กำแพงกันดิน'
-
-export type Bed = 'A' | 'B' | 'C' | 'D' | 'E' | 'F'
-
-export type PlanStatus = 'draft' | 'confirmed' | 'completed'
-
-export type JobStatus =
-  | 'pending'           // รอเริ่มงาน
-  | 'rebar_prep'        // กำลังวางเหล็กโครงสร้าง
-  | 'concrete_ordered'  // สั่งคอนกรีตแล้ว รอปูนมา
-  | 'casting'           // กำลังเท/หล่อคอนกรีต
-  | 'curing'            // บ่มคอนกรีต
-  | 'ready_demold'      // พร้อมถอดแบบ
-  | 'demolded'          // ถอดแบบแล้ว รอ QC ตรวจ
-  | 'qc_passed'         // QC ผ่านแล้ว รอคลังรับ
-  | 'completed'         // รับเข้าคลัง FG แล้ว
-  | 'cancelled'
-
-export type DefectReason = 'crack' | 'chip' | 'honeycomb' | 'other'
-
-export type PlanMaterialStatus = 'pending' | 'partial' | 'dispensed'
-export type ConcreteOrderStatus = 'requested' | 'supplied' | 'cancelled'
-
-// ─── Database Row Types ───────────────────────────────────────
-
-export interface Profile {
-  id: string
-  email: string
-  full_name: string
-  role: UserRole
-  employee_code: string | null
-  avatar_url: string | null
-  is_active: boolean
-  worker_token: string | null   // UUID สำหรับ QR Code access (เฉพาะ role = worker)
-  created_at: string
+export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
+  public: {
+    Tables: {
+      activity_logs: {
+        Row: {
+          action_type: string
+          created_at: string
+          detail: string | null
+          entity_id: string | null
+          entity_type: string
+          id: string
+          user_id: string | null
+        }
+        Insert: {
+          action_type: string
+          created_at?: string
+          detail?: string | null
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          user_id?: string | null
+        }
+        Update: {
+          action_type?: string
+          created_at?: string
+          detail?: string | null
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      concrete_orders: {
+        Row: {
+          bed: Database["public"]["Enums"]["bed_name"] | null
+          created_at: string
+          id: string
+          job_order_id: string | null
+          mix_ratio: string | null
+          notes: string | null
+          qty_requested: number
+          requested_at: string
+          requested_by: string
+          round_count: number
+          status: string
+          supplied_at: string | null
+          supplied_by: string | null
+          total_qty_requested: number
+        }
+        Insert: {
+          bed?: Database["public"]["Enums"]["bed_name"] | null
+          created_at?: string
+          id?: string
+          job_order_id?: string | null
+          mix_ratio?: string | null
+          notes?: string | null
+          qty_requested?: number
+          requested_at?: string
+          requested_by: string
+          round_count?: number
+          status?: string
+          supplied_at?: string | null
+          supplied_by?: string | null
+          total_qty_requested?: number
+        }
+        Update: {
+          bed?: Database["public"]["Enums"]["bed_name"] | null
+          created_at?: string
+          id?: string
+          job_order_id?: string | null
+          mix_ratio?: string | null
+          notes?: string | null
+          qty_requested?: number
+          requested_at?: string
+          requested_by?: string
+          round_count?: number
+          status?: string
+          supplied_at?: string | null
+          supplied_by?: string | null
+          total_qty_requested?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "concrete_orders_job_order_id_fkey"
+            columns: ["job_order_id"]
+            isOneToOne: false
+            referencedRelation: "job_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "concrete_orders_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "concrete_orders_supplied_by_fkey"
+            columns: ["supplied_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      concrete_rounds: {
+        Row: {
+          concrete_order_id: string
+          created_at: string | null
+          id: string
+          qty_per_round: number
+          round_number: number
+          status: string
+          supplied_at: string | null
+          supplied_by: string | null
+        }
+        Insert: {
+          concrete_order_id: string
+          created_at?: string | null
+          id?: string
+          qty_per_round?: number
+          round_number: number
+          status?: string
+          supplied_at?: string | null
+          supplied_by?: string | null
+        }
+        Update: {
+          concrete_order_id?: string
+          created_at?: string | null
+          id?: string
+          qty_per_round?: number
+          round_number?: number
+          status?: string
+          supplied_at?: string | null
+          supplied_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "concrete_rounds_concrete_order_id_fkey"
+            columns: ["concrete_order_id"]
+            isOneToOne: false
+            referencedRelation: "concrete_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "concrete_rounds_supplied_by_fkey"
+            columns: ["supplied_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      demolding_records: {
+        Row: {
+          created_at: string
+          defect_detail: string | null
+          defect_reason: Database["public"]["Enums"]["defect_reason"] | null
+          id: string
+          job_order_id: string
+          photo_url: string | null
+          qty_defect: number
+          qty_good: number
+          worker_id: string
+        }
+        Insert: {
+          created_at?: string
+          defect_detail?: string | null
+          defect_reason?: Database["public"]["Enums"]["defect_reason"] | null
+          id?: string
+          job_order_id: string
+          photo_url?: string | null
+          qty_defect?: number
+          qty_good?: number
+          worker_id: string
+        }
+        Update: {
+          created_at?: string
+          defect_detail?: string | null
+          defect_reason?: Database["public"]["Enums"]["defect_reason"] | null
+          id?: string
+          job_order_id?: string
+          photo_url?: string | null
+          qty_defect?: number
+          qty_good?: number
+          worker_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demolding_records_job_order_id_fkey"
+            columns: ["job_order_id"]
+            isOneToOne: false
+            referencedRelation: "job_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "demolding_records_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fg_inventory: {
+        Row: {
+          id: string
+          last_updated_by: string | null
+          product_id: string
+          qty: number
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          last_updated_by?: string | null
+          product_id: string
+          qty?: number
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          last_updated_by?: string | null
+          product_id?: string
+          qty?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fg_inventory_last_updated_by_fkey"
+            columns: ["last_updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fg_inventory_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: true
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fg_receipts: {
+        Row: {
+          confirmed_at: string
+          created_at: string
+          id: string
+          job_order_id: string
+          notes: string | null
+          product_id: string
+          qty_defect: number
+          qty_good: number
+          warehouse_id: string
+        }
+        Insert: {
+          confirmed_at?: string
+          created_at?: string
+          id?: string
+          job_order_id: string
+          notes?: string | null
+          product_id: string
+          qty_defect?: number
+          qty_good?: number
+          warehouse_id: string
+        }
+        Update: {
+          confirmed_at?: string
+          created_at?: string
+          id?: string
+          job_order_id?: string
+          notes?: string | null
+          product_id?: string
+          qty_defect?: number
+          qty_good?: number
+          warehouse_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fg_receipts_job_order_id_fkey"
+            columns: ["job_order_id"]
+            isOneToOne: false
+            referencedRelation: "job_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fg_receipts_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fg_receipts_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      job_orders: {
+        Row: {
+          bed: Database["public"]["Enums"]["bed_name"]
+          cast_at: string | null
+          concrete_requested_at: string | null
+          created_at: string
+          demolded_at: string | null
+          expected_demold_at: string | null
+          id: string
+          order_id: string
+          photo_cast_url: string | null
+          photo_ready_url: string | null
+          plan_item_id: string
+          qty_cast: number
+          qty_target: number
+          rebar_prepared_at: string | null
+          started_at: string | null
+          status: Database["public"]["Enums"]["job_status"]
+          worker_id: string | null
+        }
+        Insert: {
+          bed: Database["public"]["Enums"]["bed_name"]
+          cast_at?: string | null
+          concrete_requested_at?: string | null
+          created_at?: string
+          demolded_at?: string | null
+          expected_demold_at?: string | null
+          id?: string
+          order_id: string
+          photo_cast_url?: string | null
+          photo_ready_url?: string | null
+          plan_item_id: string
+          qty_cast?: number
+          qty_target?: number
+          rebar_prepared_at?: string | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["job_status"]
+          worker_id?: string | null
+        }
+        Update: {
+          bed?: Database["public"]["Enums"]["bed_name"]
+          cast_at?: string | null
+          concrete_requested_at?: string | null
+          created_at?: string
+          demolded_at?: string | null
+          expected_demold_at?: string | null
+          id?: string
+          order_id?: string
+          photo_cast_url?: string | null
+          photo_ready_url?: string | null
+          plan_item_id?: string
+          qty_cast?: number
+          qty_target?: number
+          rebar_prepared_at?: string | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["job_status"]
+          worker_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_orders_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "production_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_orders_plan_item_id_fkey"
+            columns: ["plan_item_id"]
+            isOneToOne: false
+            referencedRelation: "production_plan_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_orders_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plan_materials: {
+        Row: {
+          created_at: string
+          dispensed_at: string | null
+          dispensed_by: string | null
+          id: string
+          notes: string | null
+          plan_id: string
+          qty_dispensed: number
+          qty_required: number
+          raw_material_id: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          dispensed_at?: string | null
+          dispensed_by?: string | null
+          id?: string
+          notes?: string | null
+          plan_id: string
+          qty_dispensed?: number
+          qty_required?: number
+          raw_material_id: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          dispensed_at?: string | null
+          dispensed_by?: string | null
+          id?: string
+          notes?: string | null
+          plan_id?: string
+          qty_dispensed?: number
+          qty_required?: number
+          raw_material_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_materials_dispensed_by_fkey"
+            columns: ["dispensed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plan_materials_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "production_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plan_materials_raw_material_id_fkey"
+            columns: ["raw_material_id"]
+            isOneToOne: false
+            referencedRelation: "raw_materials"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      production_orders: {
+        Row: {
+          confirmed_by: string | null
+          created_at: string
+          id: string
+          order_number: string
+          plan_id: string
+          status: string
+        }
+        Insert: {
+          confirmed_by?: string | null
+          created_at?: string
+          id?: string
+          order_number: string
+          plan_id: string
+          status?: string
+        }
+        Update: {
+          confirmed_by?: string | null
+          created_at?: string
+          id?: string
+          order_number?: string
+          plan_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "production_orders_confirmed_by_fkey"
+            columns: ["confirmed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "production_orders_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "production_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      production_plan_items: {
+        Row: {
+          bed: Database["public"]["Enums"]["bed_name"]
+          created_at: string
+          id: string
+          plan_id: string
+          product_id: string
+          qty_target: number
+          status: Database["public"]["Enums"]["job_status"]
+        }
+        Insert: {
+          bed: Database["public"]["Enums"]["bed_name"]
+          created_at?: string
+          id?: string
+          plan_id: string
+          product_id: string
+          qty_target?: number
+          status?: Database["public"]["Enums"]["job_status"]
+        }
+        Update: {
+          bed?: Database["public"]["Enums"]["bed_name"]
+          created_at?: string
+          id?: string
+          plan_id?: string
+          product_id?: string
+          qty_target?: number
+          status?: Database["public"]["Enums"]["job_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "production_plan_items_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "production_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "production_plan_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      production_plans: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          plan_date: string
+          status: Database["public"]["Enums"]["plan_status"]
+          total_concrete: number
+          total_qty: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          plan_date: string
+          status?: Database["public"]["Enums"]["plan_status"]
+          total_concrete?: number
+          total_qty?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          plan_date?: string
+          status?: Database["public"]["Enums"]["plan_status"]
+          total_concrete?: number
+          total_qty?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "production_plans_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      products: {
+        Row: {
+          bom_code: string | null
+          category: string
+          code: string
+          concrete_per_unit: number
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          length: number | null
+          mesh_per_unit: number | null
+          name: string
+          rebar_per_unit: number | null
+          size: string
+          unit: string
+          wip_code: string | null
+          wire_per_unit: number | null
+        }
+        Insert: {
+          bom_code?: string | null
+          category: string
+          code: string
+          concrete_per_unit?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          length?: number | null
+          mesh_per_unit?: number | null
+          name: string
+          rebar_per_unit?: number | null
+          size: string
+          unit?: string
+          wip_code?: string | null
+          wire_per_unit?: number | null
+        }
+        Update: {
+          bom_code?: string | null
+          category?: string
+          code?: string
+          concrete_per_unit?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          length?: number | null
+          mesh_per_unit?: number | null
+          name?: string
+          rebar_per_unit?: number | null
+          size?: string
+          unit?: string
+          wip_code?: string | null
+          wire_per_unit?: number | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string
+          employee_code: string | null
+          full_name: string
+          id: string
+          is_active: boolean
+          role: Database["public"]["Enums"]["user_role"]
+          worker_token: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email: string
+          employee_code?: string | null
+          full_name: string
+          id: string
+          is_active?: boolean
+          role?: Database["public"]["Enums"]["user_role"]
+          worker_token?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          employee_code?: string | null
+          full_name?: string
+          id?: string
+          is_active?: boolean
+          role?: Database["public"]["Enums"]["user_role"]
+          worker_token?: string | null
+        }
+        Relationships: []
+      }
+      qc_inspections: {
+        Row: {
+          created_at: string
+          defect_detail: string | null
+          defect_reason: Database["public"]["Enums"]["defect_reason"] | null
+          demold_inspected_at: string | null
+          demold_qty_defect: number
+          demold_qty_good: number
+          id: string
+          job_order_id: string
+          photo_url: string | null
+          pour_inspected_at: string | null
+          pour_notes: string | null
+          pour_ok: boolean | null
+          qc_id: string
+        }
+        Insert: {
+          created_at?: string
+          defect_detail?: string | null
+          defect_reason?: Database["public"]["Enums"]["defect_reason"] | null
+          demold_inspected_at?: string | null
+          demold_qty_defect?: number
+          demold_qty_good?: number
+          id?: string
+          job_order_id: string
+          photo_url?: string | null
+          pour_inspected_at?: string | null
+          pour_notes?: string | null
+          pour_ok?: boolean | null
+          qc_id: string
+        }
+        Update: {
+          created_at?: string
+          defect_detail?: string | null
+          defect_reason?: Database["public"]["Enums"]["defect_reason"] | null
+          demold_inspected_at?: string | null
+          demold_qty_defect?: number
+          demold_qty_good?: number
+          id?: string
+          job_order_id?: string
+          photo_url?: string | null
+          pour_inspected_at?: string | null
+          pour_notes?: string | null
+          pour_ok?: boolean | null
+          qc_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qc_inspections_job_order_id_fkey"
+            columns: ["job_order_id"]
+            isOneToOne: false
+            referencedRelation: "job_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qc_inspections_qc_id_fkey"
+            columns: ["qc_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      raw_materials: {
+        Row: {
+          category: string
+          cost_per_unit: number | null
+          id: string
+          material_code: string | null
+          min_stock: number
+          name: string
+          qty_on_hand: number
+          supplier: string | null
+          unit: string
+          updated_at: string
+          weight_per_meter: number | null
+        }
+        Insert: {
+          category: string
+          cost_per_unit?: number | null
+          id?: string
+          material_code?: string | null
+          min_stock?: number
+          name: string
+          qty_on_hand?: number
+          supplier?: string | null
+          unit: string
+          updated_at?: string
+          weight_per_meter?: number | null
+        }
+        Update: {
+          category?: string
+          cost_per_unit?: number | null
+          id?: string
+          material_code?: string | null
+          min_stock?: number
+          name?: string
+          qty_on_hand?: number
+          supplier?: string | null
+          unit?: string
+          updated_at?: string
+          weight_per_meter?: number | null
+        }
+        Relationships: []
+      }
+      wip_inventory: {
+        Row: {
+          id: string
+          product_id: string
+          qty: number
+          updated_at: string
+          wip_code: string
+        }
+        Insert: {
+          id?: string
+          product_id: string
+          qty?: number
+          updated_at?: string
+          wip_code: string
+        }
+        Update: {
+          id?: string
+          product_id?: string
+          qty?: number
+          updated_at?: string
+          wip_code?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wip_inventory_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: true
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      bed_name: "A" | "B" | "C" | "D" | "E" | "F" | "1" | "2" | "3" | "4"
+      defect_reason: "crack" | "chip" | "honeycomb" | "other"
+      job_status:
+        | "pending"
+        | "casting"
+        | "curing"
+        | "ready_demold"
+        | "demolded"
+        | "cancelled"
+        | "rebar_prep"
+        | "concrete_ordered"
+      plan_status: "draft" | "confirmed" | "completed"
+      user_role:
+        | "admin"
+        | "planner"
+        | "worker"
+        | "qc"
+        | "warehouse"
+        | "material"
+        | "concrete"
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
 }
 
-export interface Product {
-  id: string
-  code: string
-  name: string
-  category: ProductCategory
-  size: string
-  unit: string
-  concrete_per_unit: number
-  bom_code: string | null
-  wip_code: string | null
-  length: number | null
-  wire_per_unit: number
-  mesh_per_unit: number
-  rebar_per_unit: number
-  is_active: boolean
-  created_at: string
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
 }
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
 
-export interface ProductionPlan {
-  id: string
-  plan_date: string
-  created_by: string
-  status: PlanStatus
-  total_qty: number
-  total_concrete: number
-  created_at: string
-  // relations
-  profile?: Profile
-  items?: ProductionPlanItem[]
-  materials?: PlanMaterial[]
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
 }
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
 
-export interface ProductionPlanItem {
-  id: string
-  plan_id: string
-  product_id: string
-  bed: Bed
-  qty_target: number
-  status: JobStatus
-  created_at: string
-  // relations
-  product?: Product
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
 }
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
 
-export interface ProductionOrder {
-  id: string
-  order_number: string
-  plan_id: string
-  confirmed_by: string
-  status: 'active' | 'completed' | 'cancelled'
-  created_at: string
-  // relations
-  plan?: ProductionPlan
-  profile?: Profile
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
 }
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
 
-export interface JobOrder {
-  id: string
-  order_id: string
-  plan_item_id: string
-  worker_id: string | null
-  bed: Bed
-  qty_target: number
-  qty_cast: number
-  status: JobStatus
-  started_at: string | null
-  rebar_prepared_at: string | null       // Worker ยืนยันวางเหล็กเสร็จ
-  concrete_requested_at: string | null   // Worker สั่งคอนกรีต
-  cast_at: string | null
-  expected_demold_at: string | null
-  demolded_at: string | null
-  photo_cast_url: string | null
-  photo_ready_url: string | null
-  created_at: string
-  // relations
-  plan_item?: ProductionPlanItem
-  worker?: Profile
-  concrete_orders?: ConcreteOrder[]
-  qc_inspection?: QCInspection
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
 }
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
 
-// ─── New Workflow Tables ──────────────────────────────────────
-
-export interface PlanMaterial {
-  id: string
-  plan_id: string
-  raw_material_id: string
-  qty_required: number
-  qty_dispensed: number
-  status: PlanMaterialStatus
-  notes: string | null
-  dispensed_by: string | null
-  dispensed_at: string | null
-  created_at: string
-  // relations
-  raw_material?: RawMaterial
-  dispensed_by_profile?: Profile
-}
-
-export interface ConcreteOrder {
-  id: string
-  job_order_id: string
-  requested_by: string
-  qty_requested: number    // หน่วย: m³
-  mix_ratio: string | null
-  status: ConcreteOrderStatus
-  notes: string | null
-  supplied_by: string | null
-  supplied_at: string | null
-  requested_at: string
-  created_at: string
-  // relations
-  job_order?: JobOrder
-  requested_by_profile?: Profile
-  supplied_by_profile?: Profile
-}
-
-export interface QCInspection {
-  id: string
-  job_order_id: string
-  qc_id: string
-  // Pour inspection
-  pour_ok: boolean | null
-  pour_notes: string | null
-  pour_inspected_at: string | null
-  // Demold inspection
-  demold_qty_good: number
-  demold_qty_defect: number
-  defect_reason: DefectReason | null
-  defect_detail: string | null
-  photo_url: string | null
-  demold_inspected_at: string | null
-  created_at: string
-  // relations
-  job_order?: JobOrder
-  qc?: Profile
-}
-
-export interface FGReceipt {
-  id: string
-  job_order_id: string
-  product_id: string
-  warehouse_id: string
-  qty_good: number
-  qty_defect: number
-  notes: string | null
-  confirmed_at: string
-  created_at: string
-  // relations
-  job_order?: JobOrder
-  product?: Product
-  warehouse?: Profile
-}
-
-// ─── Existing Tables (unchanged) ─────────────────────────────
-
-export interface DemoldingRecord {
-  id: string
-  job_order_id: string
-  worker_id: string
-  qty_good: number
-  qty_defect: number
-  defect_reason: DefectReason | null
-  defect_detail: string | null
-  photo_url: string | null
-  created_at: string
-  // relations
-  job_order?: JobOrder
-  worker?: Profile
-}
-
-export interface FgInventory {
-  id: string
-  product_id: string
-  qty: number
-  last_updated_by: string | null
-  updated_at: string
-  // relations
-  product?: Product
-}
-
-export interface RawMaterial {
-  id: string
-  material_code: string | null  // รหัสวัตถุดิบ เช่น "D1-003-004"
-  name: string
-  category: string
-  unit: string
-  qty_on_hand: number
-  min_stock: number
-  weight_per_meter: number | null  // น้ำหนักต่อเมตร (kg/m) สำหรับลวด
-  updated_at: string
-}
-
-export interface WipInventory {
-  id: string
-  product_id: string
-  wip_code: string
-  qty: number
-  updated_at: string
-  // relations
-  product?: Product
-}
-
-export interface ActivityLog {
-  id: string
-  user_id: string
-  action_type: string
-  entity_type: string
-  entity_id: string | null
-  detail: string | null
-  created_at: string
-  // relations
-  profile?: Profile
-}
-
-// ─── Dashboard KPI ────────────────────────────────────────────
-export interface DashboardKPI {
-  target_today: number
-  qty_cast: number
-  qty_curing: number
-  qty_demolded: number
-  defect_rate: number
-}
-
-// ─── Role Labels (for UI display) ────────────────────────────
-export const ROLE_LABEL_MAP: Record<UserRole, string> = {
-  admin:     'ผู้ดูแลระบบ',
-  planner:   'ผู้วางแผนการผลิต',
-  material:  'พนักงานคลังวัตถุดิบ',
-  warehouse: 'พนักงานคลังสินค้า',
-  worker:    'พนักงานหน้างาน',
-  qc:        'พนักงาน QC',
-  concrete:  'พนักงานผสมคอนกรีต',
-}
+export const Constants = {
+  public: {
+    Enums: {
+      bed_name: ["A", "B", "C", "D", "E", "F", "1", "2", "3", "4"],
+      defect_reason: ["crack", "chip", "honeycomb", "other"],
+      job_status: [
+        "pending",
+        "casting",
+        "curing",
+        "ready_demold",
+        "demolded",
+        "cancelled",
+        "rebar_prep",
+        "concrete_ordered",
+      ],
+      plan_status: ["draft", "confirmed", "completed"],
+      user_role: [
+        "admin",
+        "planner",
+        "worker",
+        "qc",
+        "warehouse",
+        "material",
+        "concrete",
+      ],
+    },
+  },
+} as const
+export type UserRole = Database['public']['Enums']['user_role']
+export type Profile = Database['public']['Tables']['profiles']['Row']

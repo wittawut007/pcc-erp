@@ -4,8 +4,8 @@ import { useState, useMemo } from 'react'
 
 interface DemoldingRecord {
   id: string
-  qty_good: number
-  qty_defect: number
+  demold_qty_good: number
+  demold_qty_defect: number
   defect_reason: string | null
   defect_detail: string | null
   created_at: string
@@ -13,12 +13,12 @@ interface DemoldingRecord {
     bed: string
     plan_item: { product: { name: string; category: string; unit: string } | null } | null
   } | null
-  worker: { full_name: string } | null
+  qc_profile: { full_name: string } | null
 }
 
 interface SummaryRecord {
-  qty_good: number
-  qty_defect: number
+  demold_qty_good: number
+  demold_qty_defect: number
   defect_reason: string | null
   created_at: string
 }
@@ -30,23 +30,15 @@ const DEFECT_REASONS: Record<string, { label: string; color: string }> = {
   other:     { label: 'อื่นๆ',            color: '#8B5CF6' },
 }
 
-const MOCK_RECORDS: DemoldingRecord[] = [
-  { id: '1', qty_good: 48, qty_defect: 2, defect_reason: 'crack', defect_detail: 'ขอบด้านซ้าย', created_at: new Date().toISOString(), job_order: { bed: 'A', plan_item: { product: { name: 'แผ่นพื้น PL50 4@4', category: 'A13 แผ่นพื้นตัน', unit: 'แผ่น' } } }, worker: { full_name: 'สมชาย ใจดี' } },
-  { id: '2', qty_good: 50, qty_defect: 0, defect_reason: null, defect_detail: null, created_at: new Date(Date.now() - 3600000).toISOString(), job_order: { bed: 'B', plan_item: { product: { name: 'เสาเข็ม .15x.15 2.00 ม.', category: 'A41 เสาเข็ม', unit: 'ต้น' } } }, worker: { full_name: 'วิชัย รักดี' } },
-  { id: '3', qty_good: 37, qty_defect: 3, defect_reason: 'chip', defect_detail: null, created_at: new Date(Date.now() - 7200000).toISOString(), job_order: { bed: 'C', plan_item: { product: { name: 'ผนังรั้วสำเร็จรูป 0.50x2.90 ม.', category: 'A30 ผนังรั้วสำเร็จรูป', unit: 'แผ่น' } } }, worker: { full_name: 'มานะ ถอดเก่ง' } },
-  { id: '4', qty_good: 22, qty_defect: 3, defect_reason: 'honeycomb', defect_detail: 'บริเวณก้น', created_at: new Date(Date.now() - 86400000).toISOString(), job_order: { bed: 'A', plan_item: { product: { name: 'กำแพงกันดิน Type 1', category: 'A42 กำแพงกันดิน', unit: 'ชิ้น' } } }, worker: { full_name: 'สมชาย ใจดี' } },
-  { id: '5', qty_good: 115, qty_defect: 5, defect_reason: 'other', defect_detail: null, created_at: new Date(Date.now() - 172800000).toISOString(), job_order: { bed: 'D', plan_item: { product: { name: 'เสารั้ว 0.15x0.15 1.60 ม.', category: 'A35 รั้วสำเร็จรูป', unit: 'ต้น' } } }, worker: { full_name: 'วิชัย รักดี' } },
-]
 
-const MOCK_SUMMARY: SummaryRecord[] = MOCK_RECORDS.map(r => ({ qty_good: r.qty_good, qty_defect: r.qty_defect, defect_reason: r.defect_reason, created_at: r.created_at }))
 
 export default function QcClient({ records, summary }: { records: DemoldingRecord[]; summary: SummaryRecord[] }) {
   const [search, setSearch] = useState('')
   const [filterReason, setFilterReason] = useState('ทั้งหมด')
   const [filterRange, setFilterRange] = useState('7')
 
-  const displayRecords = records.length > 0 ? records : MOCK_RECORDS
-  const displaySummary = summary.length > 0 ? summary : MOCK_SUMMARY
+  const displayRecords = records
+  const displaySummary = summary
 
   // Filter
   const cutoff = useMemo(() => {
@@ -57,22 +49,22 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
 
   const filtered = useMemo(() => displayRecords.filter(r => {
     const matchSearch = !search || r.job_order?.plan_item?.product?.name.toLowerCase().includes(search.toLowerCase())
-    const matchReason = filterReason === 'ทั้งหมด' || (filterReason === 'none' ? r.qty_defect === 0 : r.defect_reason === filterReason)
+    const matchReason = filterReason === 'ทั้งหมด' || (filterReason === 'none' ? r.demold_qty_defect === 0 : r.defect_reason === filterReason)
     const matchDate = new Date(r.created_at) >= cutoff
     return matchSearch && matchReason && matchDate
   }), [displayRecords, search, filterReason, cutoff])
 
   // KPIs
-  const totalGood = displaySummary.reduce((s, r) => s + r.qty_good, 0)
-  const totalDefect = displaySummary.reduce((s, r) => s + r.qty_defect, 0)
+  const totalGood = displaySummary.reduce((s, r) => s + (r.demold_qty_good || 0), 0)
+  const totalDefect = displaySummary.reduce((s, r) => s + (r.demold_qty_defect || 0), 0)
   const totalAll = totalGood + totalDefect
   const defectRate = totalAll > 0 ? ((totalDefect / totalAll) * 100).toFixed(2) : '0.00'
 
   const defectByReason = useMemo(() => {
     const map: Record<string, number> = {}
     displaySummary.forEach(r => {
-      if (r.qty_defect > 0 && r.defect_reason) {
-        map[r.defect_reason] = (map[r.defect_reason] ?? 0) + r.qty_defect
+      if ((r.demold_qty_defect || 0) > 0 && r.defect_reason) {
+        map[r.defect_reason] = (map[r.defect_reason] ?? 0) + r.demold_qty_defect
       }
     })
     return map
@@ -183,8 +175,8 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
                       <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
                         <span style={{ background: 'var(--accent-light)', color: 'var(--accent)', padding: '2px 8px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>{r.job_order?.bed ?? '—'}</span>
                       </td>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, fontSize: 14, color: 'var(--green)' }}>{r.qty_good}</td>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, fontSize: 14, color: r.qty_defect > 0 ? 'var(--red)' : 'var(--text-muted)' }}>{r.qty_defect}</td>
+                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, fontSize: 14, color: 'var(--green)' }}>{r.demold_qty_good}</td>
+                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, fontSize: 14, color: (r.demold_qty_defect || 0) > 0 ? 'var(--red)' : 'var(--text-muted)' }}>{r.demold_qty_defect}</td>
                       <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
                         {reason ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '2px 8px', borderRadius: 4, background: `${reason.color}18`, color: reason.color, fontWeight: 600 }}>
@@ -195,7 +187,7 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
                           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
                         )}
                       </td>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--text-secondary)' }}>{r.worker?.full_name ?? '—'}</td>
+                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--text-secondary)' }}>{r.qc_profile?.full_name ?? '—'}</td>
                       <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{fmtDate(r.created_at)}</td>
                     </tr>
                   )

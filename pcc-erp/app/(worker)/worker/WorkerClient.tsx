@@ -56,6 +56,16 @@ export default function WorkerClient({
   const [phaseMode, setPhaseMode] = useState<'casting' | 'demolding' | null>(null)
   const [selectedJobs, setSelectedJobs] = useState<Job[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [currentBedIndex, setCurrentBedIndex] = useState(0)
+
+  const jobsByBed = React.useMemo(() => {
+    const groups: Record<string, Job[]> = {}
+    selectedJobs.forEach(job => {
+      if (!groups[job.bed]) groups[job.bed] = []
+      groups[job.bed].push(job)
+    })
+    return Object.keys(groups).sort().map(bed => ({ bed, jobs: groups[bed] }))
+  }, [selectedJobs])
 
   // Data
   const [phase1Checks, setPhase1Checks] = useState({ clean: false, wip: false })
@@ -74,7 +84,7 @@ export default function WorkerClient({
   const [concreteSent, setConcreteSent] = useState(false)
   const [concreteRoundsReceived, setConcreteRoundsReceived] = useState(0)
   const [activeConcreteOrders, setActiveConcreteOrders] = useState<{
-    id: string; job_order_id: string; qty_requested: number; round_count: number; requested_at: string;
+    id: string; job_order_id: string; bed: string | null; qty_requested: number; round_count: number; requested_at: string;
     job_order?: { bed: string; status: string; plan_item?: { product?: { name: string } | null } | null } | null
     rounds: { id: string; round_number: number; qty_per_round: number; status: string; supplied_at: string | null }[]
   }[]>([])
@@ -117,6 +127,7 @@ export default function WorkerClient({
     setPhaseMode(null)
     setSelectedJobs([])
     setCurrentIndex(0)
+    setCurrentBedIndex(0)
     setPhase1Checks({ clean: false, wip: false })
     setPhotos({})
     setDemoldingData({})
@@ -148,33 +159,46 @@ export default function WorkerClient({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      for (const job of jobOrders) {
-        const photo = jobItemPhotos[job.id]
-        const photoUrl = photo ? await uploadPhoto(photo.file, 'preparation') : null
-        const jobConcreteQty = (job.plan_item?.product?.concrete_per_unit || 0) * job.qty_target
-        const jobRounds = Math.ceil(jobConcreteQty)
+      const groups: Record<string, Job[]> = {}
+      jobOrders.forEach(job => {
+        if (!groups[job.bed]) groups[job.bed] = []
+        groups[job.bed].push(job)
+      })
 
-        await supabase.from('job_orders').update({
-          status: 'concrete_ordered',
-          cast_at: new Date().toISOString(),
-          qty_cast: job.qty_target,
-          photo_ready_url: photoUrl,
-        }).eq('id', job.id)
+      for (const bed of Object.keys(groups)) {
+        const bedJobs = groups[bed]
+        let totalConcreteQty = 0
+        
+        for (const job of bedJobs) {
+          const photo = jobItemPhotos[job.id]
+          const photoUrl = photo ? await uploadPhoto(photo.file, 'preparation') : null
+          const jobConcreteQty = (job.plan_item?.product?.concrete_per_unit || 0) * job.qty_target
+          totalConcreteQty += jobConcreteQty
 
-        if (jobRounds > 0) {
+          await supabase.from('job_orders').update({
+            status: 'concrete_ordered',
+            cast_at: new Date().toISOString(),
+            qty_cast: job.qty_target,
+            photo_ready_url: photoUrl,
+          }).eq('id', job.id)
+        }
+
+        const bedRounds = Math.ceil(totalConcreteQty)
+
+        if (bedRounds > 0) {
           const { data: order } = await supabase.from('concrete_orders').insert({
-            job_order_id: job.id,
+            bed,
             requested_by: user.id,
-            qty_requested: jobConcreteQty,
-            round_count: jobRounds,
+            qty_requested: totalConcreteQty,
+            round_count: bedRounds,
             status: 'requested',
           }).select('id').single()
 
           if (order?.id) {
-            const rounds = Array.from({ length: jobRounds }, (_, i) => ({
+            const rounds = Array.from({ length: bedRounds }, (_, i) => ({
               concrete_order_id: order.id,
               round_number: i + 1,
-              qty_per_round: i < jobRounds - 1 ? 1 : jobConcreteQty - Math.floor(jobConcreteQty) || 1,
+              qty_per_round: i < bedRounds - 1 ? 1 : totalConcreteQty - Math.floor(totalConcreteQty) || 1,
               status: 'pending',
             }))
             await supabase.from('concrete_rounds').insert(rounds)
@@ -199,10 +223,10 @@ export default function WorkerClient({
     try {
       const { data } = await supabase
         .from('concrete_orders')
-        .select(`id, job_order_id, qty_requested, round_count, requested_at,
+        .select(`id, job_order_id, bed, qty_requested, round_count, requested_at,
           job_order:job_orders(id, bed, status, plan_item:production_plan_items(product:products(name))),
           rounds:concrete_rounds(id, round_number, qty_per_round, status, supplied_at)`)
-        .eq('status', 'requested')
+        .in('status', ['requested', 'supplied'])
         .order('requested_at', { ascending: true })
       if (data) {
         const sorted = data.map((o: any) => ({
@@ -608,7 +632,7 @@ export default function WorkerClient({
           )}
 
           {/* SECTION: Phase 1.5 Concrete Summary */}
-          {activeSection === 'concreteSummary' && (
+          {activeSection === 'concreteSummary' && jobsByBed.length > 0 && (
             <div style={{ padding: '24px 20px', maxWidth: '480px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column' }}>
               <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.04)', padding: '32px', position: 'relative', overflow: 'hidden', boxShadow: '0 15px 35px -5px rgba(0,0,0,0.08)' }}>
                 <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '8px', backgroundColor: '#2563EB' }}></div>
@@ -616,13 +640,13 @@ export default function WorkerClient({
                   <div style={{ width: '72px', height: '72px', backgroundColor: '#EFF6FF', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', border: '1px solid #DBEAFE', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
                     <i className="fas fa-receipt" style={{ fontSize: '32px', color: '#3B82F6' }}></i>
                   </div>
-                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.3px' }}>สรุปใบสั่งคอนกรีต</h2>
-                  <p style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '4px' }}>Ready-Mixed Concrete Order</p>
+                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.3px' }}>สรุปใบสั่งคอนกรีต โรง {jobsByBed[currentBedIndex].bed}</h2>
+                  <p style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '4px' }}>Ready-Mixed Concrete Order ({currentBedIndex + 1}/{jobsByBed.length})</p>
                 </div>
                 
                 <div style={{ borderTop: '2px dashed #F1F5F9', paddingTop: '24px', marginBottom: '24px' }}>
                   <div style={{ marginBottom: '24px', maxHeight: '200px', overflowY: 'auto', paddingRight: '8px' }} className="custom-scrollbar">
-                    {selectedJobs.map(j => (
+                    {jobsByBed[currentBedIndex].jobs.map(j => (
                       <div key={j.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #F8FAFC' }}>
                         <div>
                           <div style={{ fontSize: '11px', fontWeight: 900, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>โรงผลิต: {j.bed}</div>
@@ -639,19 +663,69 @@ export default function WorkerClient({
                   <div style={{ backgroundColor: '#0F172A', padding: '24px', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.4)' }}>
                     <span style={{ fontSize: '14px', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ปริมาณสั่งรวม</span>
                     <span style={{ fontSize: '36px', fontWeight: 900, color: '#60A5FA' }}>
-                      {selectedJobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0).toFixed(1)} <span style={{ fontSize: '16px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', marginLeft: '6px' }}>คิว</span>
+                      {jobsByBed[currentBedIndex].jobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0).toFixed(1)} <span style={{ fontSize: '16px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', marginLeft: '6px' }}>คิว</span>
                     </span>
                   </div>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                <button onClick={() => { setCurrentIndex(0); setActiveSection('phase1') }} 
+                <button disabled={saving} onClick={() => { setCurrentIndex(0); setCurrentBedIndex(0); setActiveSection('phase1') }} 
                   style={{ flex: 1, backgroundColor: '#ffffff', border: '1px solid #E2E8F0', color: '#64748B', padding: '16px', borderRadius: '16px', fontWeight: 800, fontSize: '15px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                   แก้ไข
                 </button>
-                <button onClick={() => setActiveSection('phase2')} 
+                <button disabled={saving} onClick={async () => {
+                  setSaving(true)
+                  try {
+                    const { data: { user } } = await supabase.auth.getUser()
+                    const bedJobs = jobsByBed[currentBedIndex].jobs
+                    const bed = jobsByBed[currentBedIndex].bed
+                    
+                    let totalConcreteQty = 0
+                    for (const job of bedJobs) {
+                      const p1PhotoUrl = photos[`phase1-${job.id}`] ? await uploadPhoto(photos[`phase1-${job.id}`].file, 'preparation') : null
+                      const jobConcreteQty = (job.plan_item?.product?.concrete_per_unit || 0) * job.qty_target
+                      totalConcreteQty += jobConcreteQty
+                      await supabase.from('job_orders').update({
+                        status: 'concrete_ordered',
+                        cast_at: new Date().toISOString(),
+                        qty_cast: job.qty_target,
+                        photo_ready_url: p1PhotoUrl,
+                      }).eq('id', job.id)
+                    }
+
+                    const bedRounds = Math.ceil(totalConcreteQty)
+                    if (bedRounds > 0) {
+                      const { data: order } = await supabase.from('concrete_orders').insert({
+                        bed,
+                        requested_by: user!.id,
+                        qty_requested: totalConcreteQty,
+                        round_count: bedRounds,
+                        status: 'requested',
+                      }).select('id').single()
+
+                      if (order?.id) {
+                        const rounds = Array.from({ length: bedRounds }, (_, i) => ({
+                          concrete_order_id: order.id,
+                          round_number: i + 1,
+                          qty_per_round: i < bedRounds - 1 ? 1 : totalConcreteQty - Math.floor(totalConcreteQty) || 1,
+                          status: 'pending',
+                        }))
+                        await supabase.from('concrete_rounds').insert(rounds)
+                      }
+                    }
+                    if (currentBedIndex < jobsByBed.length - 1) {
+                      setCurrentBedIndex(currentBedIndex + 1)
+                    } else {
+                      setActiveSection('phase2')
+                    }
+                  } catch(e:any) {
+                    toast.error(e.message)
+                  } finally {
+                    setSaving(false)
+                  }
+                }} 
                   style={{ flex: 2, backgroundColor: '#2563EB', color: '#ffffff', padding: '16px', borderRadius: '16px', fontWeight: 900, fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: 'pointer', boxShadow: '0 10px 20px -5px rgba(37,99,235,0.4)', border: 'none' }}>
-                  ส่งคำสั่งปูน <i className="fas fa-paper-plane" style={{ marginLeft: '4px' }}></i>
+                  {saving ? <i className="fas fa-spinner fa-spin"></i> : <>{currentBedIndex < jobsByBed.length - 1 ? 'ถัดไป' : 'ส่งคำสั่งปูน'} <i className="fas fa-paper-plane" style={{ marginLeft: '4px' }}></i></>}
                 </button>
               </div>
             </div>
@@ -1195,8 +1269,8 @@ export default function WorkerClient({
                 const suppliedCount = order.rounds.filter(r => r.status === 'supplied').length
                 const receivedCount = order.rounds.filter(r => r.status === 'received').length
                 const pct = order.round_count > 0 ? Math.round(((suppliedCount + receivedCount) / order.round_count) * 100) : 0
-                const productName = (order.job_order as any)?.plan_item?.product?.name ?? 'ไม่ระบุ'
-                const bed = (order.job_order as any)?.bed ?? '?'
+                const productName = (order.job_order as any)?.plan_item?.product?.name ?? `สั่งรวมโรงผลิต ${order.bed ?? '?'}`
+                const bed = order.bed ?? (order.job_order as any)?.bed ?? '?'
                 return (
                   <div key={order.id} style={{ backgroundColor: '#fff', borderRadius: 20, border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
                     <div style={{ padding: '14px 18px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: 12 }}>

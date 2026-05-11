@@ -19,30 +19,43 @@ async function getSupabaseData() {
     sixDaysAgo.setDate(now.getDate() - 5)
     const startDateStr = sixDaysAgo.toISOString().split('T')[0]
     
-    const [{ data: todayPlan }, { data: jobOrders }, { data: recentLogs }, { data: lowStock }] = await Promise.all([
+    const [{ data: todayPlan }, { data: jobOrders }, { data: recentLogs }, { data: lowStock }, { data: fgStock }, { data: wipStock }, { data: qcData }] = await Promise.all([
       supabase.from('production_plans').select('*,items:production_plan_items(*,product:products(*))').eq('plan_date', today).single(),
-      supabase.from('job_orders').select('*,plan_item:production_plan_items(product:products(name,category))').gte('created_at', startDateStr).order('created_at', { ascending: false }),
+      supabase.from('job_orders').select(`
+        *,
+        plan_item:production_plan_items!inner(
+          product:products(name,category),
+          plan:production_plans!inner(plan_date)
+        ),
+        qc:qc_inspections(pour_ok, demold_qty_good, demold_qty_defect, defect_reason)
+      `)
+      .gte('plan_item.plan.plan_date', startDateStr)
+      .order('created_at', { ascending: false }),
       supabase.from('activity_logs').select('*,profile:profiles(full_name,role)').order('created_at', { ascending: false }).limit(10),
-      supabase.from('raw_materials').select('*').filter('qty_on_hand', 'lte', 'min_stock').limit(5),
+      supabase.from('raw_materials').select('*'),
+      supabase.from('fg_inventory').select('qty'),
+      supabase.from('wip_inventory').select('qty'),
+      supabase.from('qc_inspections').select('demold_qty_defect, defect_reason').gte('created_at', startDateStr)
     ])
-    return { todayPlan, jobOrders, recentLogs, lowStock, today }
-  } catch {
-    return { todayPlan: null, jobOrders: null, recentLogs: null, lowStock: null, today: '' }
+    return { todayPlan, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, today }
+  } catch (err) {
+    console.error('Dashboard Fetch Error:', err)
+    return { todayPlan: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, wipStock: null, qcData: null, today: '' }
   }
 }
 
 export default async function DashboardPage() {
-  const { todayPlan, jobOrders, recentLogs, lowStock, today } = await getSupabaseData()
+  const { todayPlan, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, today } = await getSupabaseData()
 
-  const todaysJobOrders = (jobOrders as any[])?.filter((j: any) => j.created_at >= (today ?? '')) || []
+  const todaysJobOrders = (jobOrders as any[])?.filter((j: any) => j.plan_item?.plan?.plan_date === today) || []
 
   const totalTarget = (todayPlan as any)?.total_qty ?? 0
   const qtyCast = todaysJobOrders.filter((j: any) => ['casting', 'curing', 'ready_demold', 'demolded'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
   const qtyCuring = todaysJobOrders.filter((j: any) => ['curing', 'ready_demold'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
-  const qtyDemolded = todaysJobOrders.filter((j: any) => j.status === 'demolded').reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
+  const qtyDemolded = todaysJobOrders.filter((j: any) => j.status === 'demolded').reduce((s: number, j: any) => s + (j.qc?.[0]?.demold_qty_good ?? j.qty_cast ?? 0), 0)
 
-  // Calculate defect rate from qc_logs or job_orders with defect status
-  const totalQcFail = todaysJobOrders.reduce((s: number, j: any) => s + (j.qty_defect ?? 0), 0)
+  // Calculate defect rate from qc_inspections
+  const totalQcFail = todaysJobOrders.reduce((s: number, j: any) => s + (j.qc?.[0]?.demold_qty_defect ?? 0), 0)
   const totalQcCast = qtyCast
   const defectRate = totalQcCast > 0 ? ((totalQcFail / totalQcCast) * 100).toFixed(1) + '%' : '0%'
 
@@ -89,10 +102,44 @@ export default async function DashboardPage() {
 
   const displayJobs = (jobOrders as any[])?.slice(0, 5).map((j: any) => ({
     id: j.id, name: j.plan_item?.product?.name ?? '—', bed: j.bed, qty_cast: j.qty_cast, qty_target: j.qty_target, status: j.status,
-  })) ?? mockJobs
+  })) || []
 
-  const displayLowStock = (lowStock as any[])?.slice(0, 4) ?? mockLowStock
-  const displayLogs = ((recentLogs as any[])?.length > 0) ? [] : mockLogs
+  const allMaterials = (lowStock as any[]) || []
+  const lowStockItems = allMaterials.filter(m => (m.qty_on_hand || 0) <= (m.min_stock || 0))
+  const displayLowStock = lowStockItems.slice(0, 4)
+  const displayLogs = (recentLogs as any[])?.map(l => ({
+    time: new Date(l.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+    name: l.profile?.full_name ?? '—',
+    dept: l.profile?.role ?? '—',
+    action: l.action_type,
+    detail: l.detail,
+    status: 'สำเร็จ',
+    green: true
+  })) || []
+
+  // Inventory Real Data
+  const totalFg = (fgStock as any[])?.reduce((s, i) => s + (i.qty || 0), 0) ?? 0
+  const totalWip = (wipStock as any[])?.reduce((s, i) => s + (i.qty || 0), 0) ?? 0
+
+  // Defect Analysis Real Data
+  const defectStats = { crack: 0, chip: 0, honeycomb: 0, other: 0, total: 0 }
+  ;(qcData as any[])?.forEach(qc => {
+    if (qc.demold_qty_defect > 0) {
+      const reason = (qc.defect_reason as string) || 'other'
+      if (defectStats.hasOwnProperty(reason)) {
+        (defectStats as any)[reason] += qc.demold_qty_defect
+        defectStats.total += qc.demold_qty_defect
+      }
+    }
+  })
+
+  const getDefectPct = (val: number) => defectStats.total > 0 ? Math.round((val / defectStats.total) * 100) + '%' : '0%'
+  const defectReasons = [
+    { color: '#EF4444', label: 'แตก/ร้าว (Crack)', pct: getDefectPct(defectStats.crack), key: 'crack' },
+    { color: '#F59E0B', label: 'บิ่น/หัก (Chip)', pct: getDefectPct(defectStats.chip), key: 'chip' },
+    { color: '#3B82F6', label: 'Honeycomb', pct: getDefectPct(defectStats.honeycomb), key: 'honeycomb' },
+    { color: '#8B5CF6', label: 'อื่นๆ (Other)', pct: getDefectPct(defectStats.other), key: 'other' },
+  ]
 
   // Map Real Chart Data
   const categoriesMap = new Map()
@@ -106,15 +153,20 @@ export default async function DashboardPage() {
   todaysJobOrders.forEach((job: any) => {
     const catName = job.plan_item?.product?.category || 'ไม่ระบุ'
     if (!categoriesMap.has(catName)) categoriesMap.set(catName, { plan: 0, actual: 0 })
-    categoriesMap.get(catName).actual += (job.qty_cast || 0)
+    
+    // นับเฉพาะที่ถอดแบบแล้ว (Finished Goods)
+    if (job.status === 'demolded') {
+      const actualQty = job.qc?.[0]?.demold_qty_good ?? job.qty_cast ?? 0
+      categoriesMap.get(catName).actual += actualQty
+    }
   })
 
   // dailyChart fallback to undefined so component can render mock or empty
-  const dailyChartData = categoriesMap.size > 0 ? {
+  const dailyChartData = {
     labels: Array.from(categoriesMap.keys()),
     planData: Array.from(categoriesMap.values()).map(v => v.plan),
     actualData: Array.from(categoriesMap.values()).map(v => v.actual)
-  } : undefined
+  }
 
   const days: {dateStr: string, label: string}[] = []
   const daysShort = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.']
@@ -131,30 +183,33 @@ export default async function DashboardPage() {
   ;(jobOrders as any[])?.forEach(job => {
      const catName = job.plan_item?.product?.category || 'ไม่ระบุ'
      if (!catWeeklyMap.has(catName)) catWeeklyMap.set(catName, { dates: {} })
-     const jobDate = job.created_at.split('T')[0]
-     catWeeklyMap.get(catName).dates[jobDate] = (catWeeklyMap.get(catName).dates[jobDate] || 0) + (job.qty_cast || 0)
+     const jobDate = job.plan_item?.plan?.plan_date
+     
+     // นับเฉพาะที่ถอดแบบแล้ว (Finished Goods)
+     if (jobDate && job.status === 'demolded') {
+       const actualQty = job.qc?.[0]?.demold_qty_good ?? job.qty_cast ?? 0
+       catWeeklyMap.get(catName).dates[jobDate] = (catWeeklyMap.get(catName).dates[jobDate] || 0) + actualQty
+     }
   })
 
-  const weeklyChartData = catWeeklyMap.size > 0 ? {
+  const weeklyChartData = {
     labels: days.map(d => d.label),
     datasets: [] as any[]
-  } : undefined
-  
-  if (weeklyChartData) {
-    const colors = ['#2563EB', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444', '#14B8A6']
-    let colorIdx = 0
-    catWeeklyMap.forEach((val, catName) => {
-       if (colorIdx > 5) return
-       const c = colors[colorIdx++]
-       weeklyChartData.datasets.push({
-         label: catName,
-         data: days.map(d => val.dates[d.dateStr] || 0),
-         borderColor: c,
-         backgroundColor: c,
-         tension: 0.3, borderWidth: 2, pointRadius: 3
-       })
-    })
   }
+  
+  const colors = ['#2563EB', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444', '#14B8A6']
+  let colorIdx = 0
+  catWeeklyMap.forEach((val, catName) => {
+     if (colorIdx > 5) return
+     const c = colors[colorIdx++]
+     weeklyChartData.datasets.push({
+       label: catName,
+       data: days.map(d => val.dates[d.dateStr] || 0),
+       borderColor: c,
+       backgroundColor: c,
+       tension: 0.3, borderWidth: 2, pointRadius: 3
+     })
+  })
 
   return (
     <>
@@ -200,10 +255,10 @@ export default async function DashboardPage() {
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Inventory Summary</span>
               </div>
               {[
-                { icon: 'fa-layer-group', bg: '#FFF7ED', color: '#EA580C', value: '12.5', unit: 'ตัน', label: 'วัตถุดิบหลัก (RM)', alert: false },
-                { icon: 'fa-th-large', bg: 'var(--indigo-light)', color: 'var(--indigo)', value: '450', unit: 'ชุด', label: 'โครงเหล็กพร้อมผลิต', alert: false },
-                { icon: 'fa-cubes', bg: 'var(--green-light)', color: 'var(--green)', value: '1,205', unit: 'ชิ้น', label: 'สินค้าพร้อมขาย (FG)', alert: false },
-                { icon: 'fa-exclamation-triangle', bg: 'white', color: 'var(--red)', value: `${displayLowStock.length ?? 3}`, unit: 'รายการ', label: 'สต็อกใกล้หมด', alert: true },
+                { icon: 'fa-layer-group', bg: '#FFF7ED', color: '#EA580C', value: '-', unit: '', label: 'ระบบจัดการวัตถุดิบหลัก', alert: false },
+                { icon: 'fa-th-large', bg: 'var(--indigo-light)', color: 'var(--indigo)', value: totalWip.toLocaleString(), unit: 'ชุด', label: 'โครงเหล็กพร้อมผลิต (WIP)', alert: false },
+                { icon: 'fa-cubes', bg: 'var(--green-light)', color: 'var(--green)', value: totalFg.toLocaleString(), unit: 'ชิ้น', label: 'สินค้าพร้อมขาย (FG)', alert: false },
+                { icon: 'fa-exclamation-triangle', bg: 'white', color: 'var(--red)', value: lowStockItems.length.toString(), unit: 'รายการ', label: 'สต็อกใกล้หมด', alert: lowStockItems.length > 0 },
               ].map((item, i) => (
                 <div key={i} style={{
                   display: 'flex', alignItems: 'center', gap: 10,
@@ -230,20 +285,20 @@ export default async function DashboardPage() {
                 <span style={{ fontSize: 13, fontWeight: 700 }}>Defect Reasons</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ width: 90, height: 90, borderRadius: '50%', background: 'conic-gradient(#EF4444 0% 45%,#F59E0B 45% 75%,#3B82F6 75% 90%,#8B5CF6 90% 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+                <div style={{ width: 90, height: 90, borderRadius: '50%', background: `conic-gradient(#EF4444 0% ${defectStats.total > 0 ? (defectStats.crack/defectStats.total)*100 : 0}%, #F59E0B ${(defectStats.crack/defectStats.total)*100}% ${(defectStats.crack+defectStats.chip)/defectStats.total*100}%, #3B82F6 ${(defectStats.crack+defectStats.chip)/defectStats.total*100}% ${(defectStats.crack+defectStats.chip+defectStats.honeycomb)/defectStats.total*100}%, #8B5CF6 ${(defectStats.crack+defectStats.chip+defectStats.honeycomb)/defectStats.total*100}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
                   <div style={{ width: 60, height: 60, background: 'white', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: 16, fontWeight: 700 }}>85</span>
+                    <span style={{ fontSize: 16, fontWeight: 700 }}>{defectStats.total}</span>
                     <span style={{ fontSize: 8, color: 'var(--text-muted)', fontWeight: 600 }}>Total</span>
                   </div>
                 </div>
                 <div style={{ flex: 1 }}>
-                  {[['#EF4444', 'แตก/ร้าว', '45%'], ['#F59E0B', 'บิ่น/มุมหัก', '30%'], ['#3B82F6', 'Honeycomb', '15%'], ['#8B5CF6', 'อื่นๆ', '10%']].map(([c, n, p]) => (
-                    <div key={n} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
+                  {defectReasons.map((r) => (
+                    <div key={r.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: c, flexShrink: 0 }}></div>
-                        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{n}</span>
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: r.color, flexShrink: 0 }}></div>
+                        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{r.label}</span>
                       </div>
-                      <span style={{ fontSize: 11, fontWeight: 700 }}>{p}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700 }}>{r.pct}</span>
                     </div>
                   ))}
                 </div>

@@ -36,6 +36,7 @@ const allNavItems: NavSection[] = [
       { href: '/production-order', icon: 'fa-file-invoice',   label: 'ใบสั่งผลิต',      roles: ['admin', 'planner'] },
       { href: '/job-orders',       icon: 'fa-clipboard-list', label: 'คิวงานเทคอนกรีต',     roles: ['admin', 'planner'] },
       { href: '/demolding',        icon: 'fa-hammer',         label: 'งานตัดยก',         roles: ['admin', 'planner'] },
+      { href: '/qc',               icon: 'fa-microscope',     label: 'การจัดการของเสีย', roles: ['admin', 'planner'] },
     ],
   },
   {

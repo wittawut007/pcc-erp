@@ -7,6 +7,13 @@ import { createClient } from '@/lib/supabase/server'
 export default async function JobOrdersPage() {
   const supabase = await createClient()
 
+  let userRole: string | undefined = undefined
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) {
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+    userRole = profile?.role
+  }
+
   // ดึงทุก job_orders (ไม่จำกัดวันที่) จัดกลุ่มตามใบสั่งผลิต
   const { data: jobOrders } = await supabase
     .from('job_orders')
@@ -29,7 +36,7 @@ export default async function JobOrdersPage() {
   return (
     <>
       <Header title="คิวงานเทคอนกรีต" subtitle="ติดตามสถานะการเทและบ่มคอนกรีตทุกโรงผลิต" />
-      <JobOrdersClient jobOrders={jobOrders ?? []} workers={[]} />
+      <JobOrdersClient jobOrders={jobOrders ?? []} workers={[]} userRole={userRole} />
     </>
   )
 }

@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useTransition } from 'react'
+import { resetJobOrder } from '@/app/actions/concrete'
+import toast from 'react-hot-toast'
 
 interface ConcreteOrder {
   id: string
@@ -103,10 +105,28 @@ const fmtDate = (iso: string | null) => {
 const fmtPlanDate = (iso: string) =>
   new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
 
-export default function JobOrdersClient({ jobOrders: initial }: { jobOrders: JobOrder[]; workers: Worker[] }) {
+export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobOrders: JobOrder[]; workers: Worker[]; userRole?: string }) {
   const [filterStatus, setFilterStatus] = useState<DisplayStatus | 'all'>('all')
   const [search, setSearch] = useState('')
   const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set())
+  const [isPending, startTransition] = useTransition()
+  const [resettingJobId, setResettingJobId] = useState<string | null>(null)
+
+  const handleResetJob = (jobId: string, bed: string) => {
+    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลการสั่งคอนกรีตของโรงผลิต ${bed} ทั้งหมด? (สถานะของงานจะถูกรีเซ็ต)`)) return
+
+    setResettingJobId(jobId)
+    startTransition(async () => {
+      try {
+        await resetJobOrder(jobId, bed)
+        toast.success('รีเซ็ตข้อมูลการสั่งคอนกรีตเรียบร้อยแล้ว')
+      } catch (e) {
+        toast.error((e as Error).message)
+      } finally {
+        setResettingJobId(null)
+      }
+    })
+  }
 
   // Enrich with display status
   const jobs = useMemo(() =>
@@ -320,6 +340,7 @@ export default function JobOrdersClient({ jobOrders: initial }: { jobOrders: Job
                           <th style={thStyle}>พนักงาน</th>
                           <th style={thStyle}>วันที่/เวลา</th>
                           <th style={{ ...thStyle, textAlign: 'center' }}>ถอดแบบได้</th>
+                          {userRole === 'admin' && <th style={{ ...thStyle, textAlign: 'center' }}>จัดการ</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -445,7 +466,7 @@ export default function JobOrdersClient({ jobOrders: initial }: { jobOrders: Job
                                 )}
                               </td>
 
-                              {/* Expected Demold */}
+                                {/* Expected Demold */}
                               <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                                 {job.expected_demold_at ? (
                                   <div style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>
@@ -456,6 +477,27 @@ export default function JobOrdersClient({ jobOrders: initial }: { jobOrders: Job
                                   <span style={{ color: '#D1D5DB', fontSize: 12 }}>—</span>
                                 )}
                               </td>
+
+                              {/* Admin Actions */}
+                              {userRole === 'admin' && (
+                                <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                  {(ds === 'concrete_ordered' || ds === 'casting' || ds === 'curing' || ds === 'ready_demold') && (
+                                    <button
+                                      disabled={resettingJobId === job.id}
+                                      onClick={() => handleResetJob(job.id, job.bed)}
+                                      style={{
+                                        background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', border: 'none',
+                                        width: 28, height: 28, borderRadius: '50%', cursor: 'pointer',
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                        transition: 'all 0.2s', opacity: resettingJobId === job.id ? 0.5 : 1
+                                      }}
+                                      title="ลบและรีเซ็ตการสั่งคอนกรีต"
+                                    >
+                                      {resettingJobId === job.id ? <i className="fas fa-spinner fa-spin" style={{ fontSize: 12 }} /> : <i className="fas fa-undo-alt" style={{ fontSize: 12 }} />}
+                                    </button>
+                                  )}
+                                </td>
+                              )}
                             </tr>
                           )
                         })}

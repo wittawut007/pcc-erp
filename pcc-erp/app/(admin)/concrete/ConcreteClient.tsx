@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { supplyConcreteRound } from '@/app/actions/concrete'
+import { supplyConcreteRound, deleteConcreteOrder } from '@/app/actions/concrete'
 import toast from 'react-hot-toast'
 
 interface RoundItem {
@@ -16,6 +16,7 @@ interface RoundItem {
 
 interface ConcreteOrder {
   id: string
+  bed: string | null
   qty_requested: number
   round_count: number
   status: string
@@ -37,6 +38,7 @@ interface Props {
   history: ConcreteOrder[]
   selectedDate: string
   today: string
+  userRole?: string
 }
 
 const thStyle: React.CSSProperties = {
@@ -133,10 +135,12 @@ function RoundRow({
 }
 
 // ── Order Card (expandable) ───────────────────────────────────────────────────
-function OrderCard({ order, onSupply, loadingRoundId }: {
+function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
   order: ConcreteOrder
   onSupply: (roundId: string) => void
   loadingRoundId: string | null
+  onDelete?: (orderId: string, bed: string | null, jobOrderId: string | null) => void
+  isDeleting?: boolean
 }) {
   const [expanded, setExpanded] = useState(true)
   const rounds = order.rounds ?? []
@@ -150,7 +154,7 @@ function OrderCard({ order, onSupply, loadingRoundId }: {
   return (
     <div style={{ border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
       {/* Header */}
-      <button
+      <div
         onClick={() => setExpanded(v => !v)}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 20px',
@@ -162,13 +166,13 @@ function OrderCard({ order, onSupply, loadingRoundId }: {
         <i className={`fas fa-chevron-${expanded ? 'down' : 'right'}`} style={{ fontSize: 11, color: '#9CA3AF', width: 12, flexShrink: 0 }} />
 
         {/* Bed badge */}
-        <div style={{ width: 40, height: 40, borderRadius: 8, background: '#EFF6FF', color: '#2563EB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
-          <span style={{ fontSize: 9, letterSpacing: '0.03em' }}>โรง</span>
-          <span style={{ fontSize: 18, lineHeight: 1 }}>{order.job_order?.bed ?? '?'}</span>
+        <div style={{ backgroundColor: '#2563EB', color: '#fff', padding: '16px 20px', borderRadius: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: '90px' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, opacity: 0.9 }}>โรงผลิต</span>
+          <span style={{ fontSize: 18, lineHeight: 1 }}>{order.bed ?? '?' }</span>
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, color: '#111827', fontSize: 14 }}>{product?.name ?? '—'}</div>
+          <div style={{ fontWeight: 700, color: '#111827', fontSize: 14 }}>{product?.name ?? `สั่งคอนกรีตรวมโรงผลิต ${order.bed ?? '?'}`}</div>
           <div style={{ fontSize: 12, color: '#6B7280', display: 'flex', gap: 12, marginTop: 2 }}>
             <span><i className="fas fa-user" style={{ marginRight: 4, fontSize: 10 }} />{order.requested_by_profile?.full_name ?? '—'}</span>
             <span><i className="fas fa-clock" style={{ marginRight: 4, fontSize: 10 }} />{fmtTime(order.requested_at)}</span>
@@ -176,18 +180,40 @@ function OrderCard({ order, onSupply, loadingRoundId }: {
         </div>
 
         {/* Volume & Progress */}
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: '#2563EB', lineHeight: 1 }}>
-            {order.qty_requested.toFixed(2)} <span style={{ fontSize: 12, fontWeight: 400, color: '#9CA3AF' }}>คิว</span>
+        <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#2563EB', lineHeight: 1 }}>
+              {order.qty_requested.toFixed(2)} <span style={{ fontSize: 12, fontWeight: 400, color: '#9CA3AF' }}>คิว</span>
+            </div>
+            <div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>
+              จ่าย {suppliedCount}/{totalRounds} (รับแล้ว {receivedCount})
+            </div>
+            <div style={{ width: 120, height: 4, background: '#E5E7EB', borderRadius: 99, marginTop: 6, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#10B981' : '#2563EB', borderRadius: 99, transition: 'width 0.4s' }} />
+            </div>
           </div>
-          <div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>
-            จ่าย {suppliedCount}/{totalRounds} (รับแล้ว {receivedCount})
-          </div>
-          <div style={{ width: 120, height: 4, background: '#E5E7EB', borderRadius: 99, marginTop: 6, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#10B981' : '#2563EB', borderRadius: 99, transition: 'width 0.4s' }} />
-          </div>
+          {onDelete && (
+            <button
+              disabled={isDeleting}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบคำสั่งคอนกรีตนี้? (สถานะของงานจะถูกรีเซ็ตเป็นรอเทคอนกรีต)')) {
+                  onDelete(order.id, order.bed, order.job_order?.id ?? null);
+                }
+              }}
+              style={{
+                background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', border: 'none',
+                width: 36, height: 36, borderRadius: '50%', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.2s', opacity: isDeleting ? 0.5 : 1
+              }}
+              title="ลบคำสั่งคอนกรีต"
+            >
+              {isDeleting ? <i className="fas fa-spinner fa-spin" /> : <i className="fas fa-trash-alt" />}
+            </button>
+          )}
         </div>
-      </button>
+      </div>
 
       {/* Rounds list */}
       {expanded && (
@@ -254,8 +280,8 @@ function HistorySection({ orders }: { orders: ConcreteOrder[] }) {
             return (
               <tr key={o.id} style={{ borderBottom: '1px solid #F3F4F6', background: idx % 2 === 0 ? '#fff' : '#FAFAFA' }}>
                 <td style={{ padding: '12px 16px', color: '#6B7280', fontSize: 12 }}>{fmtTime(o.requested_at)}</td>
-                <td style={{ padding: '12px 16px', fontWeight: 700 }}>โรงผลิต {o.job_order?.bed ?? '?'}</td>
-                <td style={{ padding: '12px 16px' }}>{o.job_order?.plan_item?.product?.name ?? '—'}</td>
+                <td style={{ padding: '12px 16px', fontWeight: 700 }}>โรงผลิต {o.bed ?? '?'}</td>
+                <td style={{ padding: '12px 16px' }}>{o.job_order?.plan_item?.product?.name ?? 'สั่งแบบรวม'}</td>
                 <td style={{ padding: '12px 16px', fontWeight: 700, color: '#2563EB' }}>{o.qty_requested.toFixed(2)} คิว</td>
                 <td style={{ padding: '12px 16px', textAlign: 'center' }}>{o.round_count}</td>
                 <td style={{ padding: '12px 16px', textAlign: 'center', color: isAllDone ? '#059669' : '#D97706', fontWeight: 700 }}>{suppliedCount}</td>
@@ -280,11 +306,12 @@ function HistorySection({ orders }: { orders: ConcreteOrder[] }) {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function ConcreteClient({ pending: initialPending, history: initialHistory, selectedDate, today }: Props) {
+export default function ConcreteClient({ pending: initialPending, history: initialHistory, selectedDate, today, userRole }: Props) {
   const router = useRouter()
   const [tab, setTab] = useState<'queue' | 'today' | 'history'>('queue')
   const [pendingOrders, setPendingOrders] = useState(initialPending)
   const [loadingRoundId, setLoadingRoundId] = useState<string | null>(null)
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
   const [historyDate, setHistoryDate] = useState(selectedDate)
   const [isPending, startTransition] = useTransition()
 
@@ -310,6 +337,22 @@ export default function ConcreteClient({ pending: initialPending, history: initi
         toast.error((e as Error).message)
       } finally {
         setLoadingRoundId(null)
+      }
+    })
+  }, [router])
+
+  const handleDelete = useCallback((orderId: string, bed: string | null, jobOrderId: string | null) => {
+    setDeletingOrderId(orderId)
+    startTransition(async () => {
+      try {
+        await deleteConcreteOrder(orderId, bed, jobOrderId)
+        toast.success('ลบคำสั่งคอนกรีตเรียบร้อยแล้ว')
+        setPendingOrders(prev => prev.filter(o => o.id !== orderId))
+        router.refresh()
+      } catch (e) {
+        toast.error((e as Error).message)
+      } finally {
+        setDeletingOrderId(null)
       }
     })
   }, [router])
@@ -395,6 +438,8 @@ export default function ConcreteClient({ pending: initialPending, history: initi
                     order={order}
                     onSupply={handleSupply}
                     loadingRoundId={loadingRoundId}
+                    onDelete={userRole === 'admin' ? handleDelete : undefined}
+                    isDeleting={deletingOrderId === order.id}
                   />
                 ))}
               </div>

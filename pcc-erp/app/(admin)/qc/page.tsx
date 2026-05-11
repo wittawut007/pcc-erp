@@ -15,13 +15,22 @@ async function getQcData() {
 
     const [{ data: records }, { data: summary }] = await Promise.all([
       supabase
-        .from('demolding_records')
-        .select('*, job_order:job_orders(bed, plan_item:production_plan_items(product:products(name,category,unit))), worker:profiles(full_name)')
+        .from('qc_inspections')
+        .select(`
+          *,
+          job_order:job_orders(
+            bed,
+            plan_item:production_plan_items(
+              product:products(name,category,unit)
+            )
+          ),
+          qc_profile:profiles!qc_inspections_qc_id_fkey(full_name)
+        `)
         .order('created_at', { ascending: false })
         .limit(100),
       supabase
-        .from('demolding_records')
-        .select('qty_good, qty_defect, defect_reason, created_at'),
+        .from('qc_inspections')
+        .select('demold_qty_good, demold_qty_defect, defect_reason, created_at'),
     ])
     return { records, summary }
   } catch {

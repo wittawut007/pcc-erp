@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 /**
@@ -161,6 +162,7 @@ export async function getPendingConcreteOrders() {
     .from('concrete_orders')
     .select(`
       *,
+      bed,
       requested_by_profile:profiles!concrete_orders_requested_by_fkey(full_name, employee_code),
       job_order:job_orders(
         id, bed, qty_target,
@@ -197,6 +199,7 @@ export async function getConcreteHistoryByDate(date: string) {
     .from('concrete_orders')
     .select(`
       *,
+      bed,
       requested_by_profile:profiles!concrete_orders_requested_by_fkey(full_name),
       supplied_by_profile:profiles!concrete_orders_supplied_by_fkey(full_name),
       job_order:job_orders(
@@ -228,4 +231,89 @@ export async function getConcreteHistoryByDate(date: string) {
 export async function getTodayConcreteHistory() {
   const today = new Date().toISOString().split('T')[0]
   return getConcreteHistoryByDate(today)
+}
+
+/**
+ * ลบคำสั่งคอนกรีต (สำหรับ Admin)
+ * และคืนค่าสถานะ job_orders ให้กลับไปเป็น pending
+ */
+export async function deleteConcreteOrder(orderId: string, bed: string | null, jobOrderId: string | null) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+
+  // Check admin role
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'admin') {
+    throw new Error('Only admins can delete concrete orders')
+  }
+
+  const adminClient = createAdminClient()
+
+  // Delete rounds first (foreign key constraint)
+  await adminClient.from('concrete_rounds').delete().eq('concrete_order_id', orderId)
+  
+  // Delete the order
+  const { error: deleteErr } = await adminClient.from('concrete_orders').delete().eq('id', orderId)
+  if (deleteErr) throw new Error(deleteErr.message)
+
+  // Revert job_order status
+  const resetPayload = {
+    status: 'pending',
+    cast_at: null,
+    qty_cast: null,
+    concrete_requested_at: null,
+    photo_ready_url: null,
+  };
+
+  if (jobOrderId) {
+    await adminClient.from('job_orders').update(resetPayload).eq('id', jobOrderId)
+  } else if (bed) {
+    await adminClient.from('job_orders').update(resetPayload)
+    .eq('bed', bed)
+    .in('status', ['concrete_ordered', 'casting', 'curing', 'ready_demold'])
+  }
+
+  revalidatePath('/concrete')
+  revalidatePath('/worker')
+  revalidatePath('/job-orders')
+}
+
+/**
+ * รีเซ็ตสถานะ Job Order และลบคำสั่งคอนกรีตที่เกี่ยวข้อง (สำหรับ Admin)
+ */
+export async function resetJobOrder(jobId: string, bed: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'admin') throw new Error('Only admins can reset job orders')
+
+  const adminClient = createAdminClient()
+
+  // Find concrete order for this bed
+  const { data: orders } = await adminClient.from('concrete_orders')
+    .select('id')
+    .eq('bed', bed)
+    .order('requested_at', { ascending: false })
+    .limit(1)
+
+  if (orders && orders.length > 0) {
+    // If there is an order, delete it (this will also reset the jobs via deleteConcreteOrder logic)
+    await deleteConcreteOrder(orders[0].id, bed, null)
+  } else {
+    // Just reset the job
+    await adminClient.from('job_orders').update({
+      status: 'pending',
+      cast_at: null,
+      qty_cast: null,
+      concrete_requested_at: null,
+      photo_ready_url: null,
+    }).in('status', ['concrete_ordered', 'casting', 'curing', 'ready_demold']).eq('bed', bed)
+  }
+  
+  revalidatePath('/job-orders')
+  revalidatePath('/concrete')
+  revalidatePath('/worker')
 }
