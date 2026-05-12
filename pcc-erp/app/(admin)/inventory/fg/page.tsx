@@ -7,21 +7,33 @@ import { createClient } from '@/lib/supabase/server'
 export default async function FgInventoryPage() {
   const supabase = await createClient()
 
-  const { data: fg } = await supabase
-    .from('fg_inventory')
-    .select('*, product:products(code, name, category, unit, size)')
-    .order('updated_at', { ascending: false })
-
-  const { data: products } = await supabase
-    .from('products')
-    .select('id, code, name, category, unit, size')
-    .eq('is_active', true)
-    .order('category')
+  // Fetch production orders that have demolded jobs or are completed
+  const { data: productionOrders } = await supabase
+    .from('production_orders')
+    .select(`
+      id,
+      order_number,
+      status,
+      erp_reference,
+      created_at,
+      plan:production_plans(plan_date),
+      job_orders(
+        id,
+        status,
+        qty_target,
+        qty_cast,
+        demolding_records(qty_good, qty_defect),
+        plan_item:production_plan_items(
+          product:products(id, code, name, category, unit, size)
+        )
+      )
+    `)
+    .order('created_at', { ascending: false })
 
   return (
     <>
-      <Header title="คลังสินค้าพร้อมขาย (FG)" subtitle="จัดการสต็อกสินค้าสำเร็จรูปพร้อมจัดส่ง" />
-      <FgInventoryClient fgItems={fg ?? []} products={products ?? []} />
+      <Header title="ยืนยันการผลิต (FG / ERP)" subtitle="ตรวจสอบใบสั่งผลิตและอัปเดตหมายเลขอ้างอิงระบบกลาง" />
+      <FgInventoryClient productionOrders={productionOrders ?? []} />
     </>
   )
 }

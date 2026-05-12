@@ -51,7 +51,7 @@ export default function WorkerClient({
   const router = useRouter()
 
   const [activeTab, setActiveTab] = useState<'dailyJobs'|'receiveConcreteTab'|'history'>('dailyJobs')
-  const [activeSection, setActiveSection] = useState<'phase1'|'concreteSummary'|'phase2'|'phase3'|'phase3Summary'|'success' | null>(null)
+  const [activeSection, setActiveSection] = useState<'phase1'|'concreteSummary'|'success' | null>(null)
   
   const [phaseMode, setPhaseMode] = useState<'casting' | 'demolding' | null>(null)
   const [selectedJobs, setSelectedJobs] = useState<Job[]>([])
@@ -232,11 +232,11 @@ export default function WorkerClient({
         const sorted = data.map((o: any) => ({
           ...o,
           rounds: (o.rounds ?? []).sort((a: any, b: any) => a.round_number - b.round_number),
-        }))
+        })).filter((o: any) => o.rounds.some((r: any) => r.status !== 'received'))
         setActiveConcreteOrders(sorted)
         const allReceived = sorted.reduce((s: number, o: any) => s + o.rounds.filter((r: any) => r.status === 'received').length, 0)
         setConcreteRoundsReceived(allReceived)
-        if (sorted.length > 0) setConcreteSent(true)
+        setConcreteSent(sorted.length > 0)
       }
     } finally {
       setConcreteLoading(false)
@@ -296,119 +296,7 @@ export default function WorkerClient({
     }
   }
 
-  // Phase 2 Submit
-  const handlePhase2Submit = async () => {
-    setSaving(true)
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
-      const phase2PhotoUrl = photos['phase2'] ? await uploadPhoto(photos['phase2'].file, 'casting') : null
-
-      for (const job of selectedJobs) {
-        const p1PhotoUrl = photos[`phase1-${job.id}`] ? await uploadPhoto(photos[`phase1-${job.id}`].file, 'preparation') : null
-        await supabase.from('job_orders').update({
-          status: 'casting',
-          cast_at: new Date().toISOString(),
-          qty_cast: job.qty_target,
-          photo_ready_url: p1PhotoUrl,
-          photo_cast_url: phase2PhotoUrl
-        }).eq('id', job.id)
-      }
-      setActiveSection('success')
-    } catch (e: any) {
-      toast.error('เกิดข้อผิดพลาด: ' + e.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  // Phase 3 Adjustments
-  const handlePhase3Adjust = (jobId: string, field: 'good' | 'defect', change: number) => {
-    setDemoldingData(prev => {
-      const current = prev[jobId]
-      const target = selectedJobs.find(j => j.id === jobId)?.qty_target || 0
-      let newGood = current.good
-      let newDefect = current.defect
-
-      if (field === 'good') newGood = Math.max(0, newGood + change)
-      else newDefect = Math.max(0, newDefect + change)
-
-      if (newGood + newDefect > target) {
-        if (field === 'good') newDefect = Math.max(0, target - newGood)
-        if (field === 'defect') newGood = Math.max(0, target - newDefect)
-      }
-
-      return { ...prev, [jobId]: { ...current, good: newGood, defect: newDefect } }
-    })
-  }
-
-  // Phase 3 Nav
-  const handlePhase3Next = () => {
-    if (currentIndex < selectedJobs.length - 1) {
-      setCurrentIndex(curr => curr + 1)
-    } else {
-      setActiveSection('phase3Summary')
-    }
-  }
-
-  // Phase 3 Submit
-  const handlePhase3Submit = async () => {
-    setSaving(true)
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
-      for (const job of selectedJobs) {
-        const entry = demoldingData[job.id]
-        const p3PhotoUrl = photos[`phase3-${job.id}`] ? await uploadPhoto(photos[`phase3-${job.id}`].file, 'demolding') : null
-
-        const { data: record, error: recError } = await supabase.from('demolding_records').insert({
-          job_order_id: job.id,
-          worker_id: user.id,
-          qty_good: entry.good,
-          qty_defect: entry.defect,
-          defect_reason: entry.defect > 0 ? entry.reason || null : null,
-          photo_url: p3PhotoUrl
-        }).select().single()
-        
-        if (recError) throw recError
-
-        const totalDemolded = entry.good + entry.defect
-        await supabase.from('job_orders').update({
-          status: 'demolded',
-          demolded_at: new Date().toISOString(),
-          qty_cast: totalDemolded,
-        }).eq('id', job.id)
-
-        const productId = job.plan_item?.product?.id
-        if (productId && entry.good > 0) {
-          const { data: existing } = await supabase.from('fg_inventory').select('id, qty').eq('product_id', productId).single()
-          if (existing) {
-            await supabase.from('fg_inventory').update({ qty: existing.qty + entry.good, updated_at: new Date().toISOString(), last_updated_by: user.id }).eq('id', existing.id)
-          } else {
-            await supabase.from('fg_inventory').insert({ product_id: productId, qty: entry.good, last_updated_by: user.id })
-          }
-        }
-        await supabase.from('activity_logs').insert({
-          user_id: user.id,
-          action_type: 'ถอดแบบ & QC (Mobile)',
-          entity_type: 'demolding_record',
-          entity_id: record.id,
-          detail: `${job.plan_item?.product?.name} | ดี ${entry.good} / เสีย ${entry.defect}`,
-        })
-      }
-      setActiveSection('success')
-    } catch (e: any) {
-      toast.error('เกิดข้อผิดพลาด: ' + e.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const isPhase1Ready = phase1Checks.clean && phase1Checks.wip && photos[`phase1-${currentJob?.id}`]
-  const isPhase3Ready = photos[`phase3-${currentJob?.id}`]
-  const isPhase2Ready = photos['phase2']
 
   return (
     <div className="flex-1 w-full h-[100dvh] flex flex-col relative overflow-hidden text-[13px] text-erp-text-primary" 
@@ -716,7 +604,7 @@ export default function WorkerClient({
                     if (currentBedIndex < jobsByBed.length - 1) {
                       setCurrentBedIndex(currentBedIndex + 1)
                     } else {
-                      setActiveSection('phase2')
+                      setActiveSection('success')
                     }
                   } catch(e:any) {
                     toast.error(e.message)
@@ -731,231 +619,7 @@ export default function WorkerClient({
             </div>
           )}
 
-          {/* SECTION: Phase 2 Pouring */}
-          {activeSection === 'phase2' && (
-            <div style={{ padding: '24px 20px', maxWidth: '480px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ marginBottom: '16px' }}>
-                <span style={{ backgroundColor: '#E0E7FF', color: '#4338CA', fontSize: '11px', fontWeight: 800, padding: '6px 14px', borderRadius: '99px', border: '1px solid #C7D2FE' }}>
-                  ขั้นที่ 2: เทคอนกรีต
-                </span>
-              </div>
-              
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.04)', padding: '32px', textAlign: 'center', marginBottom: '24px', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.06)' }}>
-                <div style={{ width: '96px', height: '96px', backgroundColor: '#EEF2FF', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '4px solid #E0E7FF', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
-                  <i className="fas fa-truck-monster" style={{ fontSize: '36px', color: '#6366F1' }}></i>
-                </div>
-                <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', marginBottom: '8px' }}>ส่งคำสั่งปูนเรียบร้อยแล้ว</h2>
-                <p style={{ fontSize: '14px', color: '#64748B', fontWeight: 600, marginBottom: '24px' }}>
-                  รถโม่กำลังจัดส่ง {selectedJobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0).toFixed(1)} คิว
-                </p>
-                <div style={{ backgroundColor: 'rgba(254, 252, 232, 0.6)', border: '1px solid #FEF08A', borderRadius: '16px', padding: '20px', textAlign: 'left' }}>
-                  <p style={{ fontWeight: 900, color: '#92400E', fontSize: '13px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <i className="fas fa-exclamation-triangle" style={{ color: '#D97706' }}></i> ข้อควรปฏิบัติ:
-                  </p>
-                  <ul style={{ fontSize: '12px', color: '#B45309', margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', fontWeight: 600 }}>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}><i className="fas fa-check" style={{ fontSize: '10px', marginTop: '4px' }}></i> ควบคุมการเทคอนกรีตลงแบบให้ทั่วถึง</li>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}><i className="fas fa-check" style={{ fontSize: '10px', marginTop: '4px' }}></i> ใช้เครื่องจี้ปูนไล่ฟองอากาศให้หมด</li>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}><i className="fas fa-check" style={{ fontSize: '10px', marginTop: '4px' }}></i> ปาดหน้าคอนกรีตให้เรียบสม่ำเสมอ</li>
-                  </ul>
-                </div>
-              </div>
-              
-              <h3 style={{ fontWeight: 800, color: '#475569', marginBottom: '12px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>ถ่ายภาพยืนยันการเท <span style={{ color: '#EF4444' }}>*</span></h3>
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.05)', padding: '10px', position: 'relative', marginBottom: '24px', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)' }}>
-                {!photos['phase2'] && <input type="file" accept="image/*" capture="environment" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10 }} onChange={e => handlePhotoSelect(e, 'phase2')} />}
-                <div style={{ 
-                  width: '100%', height: '120px', borderRadius: '16px', border: photos['phase2'] ? '2px solid #818CF8' : '2px dashed #E2E8F0', 
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
-                  color: photos['phase2'] ? '#6366F1' : '#94A3B8', backgroundColor: photos['phase2'] ? 'transparent' : '#F8FAFC',
-                  position: 'relative', overflow: 'hidden'
-                }}>
-                  {photos['phase2'] ? (
-                    <>
-                      <img src={photos['phase2'].preview} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                      <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <button onClick={(e) => { e.stopPropagation(); setPhotos(p => { const newP = {...p}; delete newP['phase2']; return newP; }) }} 
-                          style={{ width: '40px', height: '40px', backgroundColor: 'rgba(239, 68, 68, 0.95)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 20px -3px rgba(0,0,0,0.2)', position: 'absolute', top: '12px', right: '12px', border: 'none', cursor: 'pointer', zIndex: 20 }}>
-                          <i className="fas fa-trash" style={{ color: '#ffffff', fontSize: '14px' }}></i>
-                        </button>
-                        <i className="fas fa-check-double" style={{ color: '#ffffff', fontSize: '36px', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))' }}></i>
-                      </div>
-                    </>
-                  ) : (
-                    <><i className="fas fa-camera" style={{ fontSize: '28px', marginBottom: '8px' }}></i><span style={{ fontSize: '11px', fontWeight: 800 }}>แตะเพื่อถ่ายภาพหน้างาน</span></>
-                  )}
-                </div>
-              </div>
 
-              <button disabled={!isPhase2Ready || saving} onClick={handlePhase2Submit} 
-                style={{ 
-                  width: '100%', padding: '18px', borderRadius: '99px', fontWeight: 900, fontSize: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px',
-                  backgroundColor: isPhase2Ready ? '#4F46E5' : '#E2E8F0',
-                  color: isPhase2Ready ? '#ffffff' : '#94A3B8',
-                  border: 'none',
-                  boxShadow: isPhase2Ready ? '0 12px 30px -6px rgba(79,70,229,0.5)' : 'none',
-                  cursor: isPhase2Ready ? 'pointer' : 'not-allowed',
-                }}>
-                {saving ? <i className="fas fa-spinner fa-spin" style={{ fontSize: '20px' }}></i> : <><i className="fas fa-check-double" style={{ fontSize: '18px' }}></i> ยืนยันการเทคอนกรีตเสร็จสิ้น</>}
-              </button>
-            </div>
-          )}
-
-          {/* SECTION: Phase 3 */}
-          {activeSection === 'phase3' && currentJob && (
-            <div style={{ padding: '24px 20px', maxWidth: '480px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <button onClick={resetScanner} style={{ color: '#2563EB', fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', padding: '8px 14px', backgroundColor: '#EFF6FF', borderRadius: '12px', border: 'none', cursor: 'pointer' }}>
-                  <i className="fas fa-chevron-left" style={{ marginRight: '6px' }}></i> สแกนใหม่
-                </button>
-                <span style={{ backgroundColor: '#D1FAE5', color: '#047857', fontSize: '12px', fontWeight: 700, padding: '6px 14px', borderRadius: '99px', border: '1px solid #A7F3D0' }}>
-                  ขั้นที่ 3: ถอดแบบ ({currentIndex + 1}/{selectedJobs.length})
-                </span>
-              </div>
-              
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '24px', position: 'relative', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.04)', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.06)' }}>
-                <div style={{ position: 'absolute', top: 0, left: 0, width: '6px', height: '100%', backgroundColor: '#10B981' }}></div>
-                <div style={{ paddingLeft: '8px' }}>
-                  <p style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>โรงผลิต: {currentJob.bed}</p>
-                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', marginTop: '2px', lineHeight: 1.3 }}>
-                    {currentJob.plan_item?.product?.name}
-                    {currentJob.plan_item?.product?.size && <span style={{ display: 'block', fontSize: '15px', fontWeight: 600, color: '#64748B', marginTop: '4px' }}>ขนาด: {currentJob.plan_item?.product?.size}</span>}
-                  </h2>
-                  <div style={{ backgroundColor: 'rgba(209, 250, 229, 0.5)', borderRadius: '16px', padding: '16px', marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid rgba(167, 243, 208, 0.5)' }}>
-                    <i className="fas fa-clock" style={{ color: '#10B981', fontSize: '14px' }}></i>
-                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.05em' }}>พร้อมถอดแบบ (เป้าหมาย {currentJob.qty_target} {currentJob.plan_item?.product?.unit})</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 style={{ fontWeight: 800, color: '#475569', marginBottom: '14px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>บันทึกผลการถอดแบบ (QC)</h3>
-                
-                <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '24px', border: '1px solid rgba(16, 185, 129, 0.2)', boxShadow: '0 10px 25px -5px rgba(16,185,129,0.08)', marginBottom: '20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <label style={{ fontWeight: 900, color: '#047857', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      <i className="fas fa-check-circle" style={{ fontSize: '20px' }}></i> ยอดงานดี (QC PASS)
-                    </label>
-                    <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>เป้า: {currentJob.qty_target}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(209, 250, 229, 0.3)', borderRadius: '20px', padding: '12px', border: '1px solid rgba(167, 243, 208, 0.5)' }}>
-                    <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'good', -1)} style={{ width: '56px', height: '56px', backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', color: '#059669', fontSize: '24px', border: '1px solid #D1FAE5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-minus"></i></button>
-                    <input type="number" readOnly value={demoldingData[currentJob.id]?.good || 0} style={{ width: '96px', backgroundColor: 'transparent', textAlign: 'center', fontSize: '48px', fontWeight: 900, color: '#065F46', outline: 'none', border: 'none' }} />
-                    <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'good', 1)} style={{ width: '56px', height: '56px', backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', color: '#059669', fontSize: '24px', border: '1px solid #D1FAE5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
-                  </div>
-                </div>
-
-                <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '24px', border: '1px solid rgba(239, 68, 68, 0.2)', boxShadow: '0 10px 25px -5px rgba(239,68,68,0.08)' }}>
-                  <label style={{ fontWeight: 900, color: '#DC2626', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '20px' }}>
-                    <i className="fas fa-heart-broken" style={{ fontSize: '20px' }}></i> ยอดของเสีย (DEFECT)
-                  </label>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(254, 226, 226, 0.3)', borderRadius: '20px', padding: '12px', border: '1px solid rgba(254, 202, 202, 0.5)', marginBottom: demoldingData[currentJob.id]?.defect > 0 ? '20px' : '0' }}>
-                    <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'defect', -1)} style={{ width: '56px', height: '56px', backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', color: '#EF4444', fontSize: '24px', border: '1px solid #FEE2E2', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-minus"></i></button>
-                    <input type="number" readOnly value={demoldingData[currentJob.id]?.defect || 0} style={{ width: '96px', backgroundColor: 'transparent', textAlign: 'center', fontSize: '48px', fontWeight: 900, color: '#B91C1C', outline: 'none', border: 'none' }} />
-                    <button type="button" onClick={() => handlePhase3Adjust(currentJob.id, 'defect', 1)} style={{ width: '56px', height: '56px', backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', color: '#EF4444', fontSize: '24px', border: '1px solid #FEE2E2', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
-                  </div>
-                  {demoldingData[currentJob.id]?.defect > 0 && (
-                    <div style={{ marginTop: '16px' }}>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 900, color: '#991B1B', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ระบุสาเหตุความเสียหาย <span style={{ color: '#EF4444' }}>*</span></label>
-                      <select value={demoldingData[currentJob.id]?.reason} onChange={e => setDemoldingData(p => ({...p, [currentJob.id]: {...p[currentJob.id], reason: e.target.value}}))} 
-                        style={{ width: '100%', backgroundColor: '#F8FAFC', border: '1px solid #FECACA', color: '#0F172A', borderRadius: '16px', padding: '16px', outline: 'none', fontSize: '16px', fontWeight: 700, appearance: 'none' }}>
-                        <option value="" disabled>-- เลือกสาเหตุ --</option>
-                        {DEFECT_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                      </select>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 style={{ fontWeight: 800, color: '#475569', marginBottom: '14px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>ถ่ายภาพยืนยัน <span style={{ color: '#EF4444' }}>*</span></h3>
-                <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.05)', padding: '10px', position: 'relative', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)' }}>
-                  {!photos[`phase3-${currentJob.id}`] && <input type="file" accept="image/*" capture="environment" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10 }} onChange={e => handlePhotoSelect(e, `phase3-${currentJob.id}`)} />}
-                  <div style={{ 
-                    width: '100%', height: '140px', borderRadius: '16px', border: photos[`phase3-${currentJob.id}`] ? '2px solid #34D399' : '2px dashed #CBD5E1', 
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
-                    color: photos[`phase3-${currentJob.id}`] ? '#10B981' : '#94A3B8', backgroundColor: photos[`phase3-${currentJob.id}`] ? 'transparent' : '#F8FAFC',
-                    position: 'relative', overflow: 'hidden'
-                  }}>
-                    {photos[`phase3-${currentJob.id}`] ? (
-                      <>
-                        <img src={photos[`phase3-${currentJob.id}`].preview} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                        <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <button onClick={(e) => { e.stopPropagation(); setPhotos(p => { const newP = {...p}; delete newP[`phase3-${currentJob.id}`]; return newP; }) }} 
-                            style={{ width: '44px', height: '44px', backgroundColor: 'rgba(239, 68, 68, 0.95)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 20px -3px rgba(0,0,0,0.2)', position: 'absolute', top: '12px', right: '12px', border: 'none', cursor: 'pointer', zIndex: 20 }}>
-                            <i className="fas fa-trash" style={{ color: '#ffffff', fontSize: '16px' }}></i>
-                          </button>
-                          <i className="fas fa-check-circle" style={{ color: '#ffffff', fontSize: '42px', filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))' }}></i>
-                        </div>
-                      </>
-                    ) : (
-                      <><i className="fas fa-camera" style={{ fontSize: '36px', marginBottom: '10px' }}></i><span style={{ fontSize: '12px', fontWeight: 800 }}>แตะเพื่อถ่ายภาพสินค้า (FG / Defect)</span></>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <button disabled={!isPhase3Ready} onClick={handlePhase3Next} 
-                style={{ 
-                  width: '100%', padding: '18px', borderRadius: '99px', fontWeight: 900, fontSize: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px',
-                  backgroundColor: isPhase3Ready ? '#059669' : '#E2E8F0',
-                  color: isPhase3Ready ? '#ffffff' : '#94A3B8',
-                  border: 'none',
-                  boxShadow: isPhase3Ready ? '0 12px 30px -6px rgba(5,150,105,0.5)' : 'none',
-                  cursor: isPhase3Ready ? 'pointer' : 'not-allowed',
-                  marginTop: '12px'
-                }}>
-                {currentIndex < selectedJobs.length - 1 ? 'ถัดไป' : 'สรุปยืนยันข้อมูลทั้งหมด'} <i className="fas fa-save" style={{ marginLeft: '4px' }}></i>
-              </button>
-            </div>
-          )}
-
-          {/* SECTION: Phase 3 Summary */}
-          {activeSection === 'phase3Summary' && (
-            <div style={{ padding: '24px 20px', maxWidth: '480px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.04)', padding: '32px', position: 'relative', overflow: 'hidden', boxShadow: '0 15px 35px -5px rgba(0,0,0,0.08)' }}>
-                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '8px', backgroundColor: '#059669' }}></div>
-                <div style={{ textAlign: 'center', marginBottom: '32px', marginTop: '8px' }}>
-                  <div style={{ width: '72px', height: '72px', backgroundColor: '#ECFDF5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', border: '1px solid #D1FAE5', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
-                    <i className="fas fa-list-check" style={{ fontSize: '32px', color: '#10B981' }}></i>
-                  </div>
-                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.3px' }}>สรุปยอดถอดแบบ</h2>
-                  <p style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '4px' }}>Demolding & QC Summary</p>
-                </div>
-                
-                <div style={{ borderTop: '2px dashed #F1F5F9', paddingTop: '24px', marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {selectedJobs.map(j => {
-                    const entry = demoldingData[j.id];
-                    return (
-                      <div key={j.id} style={{ backgroundColor: '#F8FAFC', borderRadius: '16px', padding: '16px 20px', border: '1px solid rgba(226, 232, 240, 0.6)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <div style={{ fontSize: '11px', fontWeight: 900, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>โรงผลิต {j.bed}</div>
-                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#1E293B' }}>
-                            {j.plan_item?.product?.name}
-                            {j.plan_item?.product?.size && <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748B', marginLeft: '6px' }}>(ขนาด: {j.plan_item?.product?.size})</span>}
-                          </div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '18px', fontWeight: 900, color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}><i className="fas fa-check-circle"></i>{entry.good}</div>
-                          {entry.defect > 0 && <div style={{ fontSize: '13px', fontWeight: 800, color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', marginTop: '4px' }}><i className="fas fa-times-circle"></i>{entry.defect}</div>}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-                
-                <button disabled={saving} onClick={handlePhase3Submit} 
-                  style={{ 
-                    width: '100%', backgroundColor: '#059669', color: '#ffffff', padding: '18px', borderRadius: '16px', fontWeight: 900, fontSize: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 10px 25px -5px rgba(5,150,105,0.4)', border: 'none', textTransform: 'uppercase', letterSpacing: '0.05em' 
-                  }}>
-                  {saving ? <i className="fas fa-spinner fa-spin" style={{ fontSize: '20px' }}></i> : <>บันทึกและเข้าคลัง FG <i className="fas fa-paper-plane" style={{ marginLeft: '4px' }}></i></>}
-                </button>
-                <button onClick={() => { setCurrentIndex(0); setActiveSection('phase3'); }} 
-                  style={{ width: '100%', marginTop: '16px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', color: '#64748B', padding: '18px', borderRadius: '16px', fontWeight: 800, fontSize: '15px', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  ย้อนกลับ
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* SECTION: Success */}
           {activeSection === 'success' && (
@@ -980,7 +644,7 @@ export default function WorkerClient({
               <h2 style={{ fontSize: '28px', fontWeight: 900, color: '#0F172A', marginBottom: '8px', letterSpacing: '-0.5px' }}>ทำรายการสำเร็จ!</h2>
               <p style={{ fontSize: '15px', color: '#64748B', fontWeight: 500, marginBottom: '36px', lineHeight: 1.6 }}>
                 ระบบบันทึกข้อมูลเรียบร้อยแล้ว<br/>
-                {phaseMode === 'casting' ? 'เริ่มนับเวลาการบ่มสินค้า...' : 'สินค้าถูกส่งเข้าคลัง FG แล้ว'}
+                รอทีม QC เข้าตรวจสอบ
               </p>
               <button
                 onClick={() => window.location.reload()}
@@ -1072,6 +736,7 @@ export default function WorkerClient({
                           : { label: 'รอดำเนินการ', bg: '#F1F5F9', color: '#475569', border: '#CBD5E1' }
                       }
                       const statusMap: Record<string, { label: string; bg: string; color: string; border: string }> = {
+                        concrete_ordered: { label: 'รอรับคอนกรีต', bg: '#FEF3C7', color: '#D97706', border: '#FDE68A' },
                         casting:      { label: 'รอเทคอนกรีต',  bg: '#DBEAFE', color: '#1E40AF', border: '#93C5FD' },
                         curing:       { label: 'กำลังบ่ม',    bg: '#EFF6FF', color: '#2563EB', border: '#BFDBFE' },
                         ready_demold: { label: 'พร้อมถอดแบบ', bg: '#F0FDF4', color: '#059669', border: '#A7F3D0' },
@@ -1172,7 +837,7 @@ export default function WorkerClient({
                   </div>
 
                 {/* Order Concrete Button */}
-                {allJobsReady && !concreteSent && (
+                {allJobsReady && !concreteSent && jobOrders.some(j => j.status === 'pending') && (
                   <div style={{ marginTop: '20px', padding: '20px', backgroundColor: '#0F172A', borderRadius: '24px', boxShadow: '0 15px 35px -5px rgba(15,23,42,0.4)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                       <div>

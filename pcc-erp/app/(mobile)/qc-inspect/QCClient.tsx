@@ -1,360 +1,519 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { inspectPour, recordDemoldInspection } from '@/app/actions/qc'
-import toast from 'react-hot-toast'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import toast, { Toaster } from 'react-hot-toast'
+import { startCuring, recordDemoldInspection, fastForwardCuring } from '@/app/actions/qc'
+import { createClient } from '@/lib/supabase/client'
 
-type TabType = 'pour' | 'demold'
-
-interface Product { name: string; code: string; category: string }
-interface PlanItem { bed: string; product: Product | null }
-interface Worker { full_name: string }
-interface QCInspection {
-  pour_ok: boolean | null
-  pour_inspected_at: string | null
-  demold_qty_good: number
-  demold_qty_defect: number
-  demold_inspected_at: string | null
-}
-
-interface JobOrder {
-  id: string
-  bed: string
-  qty_target: number
-  qty_cast: number
-  status: string
-  started_at: string | null
-  plan_item: PlanItem | null
-  worker: Worker | null
-  qc_inspection: QCInspection | null
-}
-
-interface Props {
-  initialData: JobOrder[]
-}
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  casting:     { label: 'กำลังหล่อ',    color: '#2563EB', bg: '#EFF4FF' },
-  curing:      { label: 'บ่มคอนกรีต',  color: '#D97706', bg: '#FFFBEB' },
-  ready_demold:{ label: 'พร้อมถอดแบบ', color: '#7C3AED', bg: '#F5F3FF' },
-  demolded:    { label: 'ถอดแบบแล้ว',  color: '#16A34A', bg: '#F0FDF4' },
-}
-
-const DEFECT_OPTIONS = [
-  { value: 'crack',     label: 'แตก/ร้าว' },
-  { value: 'chip',      label: 'บิ่น/มุมหัก' },
+const DEFECT_REASONS = [
+  { value: 'crack', label: 'แตก/ร้าว' },
+  { value: 'chip', label: 'บิ่น/มุมหัก' },
   { value: 'honeycomb', label: 'รอยโพรง (Honeycomb)' },
-  { value: 'other',     label: 'อื่นๆ' },
+  { value: 'other', label: 'อื่นๆ' },
 ]
 
-export default function QCClient({ initialData }: Props) {
-  const [activeTab, setActiveTab] = useState<TabType>('pour')
+export default function QCClient({ initialData, qcName }: { initialData: any[], qcName: string }) {
+  const router = useRouter()
+  const [activeTab, setActiveTab] = useState<'casting' | 'demolding' | 'history'>('casting')
   const [jobs, setJobs] = useState(initialData)
-  const [selectedJob, setSelectedJob] = useState<JobOrder | null>(null)
-  const [isPending, startTransition] = useTransition()
+  const [now, setNow] = useState(new Date())
 
-  // Pour form state
-  const [pourOk, setPourOk] = useState<boolean | null>(null)
-  const [pourNotes, setPourNotes] = useState('')
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
+  
+  // Forms State
+  const [photos, setPhotos] = useState<Record<string, { file: File, preview: string }>>({})
+  const [demoldingData, setDemoldingData] = useState<Record<string, { good: number, defect: number, reason: string }>>({})
+  const [saving, setSaving] = useState(false)
 
-  // Demold form state
-  const [demoldGood, setDemoldGood] = useState('')
-  const [demoldDefect, setDemoldDefect] = useState('')
-  const [defectReason, setDefectReason] = useState('')
-  const [defectDetail, setDefectDetail] = useState('')
+  // Timer for curing countdown
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
-  const pourJobs = jobs.filter(j => ['casting', 'curing'].includes(j.status))
-  const demoldJobs = jobs.filter(j => ['ready_demold', 'demolded'].includes(j.status))
+  // Sync data
+  useEffect(() => {
+    setJobs(initialData)
+  }, [initialData])
 
-  const resetForm = () => {
-    setSelectedJob(null)
-    setPourOk(null)
-    setPourNotes('')
-    setDemoldGood('')
-    setDemoldDefect('')
-    setDefectReason('')
-    setDefectDetail('')
+  const castingJobs = jobs.filter(j => j.status === 'concrete_ordered')
+  const demoldingJobs = jobs.filter(j => ['curing', 'ready_demold'].includes(j.status))
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>, key: string) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const preview = URL.createObjectURL(file)
+      setPhotos(prev => ({ ...prev, [key]: { file, preview } }))
+    }
   }
 
-  const handlePourSubmit = () => {
-    if (!selectedJob || pourOk === null) {
-      toast.error('กรุณาเลือกผลการตรวจสอบ')
+  const removePhoto = (key: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setPhotos(prev => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
+
+  const uploadPhoto = async (file: File, folder: string): Promise<string> => {
+    const supabase = createClient()
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
+    const { error } = await supabase.storage.from('job_photos').upload(fileName, file)
+    if (error) throw error
+    const { data: publicUrlData } = supabase.storage.from('job_photos').getPublicUrl(fileName)
+    return publicUrlData.publicUrl
+  }
+
+  const handleStartCuring = async (jobId: string) => {
+    const photo = photos[`casting-${jobId}`]
+    if (!photo) {
+      toast.error('กรุณาถ่ายภาพยืนยันก่อนเริ่มบ่ม')
       return
     }
-    startTransition(async () => {
-      try {
-        await inspectPour(selectedJob.id, pourOk, pourNotes || undefined)
-        toast.success('บันทึกผลตรวจการเทคอนกรีตเรียบร้อย')
-        setJobs(prev =>
-          prev.map(j => j.id === selectedJob.id
-            ? { ...j, qc_inspection: { ...j.qc_inspection!, pour_ok: pourOk, pour_inspected_at: new Date().toISOString() } }
-            : j
-          )
-        )
-        resetForm()
-      } catch (e) {
-        toast.error((e as Error).message)
+    setSaving(true)
+    try {
+      const photoUrl = await uploadPhoto(photo.file, 'casting')
+      await startCuring(jobId, photoUrl)
+      toast.success('ยืนยันการเท และเริ่มนับเวลาบ่ม 20 ชม.')
+      setExpandedJobId(null)
+      // Optimistic update
+      setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'curing', cast_at: new Date().toISOString() } : j))
+      setPhotos(p => { const newP = {...p}; delete newP[`casting-${jobId}`]; return newP; })
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDemoldingAdjust = (jobId: string, field: 'good' | 'defect', change: number, target: number) => {
+    setDemoldingData(prev => {
+      const current = prev[jobId] || { good: 0, defect: 0, reason: '' }
+      let newGood = current.good
+      let newDefect = current.defect
+
+      if (field === 'good') newGood = Math.max(0, newGood + change)
+      else newDefect = Math.max(0, newDefect + change)
+
+      if (newGood + newDefect > target) {
+        if (field === 'good') newDefect = Math.max(0, target - newGood)
+        if (field === 'defect') newGood = Math.max(0, target - newDefect)
       }
+
+      return { ...prev, [jobId]: { ...current, good: newGood, defect: newDefect } }
     })
   }
 
-  const handleDemoldSubmit = () => {
-    if (!selectedJob) return
-    const good = parseInt(demoldGood)
-    const defect = parseInt(demoldDefect) || 0
-    if (!good && good !== 0) { toast.error('กรุณาระบุจำนวนของดี'); return }
-    if (defect > 0 && !defectReason) { toast.error('กรุณาระบุสาเหตุของเสีย'); return }
-
-    startTransition(async () => {
-      try {
-        await recordDemoldInspection(
-          selectedJob.id, good, defect,
-          defectReason || undefined,
-          defectDetail || undefined
-        )
-        toast.success('บันทึกผลตรวจการถอดแบบเรียบร้อย')
-        setJobs(prev => prev.filter(j => j.id !== selectedJob.id))
-        resetForm()
-      } catch (e) {
-        toast.error((e as Error).message)
-      }
-    })
+  const handleDemoldSubmit = async (jobId: string, target: number) => {
+    const data = demoldingData[jobId] || { good: 0, defect: 0, reason: '' }
+    if (data.good + data.defect === 0) {
+      toast.error('กรุณาระบุยอดงานดีหรืองานเสีย')
+      return
+    }
+    if (data.defect > 0 && !data.reason) {
+      toast.error('กรุณาระบุสาเหตุของเสีย')
+      return
+    }
+    const photo = photos[`demold-${jobId}`]
+    if (!photo) {
+      toast.error('กรุณาถ่ายภาพยืนยันการถอดแบบ')
+      return
+    }
+    
+    setSaving(true)
+    try {
+      const photoUrl = await uploadPhoto(photo.file, 'demolding')
+      await recordDemoldInspection(jobId, data.good, data.defect, data.reason || undefined, undefined, photoUrl)
+      toast.success('บันทึกผลการถอดแบบสำเร็จ (FG อัปเดตแล้ว)')
+      setExpandedJobId(null)
+      setJobs(prev => prev.filter(j => j.id !== jobId))
+      setPhotos(p => { const newP = {...p}; delete newP[`demold-${jobId}`]; return newP; })
+      setDemoldingData(p => { const newP = {...p}; delete newP[jobId]; return newP; })
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const currentJobs = activeTab === 'pour' ? pourJobs : demoldJobs
+  const handleFastForward = async (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSaving(true)
+    try {
+      await fastForwardCuring(jobId)
+      toast.success('เร่งเวลาสำเร็จ')
+      setJobs(prev => prev.map(j => j.id === jobId ? { ...j, cast_at: new Date(Date.now() - 21 * 60 * 60 * 1000).toISOString() } : j))
+    } catch (err: any) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const getCuringTimeLeft = (castAt: string) => {
+    const castDate = new Date(castAt)
+    const expected = new Date(castDate.getTime() + 20 * 60 * 60 * 1000)
+    const diff = expected.getTime() - now.getTime()
+    if (diff <= 0) return { ready: true, text: 'พร้อมถอดแบบ' }
+    
+    const h = Math.floor(diff / (1000 * 60 * 60))
+    const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+    return { ready: false, text: `เหลือ ${h} ชม. ${m} นาที` }
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Tabs */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, background: '#F3F4F6', borderRadius: 12, padding: 4 }}>
-        {[
-          { key: 'pour' as const,   icon: 'fa-tint',   label: 'ตรวจการเทปูน',  count: pourJobs.length },
-          { key: 'demold' as const, icon: 'fa-hammer', label: 'ตรวจถอดแบบ',    count: demoldJobs.length },
-        ].map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => { setActiveTab(tab.key); resetForm() }}
-            style={{
-              padding: '10px 12px', borderRadius: 9, border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600,
-              background: activeTab === tab.key ? '#fff' : 'transparent',
-              color: activeTab === tab.key ? '#DC2626' : '#6B7280',
-              boxShadow: activeTab === tab.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              transition: 'all 0.15s',
-            }}
-          >
-            <i className={`fas ${tab.icon}`} />
-            {tab.label}
-            {tab.count > 0 && (
-              <span style={{ background: '#DC2626', color: '#fff', borderRadius: '50%', width: 18, height: 18, fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {tab.count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+    <div className="flex-1 w-full h-[100dvh] flex flex-col relative overflow-hidden text-[13px] text-erp-text-primary" 
+      style={{ backgroundColor: '#F8FAFC', fontFamily: '"Inter", "Sarabun", sans-serif' }}>
+      <Toaster position="top-center" toastOptions={{ style: { borderRadius: '16px', fontWeight: 600, fontSize: '14px', padding: '16px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' } }} />
 
-      {/* Job Cards */}
-      {currentJobs.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '48px 0' }}>
-          <i className="fas fa-check-circle" style={{ fontSize: 40, color: '#16A34A', display: 'block', marginBottom: 12 }} />
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>ไม่มีรายการรอตรวจสอบ</p>
-          <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
-            {activeTab === 'pour' ? 'ยังไม่มีการเทคอนกรีต' : 'ยังไม่มีการถอดแบบ'}
-          </p>
+      {/* App Header — Fixed */}
+      <header style={{
+        display: 'flex',
+        alignItems: 'center',
+        padding: '20px 20px 16px',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 50,
+        background: 'linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)',
+      }}>
+        {/* Logo */}
+        <div
+          onClick={() => router.push('/')}
+          style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
+        >
+          <div style={{
+            width: '36px', height: '36px',
+            backgroundColor: '#2563EB',
+            borderRadius: '10px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(37,99,235,0.3)',
+          }}>
+            <i className="fas fa-box" style={{ color: '#fff', fontSize: '14px' }}></i>
+          </div>
+          <span style={{ fontWeight: 900, fontSize: '16px', color: '#1E3A8A', letterSpacing: '-0.3px' }}>
+            PCC<span style={{ color: '#3B82F6' }}>ERP</span>
+          </span>
         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {currentJobs.map(job => {
-            const cfg = STATUS_CONFIG[job.status] ?? { label: job.status, color: '#6B7280', bg: '#F3F4F6' }
-            const product = job.plan_item?.product
-            const isSelected = selectedJob?.id === job.id
 
-            return (
-              <div
-                key={job.id}
-                onClick={() => setSelectedJob(isSelected ? null : job)}
-                style={{
-                  background: '#fff',
-                  border: `2px solid ${isSelected ? '#DC2626' : '#E5E7EB'}`,
-                  borderRadius: 14,
-                  padding: '16px',
-                  cursor: 'pointer',
-                  transition: 'border-color 0.15s, box-shadow 0.15s',
-                  boxShadow: isSelected ? '0 0 0 4px #FEE2E2' : '0 1px 3px rgba(0,0,0,0.06)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                  <div>
-                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#6B7280', textTransform: 'uppercase' }}>
-                      โรงผลิต {job.plan_item?.bed ?? job.bed}
-                    </span>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginTop: 2 }}>
-                      {product?.name ?? '—'}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
-                      {product?.code ?? ''} · {job.worker?.full_name ?? '—'}
-                    </div>
-                  </div>
-                  <span style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, background: cfg.bg, color: cfg.color, flexShrink: 0 }}>
-                    {cfg.label}
-                  </span>
+        <div style={{ flex: 1 }} />
+
+        {/* User Pill & Logout */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            background: 'rgba(255,255,255,0.55)',
+            borderRadius: '99px',
+            border: '1px solid rgba(255,255,255,0.7)',
+            padding: '5px 14px 5px 5px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+          }}>
+            <div style={{
+              width: '38px', height: '38px',
+              borderRadius: '99px',
+              overflow: 'hidden',
+              border: '2px solid #ffffff',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+              flexShrink: 0,
+            }}>
+              <img
+                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(qcName)}&background=random`}
+                alt="Profile"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ fontWeight: 800, fontSize: '13px', color: '#1E293B', lineHeight: '1.2' }}>
+                {qcName}
+              </div>
+              <div style={{ fontSize: '10px', color: '#94A3B8', fontWeight: 700, letterSpacing: '0.04em', marginTop: '1px' }}>
+                พนักงาน QC
+              </div>
+            </div>
+          </div>
+          
+          <button onClick={async () => {
+            const supabase = createClient()
+            await supabase.auth.signOut()
+            router.push('/login')
+          }} style={{
+            width: '40px', height: '40px', borderRadius: '50%', border: 'none', background: '#FEE2E2', color: '#DC2626',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 6px rgba(220,38,38,0.15)'
+          }}>
+            <i className="fas fa-sign-out-alt"></i>
+          </button>
+        </div>
+      </header>
+
+      {/* Content */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px', paddingTop: '100px', paddingBottom: '100px' }}>
+        
+        {/* CASTING TAB */}
+        {activeTab === 'casting' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: 900, color: '#0F172A', margin: 0 }}>งานรอเทคอนกรีต</h2>
+                <p style={{ fontSize: '12px', color: '#64748B', margin: '4px 0 0' }}>รับคอนกรีตครบแล้ว รอถ่ายภาพและเริ่มบ่ม</p>
+              </div>
+              <span style={{ backgroundColor: '#DBEAFE', color: '#1E40AF', padding: '4px 10px', borderRadius: '99px', fontSize: '12px', fontWeight: 800 }}>
+                {castingJobs.length} งาน
+              </span>
+            </div>
+
+            {castingJobs.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 24px', backgroundColor: '#ffffff', borderRadius: '24px', border: '1px dashed #CBD5E1', marginTop: '20px' }}>
+                <div style={{ width: '64px', height: '64px', backgroundColor: '#F1F5F9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                  <i className="fas fa-check-circle" style={{ fontSize: '28px', color: '#94A3B8' }}></i>
                 </div>
-
-                <div style={{ display: 'flex', gap: 12 }}>
-                  {[
-                    { label: 'เป้าหมาย', value: `${job.qty_target} ชิ้น` },
-                    { label: 'หล่อแล้ว', value: `${job.qty_cast} ชิ้น` },
-                  ].map(stat => (
-                    <div key={stat.label} style={{ flex: 1, background: '#F8FAFC', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>{stat.value}</div>
-                      <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 1 }}>{stat.label}</div>
+                <p style={{ fontSize: '15px', fontWeight: 800, color: '#475569', margin: '0 0 4px' }}>ไม่มีงานรอเทคอนกรีต</p>
+                <p style={{ fontSize: '13px', color: '#94A3B8', margin: 0 }}>ตรวจสอบงานถอดแบบในแถบถัดไป</p>
+              </div>
+            ) : (
+              castingJobs.map(job => (
+                <div key={job.id} 
+                  onClick={() => setExpandedJobId(expandedJobId === job.id ? null : job.id)}
+                  style={{ 
+                    backgroundColor: '#ffffff', borderRadius: '20px', padding: '20px', 
+                    boxShadow: expandedJobId === job.id ? '0 10px 25px -5px rgba(0,0,0,0.1)' : '0 4px 6px -1px rgba(0,0,0,0.05)', 
+                    border: expandedJobId === job.id ? '2px solid #3B82F6' : '1px solid #E2E8F0',
+                    transition: 'all 0.2s', cursor: 'pointer'
+                  }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>โรงผลิต {job.plan_item?.bed || job.bed}</span>
+                      <h3 style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A', margin: '4px 0', lineHeight: 1.3, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                        {job.plan_item?.product?.name}
+                        {job.plan_item?.product?.size && <span style={{ fontSize: '12px', fontWeight: 700, color: '#3B82F6', backgroundColor: '#EFF6FF', padding: '2px 8px', borderRadius: '6px', border: '1px solid #BFDBFE' }}>{job.plan_item?.product?.size}</span>}
+                      </h3>
+                      <p style={{ fontSize: '12px', color: '#64748B', margin: 0, fontWeight: 500 }}>เป้าหมาย: <span style={{ color: '#0F172A', fontWeight: 800 }}>{job.qty_target} {job.plan_item?.product?.unit || 'ชิ้น'}</span></p>
                     </div>
-                  ))}
-                  {job.qc_inspection?.pour_inspected_at && (
-                    <div style={{ flex: 1, background: '#F0FDF4', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: '#16A34A' }}>
-                        <i className="fas fa-check" />
+                    <span style={{ backgroundColor: '#FEF3C7', color: '#D97706', padding: '6px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 800, border: '1px solid #FDE68A' }}>
+                      รอเทคอนกรีต
+                    </span>
+                  </div>
+
+                  {expandedJobId === job.id && (
+                    <div style={{ marginTop: '20px', borderTop: '1px solid #F1F5F9', paddingTop: '20px' }} onClick={e => e.stopPropagation()}>
+                      <h4 style={{ fontSize: '13px', fontWeight: 800, color: '#475569', marginBottom: '12px' }}>ถ่ายภาพยืนยันการเท <span style={{ color: '#EF4444' }}>*</span></h4>
+                      <div style={{ backgroundColor: '#F8FAFC', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '10px', position: 'relative', marginBottom: '16px' }}>
+                        {!photos[`casting-${job.id}`] && <input type="file" accept="image/*" capture="environment" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10 }} onChange={e => handlePhotoSelect(e, `casting-${job.id}`)} />}
+                        <div style={{ 
+                          width: '100%', height: '120px', borderRadius: '12px', border: photos[`casting-${job.id}`] ? 'none' : '2px dashed #CBD5E1', 
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
+                          color: '#94A3B8', position: 'relative', overflow: 'hidden'
+                        }}>
+                          {photos[`casting-${job.id}`] ? (
+                            <>
+                              <img src={photos[`casting-${job.id}`].preview} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <button onClick={(e) => removePhoto(`casting-${job.id}`, e)} 
+                                style={{ width: '36px', height: '36px', backgroundColor: 'rgba(239, 68, 68, 0.9)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', top: '8px', right: '8px', border: 'none', cursor: 'pointer', zIndex: 20 }}>
+                                <i className="fas fa-trash" style={{ color: '#ffffff', fontSize: '14px' }}></i>
+                              </button>
+                            </>
+                          ) : (
+                            <><i className="fas fa-camera" style={{ fontSize: '28px', marginBottom: '8px' }}></i><span style={{ fontSize: '11px', fontWeight: 800 }}>แตะเพื่อถ่ายภาพหน้างาน</span></>
+                          )}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 10, color: '#16A34A', marginTop: 1 }}>QC ตรวจเทแล้ว</div>
+
+                      <button disabled={!photos[`casting-${job.id}`] || saving} onClick={() => handleStartCuring(job.id)} 
+                        style={{ 
+                          width: '100%', padding: '16px', borderRadius: '16px', fontWeight: 900, fontSize: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px',
+                          backgroundColor: photos[`casting-${job.id}`] ? '#3B82F6' : '#E2E8F0',
+                          color: photos[`casting-${job.id}`] ? '#ffffff' : '#94A3B8',
+                          border: 'none', cursor: photos[`casting-${job.id}`] ? 'pointer' : 'not-allowed',
+                          boxShadow: photos[`casting-${job.id}`] ? '0 10px 20px -5px rgba(59,130,246,0.4)' : 'none',
+                        }}>
+                        {saving ? <i className="fas fa-spinner fa-spin" style={{ fontSize: '20px' }}></i> : <><i className="fas fa-play" style={{ fontSize: '14px' }}></i> เริ่มบ่ม 20 ชม.</>}
+                      </button>
                     </div>
                   )}
                 </div>
+              ))
+            )}
+          </div>
+        )}
 
-                {/* Inline Form */}
-                {isSelected && (
-                  <div
-                    style={{ marginTop: 16, borderTop: '1px solid #F3F4F6', paddingTop: 16 }}
-                    onClick={e => e.stopPropagation()}
-                  >
-                    {activeTab === 'pour' ? (
-                      /* Pour Form */
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: 0 }}>ผลการตรวจเทคอนกรีต</p>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                          {[
-                            { value: true,  label: '✅ ผ่าน',  bg: pourOk === true ? '#F0FDF4' : '#F8FAFC', border: pourOk === true ? '#16A34A' : '#E5E7EB', color: pourOk === true ? '#16A34A' : '#6B7280' },
-                            { value: false, label: '❌ ไม่ผ่าน', bg: pourOk === false ? '#FEF2F2' : '#F8FAFC', border: pourOk === false ? '#DC2626' : '#E5E7EB', color: pourOk === false ? '#DC2626' : '#6B7280' },
-                          ].map(opt => (
-                            <button
-                              key={String(opt.value)}
-                              onClick={() => setPourOk(opt.value)}
-                              style={{
-                                padding: '12px', borderRadius: 10, border: `2px solid ${opt.border}`,
-                                background: opt.bg, color: opt.color, fontSize: 13, fontWeight: 700,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                        <textarea
-                          placeholder="หมายเหตุ (ถ้ามี)"
-                          value={pourNotes}
-                          onChange={e => setPourNotes(e.target.value)}
-                          rows={2}
-                          style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, resize: 'none', fontFamily: 'inherit', outline: 'none' }}
-                        />
-                        <button
-                          onClick={handlePourSubmit}
-                          disabled={isPending || pourOk === null}
-                          style={{
-                            padding: '12px', borderRadius: 10, background: pourOk === null ? '#F3F4F6' : '#DC2626',
-                            color: pourOk === null ? '#9CA3AF' : '#fff', fontSize: 14, fontWeight: 700,
-                            border: 'none', cursor: pourOk === null ? 'not-allowed' : 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                          }}
-                        >
-                          {isPending ? <i className="fas fa-spinner fa-spin" /> : <i className="fas fa-save" />}
-                          บันทึกผลการตรวจสอบ
-                        </button>
+        {/* DEMOLDING TAB */}
+        {activeTab === 'demolding' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: 900, color: '#0F172A', margin: 0 }}>งานรอถอดแบบ (QC)</h2>
+                <p style={{ fontSize: '12px', color: '#64748B', margin: '4px 0 0' }}>งานที่เทคอนกรีตและกำลังบ่ม</p>
+              </div>
+              <span style={{ backgroundColor: '#F0FDF4', color: '#16A34A', padding: '4px 10px', borderRadius: '99px', fontSize: '12px', fontWeight: 800 }}>
+                {demoldingJobs.length} งาน
+              </span>
+            </div>
+
+            {demoldingJobs.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 24px', backgroundColor: '#ffffff', borderRadius: '24px', border: '1px dashed #CBD5E1', marginTop: '20px' }}>
+                <div style={{ width: '64px', height: '64px', backgroundColor: '#F1F5F9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                  <i className="fas fa-box-open" style={{ fontSize: '28px', color: '#94A3B8' }}></i>
+                </div>
+                <p style={{ fontSize: '15px', fontWeight: 800, color: '#475569', margin: '0 0 4px' }}>ไม่มีงานรอถอดแบบ</p>
+              </div>
+            ) : (
+              demoldingJobs.map(job => {
+                const timer = job.cast_at ? getCuringTimeLeft(job.cast_at) : { ready: true, text: 'พร้อมถอดแบบ' };
+                const entry = demoldingData[job.id] || { good: 0, defect: 0, reason: '' };
+                const isExpanded = expandedJobId === job.id;
+
+                return (
+                  <div key={job.id} 
+                    onClick={() => { if (timer.ready) setExpandedJobId(isExpanded ? null : job.id) }}
+                    style={{ 
+                      backgroundColor: '#ffffff', borderRadius: '20px', padding: '20px', 
+                      boxShadow: isExpanded ? '0 10px 25px -5px rgba(0,0,0,0.1)' : '0 4px 6px -1px rgba(0,0,0,0.05)', 
+                      border: isExpanded ? '2px solid #10B981' : '1px solid #E2E8F0',
+                      transition: 'all 0.2s', cursor: timer.ready ? 'pointer' : 'default',
+                      opacity: timer.ready ? 1 : 0.8
+                    }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>โรงผลิต {job.plan_item?.bed || job.bed}</span>
+                        <h3 style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A', margin: '4px 0', lineHeight: 1.3, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                          {job.plan_item?.product?.name}
+                          {job.plan_item?.product?.size && <span style={{ fontSize: '12px', fontWeight: 700, color: '#3B82F6', backgroundColor: '#EFF6FF', padding: '2px 8px', borderRadius: '6px', border: '1px solid #BFDBFE' }}>{job.plan_item?.product?.size}</span>}
+                        </h3>
+                        <p style={{ fontSize: '12px', color: '#64748B', margin: 0, fontWeight: 500 }}>เป้าหมาย: <span style={{ color: '#0F172A', fontWeight: 800 }}>{job.qty_target} {job.plan_item?.product?.unit || 'ชิ้น'}</span></p>
                       </div>
-                    ) : (
-                      /* Demold Form */
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: 0 }}>บันทึกผลการตรวจถอดแบบ</p>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                          <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                              <label style={{ fontSize: 11, fontWeight: 600, color: '#16A34A', display: 'block' }}>จำนวนดี (ชิ้น)</label>
-                              <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600 }}>เป้า: {job.qty_target}</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', background: '#F0FDF4', borderRadius: 8, padding: 4, border: '2px solid #16A34A' }}>
-                              <button type="button" onClick={() => setDemoldGood(p => Math.max(0, (parseInt(p)||0)-1).toString())} style={{ width: 36, height: 36, borderRadius: 6, border: 'none', background: '#fff', color: '#16A34A', fontSize: 18, cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>-</button>
-                              <input
-                                type="number" min={0} value={demoldGood}
-                                onChange={e => setDemoldGood(e.target.value)}
-                                placeholder="0"
-                                style={{ flex: 1, width: '100%', padding: '0 4px', border: 'none', background: 'transparent', fontSize: 20, fontWeight: 800, fontFamily: 'monospace', textAlign: 'center', outline: 'none', color: '#16A34A' }}
-                              />
-                              <button type="button" onClick={() => setDemoldGood(p => ((parseInt(p)||0)+1).toString())} style={{ width: 36, height: 36, borderRadius: 6, border: 'none', background: '#fff', color: '#16A34A', fontSize: 18, cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>+</button>
-                            </div>
-                            <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                              <button type="button" onClick={() => setDemoldGood(job.qty_target.toString())} style={{ flex: 1, padding: '4px', fontSize: 10, background: '#DCFCE7', color: '#16A34A', border: 'none', borderRadius: 4, fontWeight: 600, cursor: 'pointer' }}>ALL ({job.qty_target})</button>
-                              <button type="button" onClick={() => setDemoldGood(p => ((parseInt(p)||0)+5).toString())} style={{ flex: 1, padding: '4px', fontSize: 10, background: '#DCFCE7', color: '#16A34A', border: 'none', borderRadius: 4, fontWeight: 600, cursor: 'pointer' }}>+5</button>
-                            </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                        {timer.ready ? (
+                          <span style={{ backgroundColor: '#D1FAE5', color: '#047857', padding: '6px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 800, border: '1px solid #A7F3D0', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <i className="fas fa-check-circle"></i> พร้อมถอดแบบ
+                          </span>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <button onClick={(e) => handleFastForward(job.id, e)} style={{ backgroundColor: '#F1F5F9', border: '1px solid #CBD5E1', padding: '6px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: 800, color: '#475569', cursor: 'pointer', zIndex: 10 }}>
+                              <i className="fas fa-forward"></i> เร่งเวลา
+                            </button>
+                            <span style={{ backgroundColor: '#FEF3C7', color: '#D97706', padding: '6px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 800, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <i className="fas fa-clock"></i> {timer.text}
+                            </span>
                           </div>
-                          <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                              <label style={{ fontSize: 11, fontWeight: 600, color: '#DC2626', display: 'block' }}>จำนวนเสีย (ชิ้น)</label>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', background: '#FEF2F2', borderRadius: 8, padding: 4, border: '2px solid #DC2626' }}>
-                              <button type="button" onClick={() => setDemoldDefect(p => Math.max(0, (parseInt(p)||0)-1).toString())} style={{ width: 36, height: 36, borderRadius: 6, border: 'none', background: '#fff', color: '#DC2626', fontSize: 18, cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>-</button>
-                              <input
-                                type="number" min={0} value={demoldDefect}
-                                onChange={e => setDemoldDefect(e.target.value)}
-                                placeholder="0"
-                                style={{ flex: 1, width: '100%', padding: '0 4px', border: 'none', background: 'transparent', fontSize: 20, fontWeight: 800, fontFamily: 'monospace', textAlign: 'center', outline: 'none', color: '#DC2626' }}
-                              />
-                              <button type="button" onClick={() => setDemoldDefect(p => ((parseInt(p)||0)+1).toString())} style={{ width: 36, height: 36, borderRadius: 6, border: 'none', background: '#fff', color: '#DC2626', fontSize: 18, cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>+</button>
-                            </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {isExpanded && timer.ready && (
+                      <div style={{ marginTop: '20px', borderTop: '1px solid #F1F5F9', paddingTop: '20px' }} onClick={e => e.stopPropagation()}>
+                        
+                        {/* Good Counter */}
+                        <div style={{ backgroundColor: '#F0FDF4', borderRadius: '16px', padding: '16px', border: '1px solid rgba(16, 185, 129, 0.2)', marginBottom: '16px' }}>
+                          <label style={{ fontWeight: 900, color: '#047857', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
+                            <i className="fas fa-check-circle" style={{ fontSize: '16px' }}></i> ยอดงานดี (QC PASS)
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#ffffff', borderRadius: '12px', padding: '8px', border: '1px solid #A7F3D0' }}>
+                            <button type="button" onClick={() => handleDemoldingAdjust(job.id, 'good', -1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#F0FDF4', borderRadius: '10px', color: '#059669', fontSize: '20px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-minus"></i></button>
+                            <input type="number" readOnly value={entry.good} style={{ width: '80px', backgroundColor: 'transparent', textAlign: 'center', fontSize: '36px', fontWeight: 900, color: '#065F46', outline: 'none', border: 'none' }} />
+                            <button type="button" onClick={() => handleDemoldingAdjust(job.id, 'good', 1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#F0FDF4', borderRadius: '10px', color: '#059669', fontSize: '20px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
                           </div>
                         </div>
-                        {parseInt(demoldDefect) > 0 && (
-                          <>
-                            <select
-                              value={defectReason}
-                              onChange={e => setDefectReason(e.target.value)}
-                              style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
-                            >
-                              <option value="">-- เลือกสาเหตุของเสีย --</option>
-                              {DEFECT_OPTIONS.map(o => (
-                                <option key={o.value} value={o.value}>{o.label}</option>
-                              ))}
-                            </select>
-                            <textarea
-                              placeholder="รายละเอียดเพิ่มเติม"
-                              value={defectDetail}
-                              onChange={e => setDefectDetail(e.target.value)}
-                              rows={2}
-                              style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 13, resize: 'none', fontFamily: 'inherit', outline: 'none' }}
-                            />
-                          </>
-                        )}
-                        <button
-                          onClick={handleDemoldSubmit}
-                          disabled={isPending || !demoldGood}
-                          style={{
-                            padding: '12px', borderRadius: 10, background: !demoldGood ? '#F3F4F6' : '#DC2626',
-                            color: !demoldGood ? '#9CA3AF' : '#fff', fontSize: 14, fontWeight: 700,
-                            border: 'none', cursor: !demoldGood ? 'not-allowed' : 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                          }}
-                        >
-                          {isPending ? <i className="fas fa-spinner fa-spin" /> : <i className="fas fa-clipboard-check" />}
-                          บันทึกผลการตรวจถอดแบบ
+
+                        {/* Defect Counter */}
+                        <div style={{ backgroundColor: '#FEF2F2', borderRadius: '16px', padding: '16px', border: '1px solid rgba(239, 68, 68, 0.2)', marginBottom: '20px' }}>
+                          <label style={{ fontWeight: 900, color: '#DC2626', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
+                            <i className="fas fa-heart-broken" style={{ fontSize: '16px' }}></i> ยอดของเสีย (DEFECT)
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#ffffff', borderRadius: '12px', padding: '8px', border: '1px solid #FECACA', marginBottom: entry.defect > 0 ? '16px' : '0' }}>
+                            <button type="button" onClick={() => handleDemoldingAdjust(job.id, 'defect', -1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#FEF2F2', borderRadius: '10px', color: '#EF4444', fontSize: '20px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-minus"></i></button>
+                            <input type="number" readOnly value={entry.defect} style={{ width: '80px', backgroundColor: 'transparent', textAlign: 'center', fontSize: '36px', fontWeight: 900, color: '#B91C1C', outline: 'none', border: 'none' }} />
+                            <button type="button" onClick={() => handleDemoldingAdjust(job.id, 'defect', 1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#FEF2F2', borderRadius: '10px', color: '#EF4444', fontSize: '20px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
+                          </div>
+                          {entry.defect > 0 && (
+                            <div>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: 900, color: '#991B1B', marginBottom: '6px' }}>ระบุสาเหตุความเสียหาย <span style={{ color: '#EF4444' }}>*</span></label>
+                              <select value={entry.reason} onChange={e => setDemoldingData(p => ({...p, [job.id]: {...p[job.id], reason: e.target.value}}))} 
+                                style={{ width: '100%', backgroundColor: '#ffffff', border: '1px solid #FECACA', color: '#0F172A', borderRadius: '12px', padding: '12px', outline: 'none', fontSize: '14px', fontWeight: 700 }}>
+                                <option value="" disabled>-- เลือกสาเหตุ --</option>
+                                {DEFECT_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Photo */}
+                        <h4 style={{ fontSize: '13px', fontWeight: 800, color: '#475569', marginBottom: '12px' }}>ถ่ายภาพยืนยันการถอดแบบ <span style={{ color: '#EF4444' }}>*</span></h4>
+                        <div style={{ backgroundColor: '#F8FAFC', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '10px', position: 'relative', marginBottom: '20px' }}>
+                          {!photos[`demold-${job.id}`] && <input type="file" accept="image/*" capture="environment" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10 }} onChange={e => handlePhotoSelect(e, `demold-${job.id}`)} />}
+                          <div style={{ 
+                            width: '100%', height: '120px', borderRadius: '12px', border: photos[`demold-${job.id}`] ? 'none' : '2px dashed #CBD5E1', 
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
+                            color: '#94A3B8', position: 'relative', overflow: 'hidden'
+                          }}>
+                            {photos[`demold-${job.id}`] ? (
+                              <>
+                                <img src={photos[`demold-${job.id}`].preview} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <button onClick={(e) => removePhoto(`demold-${job.id}`, e)} 
+                                  style={{ width: '36px', height: '36px', backgroundColor: 'rgba(239, 68, 68, 0.9)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', top: '8px', right: '8px', border: 'none', cursor: 'pointer', zIndex: 20 }}>
+                                  <i className="fas fa-trash" style={{ color: '#ffffff', fontSize: '14px' }}></i>
+                                </button>
+                              </>
+                            ) : (
+                              <><i className="fas fa-camera" style={{ fontSize: '28px', marginBottom: '8px' }}></i><span style={{ fontSize: '11px', fontWeight: 800 }}>แตะเพื่อถ่ายภาพสินค้า</span></>
+                            )}
+                          </div>
+                        </div>
+
+                        <button disabled={saving || !photos[`demold-${job.id}`] || (entry.good + entry.defect === 0)} onClick={() => handleDemoldSubmit(job.id, job.qty_target)} 
+                          style={{ 
+                            width: '100%', padding: '16px', borderRadius: '16px', fontWeight: 900, fontSize: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px',
+                            backgroundColor: photos[`demold-${job.id}`] && (entry.good + entry.defect > 0) ? '#10B981' : '#E2E8F0',
+                            color: photos[`demold-${job.id}`] && (entry.good + entry.defect > 0) ? '#ffffff' : '#94A3B8',
+                            border: 'none', cursor: photos[`demold-${job.id}`] && (entry.good + entry.defect > 0) ? 'pointer' : 'not-allowed',
+                            boxShadow: photos[`demold-${job.id}`] && (entry.good + entry.defect > 0) ? '0 10px 20px -5px rgba(16,185,129,0.4)' : 'none',
+                          }}>
+                          {saving ? <i className="fas fa-spinner fa-spin" style={{ fontSize: '20px' }}></i> : <><i className="fas fa-clipboard-check" style={{ fontSize: '16px' }}></i> สรุปและยืนยันข้อมูล</>}
                         </button>
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
+                )
+              })
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Navigation */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', backgroundColor: '#ffffff', padding: '12px 20px 24px', display: 'flex', justifyContent: 'space-between', boxShadow: '0 -10px 30px rgba(0,0,0,0.05)', zIndex: 40, borderTop: '1px solid rgba(0,0,0,0.02)' }}>
+        {[
+          { id: 'casting', label: 'ตรวจการเท', icon: 'fa-truck-monster' },
+          { id: 'demolding', label: 'ตรวจถอดแบบ', icon: 'fa-box-open' },
+          { id: 'logout', label: 'ออกจากระบบ', icon: 'fa-sign-out-alt' }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={async () => {
+              if (tab.id === 'logout') {
+                const supabase = createClient()
+                await supabase.auth.signOut()
+                router.push('/login')
+              } else {
+                setActiveTab(tab.id as any)
+                setExpandedJobId(null)
+              }
+            }}
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
+              backgroundColor: 'transparent', border: 'none', cursor: 'pointer',
+              color: activeTab === tab.id ? '#3B82F6' : '#94A3B8',
+              transition: 'all 0.2s', position: 'relative'
+            }}
+          >
+            {activeTab === tab.id && <div style={{ position: 'absolute', top: '-14px', width: '24px', height: '4px', backgroundColor: '#3B82F6', borderRadius: '0 0 4px 4px' }}></div>}
+            <i className={`fas ${tab.icon}`} style={{ fontSize: '20px', transition: 'all 0.2s', transform: activeTab === tab.id ? 'scale(1.15)' : 'scale(1)' }}></i>
+            <span style={{ fontSize: '11px', fontWeight: activeTab === tab.id ? 800 : 600 }}>{tab.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo } from 'react'
+import { useState, useTransition, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { clearOldPlanData } from '@/app/actions/planner'
@@ -159,6 +159,26 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
       (!selSize || (p.size || '-') === selSize)
     )
   }, [products, selCat, selName, selSize])
+
+  // Auto-select unique options to save time
+  useEffect(() => {
+    if (selCat) {
+      // 1. Auto-select Name if unique
+      if (!selName && names.length === 1) {
+        setSelName(names[0]);
+      }
+      
+      // 2. Auto-select Size if Name is set (manually or auto) and Size is unique
+      if (selName && !selSize && sizes.length === 1) {
+        setSelSize(sizes[0]);
+      }
+      
+      // 3. Auto-select Code if Size is set (manually or auto) and Code is unique
+      if (selSize && !selCode && codes.length === 1) {
+        setSelCode(codes[0].code);
+      }
+    }
+  }, [selCat, selName, selSize, names, sizes, codes, selCode])
 
   const selectedProduct = products.find(p => p.code === selCode)
 
