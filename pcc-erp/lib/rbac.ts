@@ -22,7 +22,7 @@ export const DEFAULT_PATH: Record<UserRole, string> = {
   concrete:  '/dashboard',
   warehouse: '/dashboard',
   qc:        '/qc-inspect',    // redirect ไป mobile QC layout
-  worker:    '/unauthorized', // worker ต้องเข้าผ่าน QR เท่านั้น
+  worker:    '/worker',        // redirect ไป mobile Worker layout
 }
 
 // Roles ที่ใช้ Desktop/Admin layout (มี Sidebar)

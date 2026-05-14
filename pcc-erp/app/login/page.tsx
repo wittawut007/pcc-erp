@@ -41,18 +41,8 @@ export default function LoginPage() {
     }
 
     // Worker ถูก Block — ไม่อนุญาตให้ Login ผ่านหน้านี้
-    if (role === 'worker') {
-      if (process.env.NODE_ENV === 'development') {
-        // ข้อยกเว้นสำหรับ Dev ให้ Login เข้าสู่ระบบ Worker ได้เลย
-        router.push('/worker')
-        router.refresh()
-        return
-      }
-      await supabase.auth.signOut()
-      setWorkerBlocked(true)
-      setLoading(false)
-      return
-    }
+    // (ตอนนี้เปิดให้ล็อกอินได้แล้วตาม Flow ใหม่)
+    // if (role === 'worker') { ... }
 
     router.push('/dashboard')
     router.refresh()
@@ -85,24 +75,35 @@ export default function LoginPage() {
       </div>
 
       {/* Right Column — Login Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12">
-        <div className="w-full max-w-[420px]">
-
-          {/* Header */}
-          <div className="text-center flex flex-col items-center" style={{ marginBottom: '60px' }}>
-            <div className="bg-blue-600 flex items-center justify-center shadow-md overflow-hidden relative" style={{ width: '52px', height: '52px', borderRadius: '14px', marginBottom: '20px' }}>
+      <div 
+        className="w-full lg:w-1/2" 
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          padding: '40px 24px', 
+          boxSizing: 'border-box', 
+          minHeight: '100dvh',
+          backgroundColor: '#ffffff'
+        }}
+      >
+        <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto' }}>
+          <div className="text-center flex flex-col items-center" style={{ marginBottom: '50px' }}>
+            <div className="bg-blue-600 flex items-center justify-center shadow-lg overflow-hidden relative" style={{ width: '84px', height: '84px', borderRadius: '20px', marginBottom: '20px' }}>
               <img 
-                src="/logo.png" 
-                alt="TP Logo" 
-                style={{ width: '36px', height: '36px', objectFit: 'contain' }}
+                src="/logo.png?v=2" 
+                alt="PCC Logo" 
+                style={{ width: '64px', height: '64px', objectFit: 'contain' }}
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = 'none';
-                  e.currentTarget.parentElement?.insertAdjacentHTML('beforeend', '<i class="fas fa-industry text-white text-xl"></i>');
+                  e.currentTarget.parentElement?.insertAdjacentHTML('beforeend', '<i class="fas fa-industry text-white" style="font-size: 36px"></i>');
                 }}
               />
             </div>
-            <h2 className="text-slate-900 tracking-tight font-bold" style={{ fontSize: '26px', marginBottom: '6px' }}>เข้าสู่ระบบ</h2>
-            <p className="text-slate-400 font-medium tracking-wide" style={{ fontSize: '13px' }}>ยินดีต้อนรับกลับ! โปรดกรอกข้อมูลเพื่อเข้าใช้งานระบบ</p>
+            <h2 className="tracking-tight font-black" style={{ fontSize: '28px', letterSpacing: '0.02em' }}>
+              <span style={{ color: '#0F172A' }}>PCC</span>
+              <span style={{ color: '#2563EB', marginLeft: '6px' }}>ERP</span>
+            </h2>
           </div>
 
           {/* Worker Blocked Alert */}
@@ -144,9 +145,9 @@ export default function LoginPage() {
               >
                 ชื่อผู้ใช้งาน (USERNAME)
               </label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-5 flex items-center text-slate-300">
-                  <i className="fas fa-user text-[13px]"></i>
+              <div style={{ position: 'relative', width: '100%' }}>
+                <span style={{ position: 'absolute', top: 0, bottom: 0, left: '16px', display: 'flex', alignItems: 'center', color: '#94A3B8' }}>
+                  <i className="fas fa-user" style={{ fontSize: '13px' }}></i>
                 </span>
                 <input
                   id="email"
@@ -155,8 +156,22 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your username"
                   required
-                  className="w-full pr-4 rounded-lg border border-blue-50 bg-[#EEF4FF] outline-none transition-all text-gray-800 placeholder:text-slate-300 font-medium focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                  style={{ paddingLeft: '48px', paddingTop: '12px', paddingBottom: '12px', fontSize: '13px', height: '46px' }}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px 12px 42px',
+                    fontSize: '13px',
+                    height: '48px',
+                    borderRadius: '99px',
+                    border: '1px solid #EFF6FF',
+                    backgroundColor: '#EEF4FF',
+                    color: '#1E293B',
+                    fontWeight: 500,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                    transition: 'border-color 0.2s'
+                  }}
+                  onFocus={(e) => e.target.style.border = '1px solid #2563EB'}
+                  onBlur={(e) => e.target.style.border = '1px solid #EFF6FF'}
                 />
               </div>
             </div>
@@ -170,9 +185,9 @@ export default function LoginPage() {
               >
                 รหัสผ่าน (PASSWORD)
               </label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-5 flex items-center text-slate-300">
-                  <i className="fas fa-lock text-[13px]"></i>
+              <div style={{ position: 'relative', width: '100%' }}>
+                <span style={{ position: 'absolute', top: 0, bottom: 0, left: '16px', display: 'flex', alignItems: 'center', color: '#94A3B8' }}>
+                  <i className="fas fa-lock" style={{ fontSize: '13px' }}></i>
                 </span>
                 <input
                   id="password"
@@ -181,15 +196,29 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full pr-12 rounded-lg border border-blue-50 bg-[#EEF4FF] outline-none transition-all text-gray-800 placeholder:text-slate-300 font-medium focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                  style={{ paddingLeft: '48px', paddingTop: '12px', paddingBottom: '12px', fontSize: '13px', height: '46px' }}
+                  style={{
+                    width: '100%',
+                    padding: '12px 42px 12px 42px',
+                    fontSize: '13px',
+                    height: '48px',
+                    borderRadius: '99px',
+                    border: '1px solid #EFF6FF',
+                    backgroundColor: '#EEF4FF',
+                    color: '#1E293B',
+                    fontWeight: 500,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                    transition: 'border-color 0.2s'
+                  }}
+                  onFocus={(e) => e.target.style.border = '1px solid #2563EB'}
+                  onBlur={(e) => e.target.style.border = '1px solid #EFF6FF'}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
-                  className="absolute inset-y-0 right-0 pr-5 flex items-center text-slate-300 hover:text-slate-400"
+                  style={{ position: 'absolute', top: 0, bottom: 0, right: '20px', display: 'flex', alignItems: 'center', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                 >
-                  <i className={`fas ${showPass ? 'fa-eye-slash' : 'fa-eye'} text-xs`}></i>
+                  <i className={`fas ${showPass ? 'fa-eye-slash' : 'fa-eye'}`} style={{ fontSize: '13px' }}></i>
                 </button>
               </div>
             </div>
@@ -209,8 +238,23 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex justify-center items-center gap-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-md shadow-blue-600/20"
-              style={{ fontWeight: 700, fontSize: '13px', height: '46px' }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: '8px',
+                borderRadius: '99px',
+                color: '#ffffff',
+                backgroundColor: loading ? '#93C5FD' : '#2563EB',
+                fontWeight: 700,
+                fontSize: '14px',
+                height: '48px',
+                border: 'none',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                boxShadow: '0 8px 24px rgba(37,99,235,0.25)',
+                boxSizing: 'border-box'
+              }}
             >
               {loading ? (
                 <>
@@ -218,10 +262,9 @@ export default function LoginPage() {
                   <span>กำลังเข้าสู่ระบบ...</span>
                 </>
               ) : (
-                <span>เข้าสู่ระบบ (Sign in)</span>
+                <span>เข้าสู่ระบบ</span>
               )}
             </button>
-            
             {/* Quick Login for Dev */}
             {process.env.NODE_ENV === 'development' && (
               <div className="mt-4 border-t border-slate-200 pt-6">

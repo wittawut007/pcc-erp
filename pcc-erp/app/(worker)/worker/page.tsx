@@ -57,7 +57,7 @@ export default async function WorkerPage() {
         product:products(id, code, name, category, size, unit, concrete_per_unit, wire_per_unit, mesh_per_unit, rebar_per_unit)
       )
     `)
-    .in('status', ['pending', 'ready_demold', 'curing', 'casting'])
+    .eq('status', 'pending')
     .in('plan_item_id', planItemIds.length > 0 ? planItemIds : ['dummy'])
   
   return (

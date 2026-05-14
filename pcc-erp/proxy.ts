@@ -51,72 +51,51 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // ─── กรณี B: Worker App Route ─────────────────────────────────────────────
-  // /worker → ต้องมี cookie worker_session ที่ valid
-  if (path === '/worker' || path.startsWith('/worker/')) {
-    const workerSession = request.cookies.get('worker_session')?.value
-    if (!workerSession) {
-      return NextResponse.redirect(new URL('/unauthorized?reason=no_qr', request.url))
-    }
-
-    // Validate cookie token ยังอยู่ใน DB
-    try {
-      const adminSupabase = createAdminClient(supabaseUrl, serviceRoleKey || supabaseKey)
-      const { data: profile } = await adminSupabase
-        .from('profiles')
-        .select('id, is_active, worker_token')
-        .eq('worker_token', workerSession)
-        .single()
-
-      if (!profile || !profile.is_active) {
-        const response = NextResponse.redirect(new URL('/unauthorized?reason=invalid_qr', request.url))
-        response.cookies.delete('worker_session')
-        return response
-      }
-    } catch {
-      return NextResponse.redirect(new URL('/unauthorized?reason=invalid_qr', request.url))
-    }
-
-    return NextResponse.next()
-  }
-
-  // ─── กรณี C: QC Mobile Route ──────────────────────────────────────────────
-  // /qc → ต้องมี Session ปกติ + role = 'qc'
-  if (path === '/qc-inspect' || path.startsWith('/qc-inspect/')) {
-    let supabaseResponseQC = NextResponse.next({ request })
-    const supabaseQC = createServerClient(supabaseUrl, supabaseKey, {
+  // ─── กรณี C: Mobile Route (QC & Worker) ──────────────────────────────────────────────
+  // /qc-inspect และ /worker → ต้องมี Session ปกติ
+  if (path === '/qc-inspect' || path.startsWith('/qc-inspect/') || path === '/worker' || path.startsWith('/worker/')) {
+    let supabaseResponseMobile = NextResponse.next({ request })
+    const supabaseMobile = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
         getAll() { return request.cookies.getAll() },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponseQC = NextResponse.next({ request })
+          supabaseResponseMobile = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponseQC.cookies.set(name, value, options)
+            supabaseResponseMobile.cookies.set(name, value, options)
           )
         },
       },
     })
 
-    const { data: { user } } = await supabaseQC.auth.getUser()
+    const { data: { user } } = await supabaseMobile.auth.getUser()
     if (!user) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
     try {
-      const { data: profile } = await supabaseQC
+      const { data: profile } = await supabaseMobile
         .from('profiles')
         .select('role, is_active')
         .eq('id', user.id)
         .single()
 
-      if (!profile || !profile.is_active || (profile.role !== 'qc' && profile.role !== 'admin')) {
+      if (!profile || !profile.is_active) {
+        return NextResponse.redirect(new URL('/unauthorized?reason=forbidden', request.url))
+      }
+
+      // Check specific role
+      if (path.startsWith('/qc-inspect') && profile.role !== 'qc' && profile.role !== 'admin') {
+        return NextResponse.redirect(new URL('/unauthorized?reason=forbidden', request.url))
+      }
+      if (path.startsWith('/worker') && profile.role !== 'worker' && profile.role !== 'admin') {
         return NextResponse.redirect(new URL('/unauthorized?reason=forbidden', request.url))
       }
     } catch {
       return NextResponse.redirect(new URL('/unauthorized?reason=forbidden', request.url))
     }
 
-    return supabaseResponseQC
+    return supabaseResponseMobile
   }
 
   // ─── กรณี D: Admin/Standard Desktop Routes ───────────────────────────────
@@ -171,9 +150,9 @@ export async function proxy(request: NextRequest) {
 
       const role = (profile?.role ?? 'admin') as UserRole
 
-      // Worker login ผ่าน /login ปกติ → ไม่อนุญาต
+      // Worker → redirect ไป mobile route
       if (role === 'worker') {
-        return NextResponse.redirect(new URL('/unauthorized?reason=worker_login', request.url))
+        return NextResponse.redirect(new URL('/worker', request.url))
       }
 
       // QC → redirect ไป mobile route

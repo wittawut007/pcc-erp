@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useCallback } from 'react'
+import { useState, useTransition, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supplyConcreteRound, deleteConcreteOrder } from '@/app/actions/concrete'
 import toast from 'react-hot-toast'
@@ -314,6 +314,22 @@ export default function ConcreteClient({ pending: initialPending, history: initi
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
   const [historyDate, setHistoryDate] = useState(selectedDate)
   const [isPending, startTransition] = useTransition()
+
+  // Sync local state when server data updates via router.refresh()
+  useEffect(() => {
+    setPendingOrders(initialPending)
+  }, [initialPending])
+
+  // Auto-refresh every 8 seconds for real-time queue updates
+  useEffect(() => {
+    if (tab === 'history') return
+    const interval = setInterval(() => {
+      startTransition(() => {
+        router.refresh()
+      })
+    }, 8000)
+    return () => clearInterval(interval)
+  }, [router, tab])
 
   const totalPending = pendingOrders.reduce((s, o) => s + (o.rounds ?? []).filter(r => r.status === 'pending').length, 0)
   const todaySupplied = initialHistory.filter(o => o.status === 'supplied').length

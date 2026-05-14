@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import { receiveConcreteRound } from '@/app/actions/concrete'
-import MobileLogoutButton from '@/components/shared/MobileLogoutButton'
 
 interface Job {
   id: string
@@ -109,14 +108,16 @@ export default function WorkerClient({
   }, [jobOrders, planItemToPlanMap])
 
   useEffect(() => {
+    toast.success("✅ ระบบพร้อมใช้งาน (React กำลังทำงาน!)", { id: 'debug-toast' })
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         supabase.from('profiles').select('full_name, role').eq('id', user.id).single()
           .then(({ data }) => {
             if (data) setUserProfile({ full_name: data.full_name, role: data.role })
           })
+          .catch((err) => console.error("Profile fetch error:", err))
       }
-    })
+    }).catch((err) => console.error("Auth error:", err))
   }, [supabase])
 
 
@@ -211,6 +212,7 @@ export default function WorkerClient({
       await fetchActiveConcreteOrders()
       setActiveTab('receiveConcreteTab')
       toast.success('ส่งคำสั่งคอนกรีตเรียบร้อย!')
+      router.refresh()
     } catch (e: any) {
       toast.error('เกิดข้อผิดพลาด: ' + e.message)
     } finally {
@@ -367,8 +369,6 @@ export default function WorkerClient({
                 </div>
               </div>
             </div>
-            
-            <MobileLogoutButton />
           </div>
         </header>
 
@@ -1018,15 +1018,13 @@ export default function WorkerClient({
           position: 'fixed',
           bottom: 0, left: 0,
           width: '100%',
-          backgroundColor: '#ffffff',
+          background: 'linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,0.85) 35%, rgba(255,255,255,1) 100%)',
           display: 'flex',
           justifyContent: 'space-around',
           alignItems: 'flex-end',
-          paddingTop: '10px',
+          paddingTop: '30px',
           paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
           zIndex: 20,
-          borderRadius: '24px 24px 0 0',
-          boxShadow: '0 -4px 30px rgba(0,0,0,0.06)',
         }}>
 
 
@@ -1074,8 +1072,8 @@ export default function WorkerClient({
           {/* Tab: ออกจากระบบ */}
           <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/login'; }}
             style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', paddingTop: '4px' }}>
-            <i className="fas fa-sign-out-alt" style={{ fontSize: '20px', color: '#94A3B8', marginBottom: '4px' }}></i>
-            <span style={{ fontSize: '10px', fontWeight: 700, color: '#94A3B8' }}>ออกจากระบบ</span>
+            <i className="fas fa-sign-out-alt" style={{ fontSize: '20px', color: '#EF4444', marginBottom: '4px' }}></i>
+            <span style={{ fontSize: '10px', fontWeight: 700, color: '#EF4444' }}>ออกจากระบบ</span>
           </button>
         </nav>
     </div>

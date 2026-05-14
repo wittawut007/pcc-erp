@@ -48,6 +48,7 @@ export default function ProductionOrderPrintClient({
   const printRef = useRef<HTMLDivElement>(null)
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('')
   const [isExporting, setIsExporting] = useState<'pdf' | 'png' | null>(null)
+  const [tunnelUrl, setTunnelUrl] = useState<string>('http://192.168.1.142:3000')
   const [qrUrl, setQrUrl] = useState<string>(`https://pcc-erp.app/orders/${orderNumber}`)
 
   const totalQty = items.reduce((s, i) => s + i.qty, 0)
@@ -55,13 +56,14 @@ export default function ProductionOrderPrintClient({
 
   useEffect(() => {
     // Generate URL on client-side only to prevent SSR Hydration Mismatch
-    const currentUrl = `${window.location.origin}/worker-entry?token=${workerToken}`
+    const baseUrl = tunnelUrl.trim() !== '' ? tunnelUrl.trim() : window.location.origin
+    const currentUrl = `${baseUrl.replace(/\/$/, '')}/worker`
     setQrUrl(currentUrl)
 
     QRCode.toDataURL(currentUrl, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
       .then((url) => setQrCodeDataUrl(url))
       .catch(console.error)
-  }, [workerToken])
+  }, [tunnelUrl])
 
   const handleDownloadPDF = async () => {
     const element = printRef.current
@@ -394,6 +396,22 @@ export default function ProductionOrderPrintClient({
             zIndex: 100,
           }}
         >
+          {/* Tunnel URL Input for Testing */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: 20 }}>
+            <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600 }}>Tunnel:</span>
+            <input 
+              type="text" 
+              value={tunnelUrl}
+              onChange={(e) => setTunnelUrl(e.target.value)}
+              placeholder="https://..."
+              style={{
+                background: 'transparent', border: 'none', color: '#fff', fontSize: 12, width: 200, outline: 'none'
+              }}
+            />
+          </div>
+
+          <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
+
           {/* Download PDF */}
           <button
             onClick={handleDownloadPDF}

@@ -77,7 +77,6 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
     try {
       const photoUrl = await uploadPhoto(photo.file, 'casting')
       await startCuring(jobId, photoUrl)
-      toast.success('ยืนยันการเท และเริ่มนับเวลาบ่ม 20 ชม.')
       setExpandedJobId(null)
       // Optimistic update
       setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'curing', cast_at: new Date().toISOString() } : j))
@@ -95,13 +94,12 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
       let newGood = current.good
       let newDefect = current.defect
 
+      if (change > 0 && current.good + current.defect >= target) {
+        return prev;
+      }
+
       if (field === 'good') newGood = Math.max(0, newGood + change)
       else newDefect = Math.max(0, newDefect + change)
-
-      if (newGood + newDefect > target) {
-        if (field === 'good') newDefect = Math.max(0, target - newGood)
-        if (field === 'defect') newGood = Math.max(0, target - newDefect)
-      }
 
       return { ...prev, [jobId]: { ...current, good: newGood, defect: newDefect } }
     })
@@ -127,7 +125,6 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
     try {
       const photoUrl = await uploadPhoto(photo.file, 'demolding')
       await recordDemoldInspection(jobId, data.good, data.defect, data.reason || undefined, undefined, photoUrl)
-      toast.success('บันทึกผลการถอดแบบสำเร็จ (FG อัปเดตแล้ว)')
       setExpandedJobId(null)
       setJobs(prev => prev.filter(j => j.id !== jobId))
       setPhotos(p => { const newP = {...p}; delete newP[`demold-${jobId}`]; return newP; })
@@ -166,7 +163,7 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
 
   return (
     <div className="flex-1 w-full h-[100dvh] flex flex-col relative overflow-hidden text-[13px] text-erp-text-primary" 
-      style={{ backgroundColor: '#F8FAFC', fontFamily: '"Inter", "Sarabun", sans-serif' }}>
+      style={{ background: 'linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)' }}>
       <Toaster position="top-center" toastOptions={{ style: { borderRadius: '16px', fontWeight: 600, fontSize: '14px', padding: '16px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' } }} />
 
       {/* App Header — Fixed */}
@@ -235,17 +232,6 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
               </div>
             </div>
           </div>
-          
-          <button onClick={async () => {
-            const supabase = createClient()
-            await supabase.auth.signOut()
-            router.push('/login')
-          }} style={{
-            width: '40px', height: '40px', borderRadius: '50%', border: 'none', background: '#FEE2E2', color: '#DC2626',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 6px rgba(220,38,38,0.15)'
-          }}>
-            <i className="fas fa-sign-out-alt"></i>
-          </button>
         </div>
       </header>
 
@@ -364,6 +350,7 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
                 const timer = job.cast_at ? getCuringTimeLeft(job.cast_at) : { ready: true, text: 'พร้อมถอดแบบ' };
                 const entry = demoldingData[job.id] || { good: 0, defect: 0, reason: '' };
                 const isExpanded = expandedJobId === job.id;
+                const isMaxedOut = entry.good + entry.defect >= job.qty_target;
 
                 return (
                   <div key={job.id} 
@@ -413,7 +400,7 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#ffffff', borderRadius: '12px', padding: '8px', border: '1px solid #A7F3D0' }}>
                             <button type="button" onClick={() => handleDemoldingAdjust(job.id, 'good', -1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#F0FDF4', borderRadius: '10px', color: '#059669', fontSize: '20px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-minus"></i></button>
                             <input type="number" readOnly value={entry.good} style={{ width: '80px', backgroundColor: 'transparent', textAlign: 'center', fontSize: '36px', fontWeight: 900, color: '#065F46', outline: 'none', border: 'none' }} />
-                            <button type="button" onClick={() => handleDemoldingAdjust(job.id, 'good', 1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#F0FDF4', borderRadius: '10px', color: '#059669', fontSize: '20px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
+                            <button type="button" disabled={isMaxedOut} onClick={() => handleDemoldingAdjust(job.id, 'good', 1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#F0FDF4', borderRadius: '10px', color: isMaxedOut ? '#A7F3D0' : '#059669', fontSize: '20px', border: 'none', cursor: isMaxedOut ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
                           </div>
                         </div>
 
@@ -425,7 +412,7 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#ffffff', borderRadius: '12px', padding: '8px', border: '1px solid #FECACA', marginBottom: entry.defect > 0 ? '16px' : '0' }}>
                             <button type="button" onClick={() => handleDemoldingAdjust(job.id, 'defect', -1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#FEF2F2', borderRadius: '10px', color: '#EF4444', fontSize: '20px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-minus"></i></button>
                             <input type="number" readOnly value={entry.defect} style={{ width: '80px', backgroundColor: 'transparent', textAlign: 'center', fontSize: '36px', fontWeight: 900, color: '#B91C1C', outline: 'none', border: 'none' }} />
-                            <button type="button" onClick={() => handleDemoldingAdjust(job.id, 'defect', 1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#FEF2F2', borderRadius: '10px', color: '#EF4444', fontSize: '20px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
+                            <button type="button" disabled={isMaxedOut} onClick={() => handleDemoldingAdjust(job.id, 'defect', 1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#FEF2F2', borderRadius: '10px', color: isMaxedOut ? '#FECACA' : '#EF4444', fontSize: '20px', border: 'none', cursor: isMaxedOut ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
                           </div>
                           {entry.defect > 0 && (
                             <div>
@@ -483,7 +470,7 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
       </div>
 
       {/* Bottom Navigation */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', backgroundColor: '#ffffff', padding: '12px 20px 24px', display: 'flex', justifyContent: 'space-between', boxShadow: '0 -10px 30px rgba(0,0,0,0.05)', zIndex: 40, borderTop: '1px solid rgba(0,0,0,0.02)' }}>
+      <nav style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', background: 'linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,0.85) 35%, rgba(255,255,255,1) 100%)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '30px', paddingLeft: '20px', paddingRight: '20px', paddingBottom: 'max(24px, env(safe-area-inset-bottom))', zIndex: 40 }}>
         {[
           { id: 'casting', label: 'ตรวจการเท', icon: 'fa-truck-monster' },
           { id: 'demolding', label: 'ตรวจถอดแบบ', icon: 'fa-box-open' },
@@ -502,18 +489,25 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
               }
             }}
             style={{
-              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
-              backgroundColor: 'transparent', border: 'none', cursor: 'pointer',
-              color: activeTab === tab.id ? '#3B82F6' : '#94A3B8',
-              transition: 'all 0.2s', position: 'relative'
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', background: 'none', border: 'none', cursor: 'pointer', paddingBottom: 0
             }}
           >
-            {activeTab === tab.id && <div style={{ position: 'absolute', top: '-14px', width: '24px', height: '4px', backgroundColor: '#3B82F6', borderRadius: '0 0 4px 4px' }}></div>}
-            <i className={`fas ${tab.icon}`} style={{ fontSize: '20px', transition: 'all 0.2s', transform: activeTab === tab.id ? 'scale(1.15)' : 'scale(1)' }}></i>
-            <span style={{ fontSize: '11px', fontWeight: activeTab === tab.id ? 800 : 600 }}>{tab.label}</span>
+            {activeTab === tab.id && tab.id !== 'logout' ? (
+              <>
+                <div style={{ position: 'absolute', top: '-40px', width: '54px', height: '54px', backgroundColor: '#3B82F6', borderRadius: '99px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 16px rgba(59,130,246,0.45)', border: '4px solid #ffffff', zIndex: 10 }}>
+                  <i className={`fas ${tab.icon}`} style={{ color: '#fff', fontSize: '18px' }}></i>
+                </div>
+                <span style={{ fontSize: '10px', fontWeight: 800, color: '#3B82F6', marginTop: '22px' }}>{tab.label}</span>
+              </>
+            ) : (
+              <>
+                <i className={`fas ${tab.icon}`} style={{ fontSize: '20px', color: tab.id === 'logout' ? '#EF4444' : '#94A3B8', marginBottom: '4px' }}></i>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: tab.id === 'logout' ? '#EF4444' : '#94A3B8' }}>{tab.label}</span>
+              </>
+            )}
           </button>
         ))}
-      </div>
+      </nav>
     </div>
   )
 }

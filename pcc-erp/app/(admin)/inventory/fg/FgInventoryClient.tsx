@@ -147,10 +147,14 @@ export default function FgInventoryClient({ productionOrders: initialOrders }: {
                     ) : '-'}
                   </td>
                   <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
-                    <button onClick={() => handleManage(order)}
-                      style={{ padding: '6px 12px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
-                      <i className="fas fa-tasks" style={{ marginRight: 6 }}></i> จัดการ
-                    </button>
+                    {statusText === 'QC ตรวจสอบแล้ว' ? (
+                      <button onClick={() => handleManage(order)}
+                        style={{ padding: '6px 12px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
+                        <i className="fas fa-tasks" style={{ marginRight: 6 }}></i> จัดการ
+                      </button>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 500 }}>-</span>
+                    )}
                   </td>
                 </tr>
               )
