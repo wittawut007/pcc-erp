@@ -13,6 +13,7 @@ interface Job {
   status: string
   qty_target: number
   qty_cast: number
+  cast_at?: string | null
   expected_demold_at: string | null
   plan_item_id?: string
   plan_item: {
@@ -119,15 +120,22 @@ export default function WorkerClient({
   }, [jobOrders, planItemToPlanMap])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        supabase.from('profiles').select('full_name, role').eq('id', user.id).single()
-          .then(({ data }) => {
+    const fetchProfile = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          try {
+            const { data } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).single()
             if (data) setUserProfile({ full_name: data.full_name, role: data.role })
-          })
-          .catch((err) => console.error("Profile fetch error:", err))
+          } catch (err) {
+            console.error("Profile fetch error:", err)
+          }
+        }
+      } catch (err) {
+        console.error("Auth error:", err)
       }
-    }).catch((err) => console.error("Auth error:", err))
+    }
+    fetchProfile()
   }, [supabase])
 
 

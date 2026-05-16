@@ -161,8 +161,10 @@ export async function recordDemoldInspection(
 
   if (recError) throw new Error(recError.message)
 
-  // 3. Update fg_inventory
-  const productId = job?.plan_item?.product?.id
+  // 3. Update fg_inventory — plan_item is an array from Supabase join
+  const planItem = Array.isArray(job?.plan_item) ? job.plan_item[0] : job?.plan_item
+  const product = Array.isArray(planItem?.product) ? planItem.product[0] : planItem?.product
+  const productId = product?.id
   if (productId && demoldQtyGood > 0) {
     const { data: existingFg } = await supabase.from('fg_inventory').select('id, qty').eq('product_id', productId).single()
     if (existingFg) {
@@ -178,7 +180,7 @@ export async function recordDemoldInspection(
     action_type: 'ถอดแบบ & QC (Mobile)',
     entity_type: 'demolding_record',
     entity_id: record?.id,
-    detail: `${job?.plan_item?.product?.name} | ดี ${demoldQtyGood} / เสีย ${demoldQtyDefect}`,
+    detail: `${product?.name} | ดี ${demoldQtyGood} / เสีย ${demoldQtyDefect}`,
   })
 
   revalidatePath('/qc-inspect')

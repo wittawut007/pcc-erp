@@ -492,7 +492,7 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
               flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', background: 'none', border: 'none', cursor: 'pointer', paddingBottom: 0
             }}
           >
-            {activeTab === tab.id && tab.id !== 'logout' ? (
+            {(activeTab as string) === tab.id && tab.id !== 'logout' ? (
               <>
                 <div style={{ position: 'absolute', top: '-40px', width: '54px', height: '54px', backgroundColor: '#3B82F6', borderRadius: '99px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 16px rgba(59,130,246,0.45)', border: '4px solid #ffffff', zIndex: 10 }}>
                   <i className={`fas ${tab.icon}`} style={{ color: '#fff', fontSize: '18px' }}></i>

@@ -10,7 +10,7 @@ interface ProductionOrder {
   status: string
   erp_reference: string | null
   created_at: string
-  plan: { plan_date: string } | null
+  plan: { plan_date: string }[] | null
   job_orders: any[]
 }
 
@@ -128,7 +128,7 @@ export default function FgInventoryClient({ productionOrders: initialOrders }: {
               return (
                 <tr key={order.id} className="hover:bg-[var(--bg)] transition-colors">
                   <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                    {order.plan?.plan_date ? new Date(order.plan.plan_date).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : '-'}
+                    {order.plan?.[0]?.plan_date ? new Date(order.plan[0].plan_date).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : '-'}
                   </td>
                   <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontWeight: 700, color: 'var(--text)' }}>
                     {order.order_number}
