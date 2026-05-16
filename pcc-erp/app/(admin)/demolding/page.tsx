@@ -12,7 +12,8 @@ export default async function DemoldingPage() {
     .select(`
       *,
       plan_item:production_plan_items(
-        product:products(id, code, name, category, unit)
+        product:products(id, code, name, category, unit),
+        plan:production_plans(id, plan_date)
       ),
       worker:profiles(full_name)
     `)
@@ -25,7 +26,10 @@ export default async function DemoldingPage() {
       *,
       job_order:job_orders(
         bed,
-        plan_item:production_plan_items(product:products(name, unit))
+        plan_item:production_plan_items(
+          product:products(name, code, unit),
+          plan:production_plans(id, plan_date)
+        )
       ),
       worker:profiles(full_name)
     `)
@@ -40,7 +44,7 @@ export default async function DemoldingPage() {
 
   return (
     <>
-      <Header title="งานตัดยก & ตรวจสอบ" subtitle="บันทึกจำนวนชิ้นดีและของเสียหลังตัดยก & ตรวจสอบ" />
+      <Header title="งานถอดแบบ / ตัดยก" subtitle="ติดตามสถานะการถอดแบบ และ ตัดยกคอนกรีต" />
       <DemoldingClient readyJobs={readyJobs ?? []} recentDemolding={recentDemolding ?? []} workers={workers ?? []} />
     </>
   )

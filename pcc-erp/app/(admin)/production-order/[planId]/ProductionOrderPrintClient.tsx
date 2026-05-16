@@ -271,35 +271,50 @@ export default function ProductionOrderPrintClient({
               </tr>
             </thead>
             <tbody>
-              {items.map((item, idx) => (
-                <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#FAFAFA' }}>
-                  <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', color: '#9CA3AF', fontWeight: 600, verticalAlign: 'top' }}>
-                    {idx + 1}
-                  </td>
-                  <td style={{ border: '1px solid #E5E7EB', padding: '10px', verticalAlign: 'top' }}>
-                    <div style={{ fontWeight: 700, color: '#111827', fontSize: 13 }}>
-                      {item.productName}{item.size ? ` (${item.size})` : ''}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>{item.productCode}</div>
-                  </td>
-                  <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontFamily: 'monospace', fontSize: 11, color: '#6B7280', verticalAlign: 'top' }}>
-                    {item.bomCode || '-'}
-                  </td>
-                  <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontSize: 13, verticalAlign: 'top' }}>
-                    <span style={{ background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 4, padding: '2px 8px', fontSize: 12, fontWeight: 600, color: '#475569' }}>
-                      โรงผลิต {item.bed}
-                    </span>
-                  </td>
-                  <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontWeight: 700, fontSize: 14, color: '#111827', verticalAlign: 'top' }}>
-                    {item.qty.toLocaleString()}
-                  </td>
-                  <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontSize: 11, color: '#6B7280', verticalAlign: 'top' }}>
-                    {item.unit || 'ชิ้น'}
-                  </td>
-                  <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'right', fontSize: 12, color: '#6B7280', verticalAlign: 'top' }}>
-                    ~ {item.concrete.toFixed(2)}
-                  </td>
-                </tr>
+              {Object.entries(
+                items.reduce((acc, item) => {
+                  const cat = item.category || 'อื่นๆ'
+                  if (!acc[cat]) acc[cat] = []
+                  acc[cat].push(item)
+                  return acc
+                }, {} as Record<string, typeof items>)
+              ).map(([category, catItems]) => (
+                <React.Fragment key={category}>
+                  <tr style={{ background: '#F1F5F9' }}>
+                    <td colSpan={7} style={{ border: '1px solid #E5E7EB', padding: '10px 16px', fontWeight: 800, color: '#334155', fontSize: 13 }}>
+                      หมวดหมู่: {category}
+                    </td>
+                  </tr>
+                  {catItems.map((item, idx) => (
+                    <tr key={`${category}-${idx}`} style={{ background: '#fff' }}>
+                      <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', color: '#9CA3AF', fontWeight: 600, verticalAlign: 'top' }}>
+                        {idx + 1}
+                      </td>
+                      <td style={{ border: '1px solid #E5E7EB', padding: '10px', verticalAlign: 'top' }}>
+                        <div style={{ fontWeight: 700, color: '#111827', fontSize: 13 }}>
+                          {item.productName}{item.size && item.size !== '-' ? ` (${item.size})` : ''}
+                        </div>
+                      </td>
+                      <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontFamily: 'monospace', fontSize: 11, color: '#6B7280', verticalAlign: 'top' }}>
+                        {item.bomCode || '-'}
+                      </td>
+                      <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontSize: 13, verticalAlign: 'top' }}>
+                        <span style={{ background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 4, padding: '2px 8px', fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                          โรงผลิต {item.bed}
+                        </span>
+                      </td>
+                      <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontWeight: 700, fontSize: 14, color: '#111827', verticalAlign: 'top' }}>
+                        {item.qty.toLocaleString()}
+                      </td>
+                      <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontSize: 11, color: '#6B7280', verticalAlign: 'top' }}>
+                        {item.unit || 'ชิ้น'}
+                      </td>
+                      <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'right', fontSize: 12, color: '#6B7280', verticalAlign: 'top' }}>
+                        ~ {item.concrete.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
               ))}
             </tbody>
             <tfoot>
@@ -384,7 +399,7 @@ export default function ProductionOrderPrintClient({
             bottom: 24,
             left: '50%',
             transform: 'translateX(-50%)',
-            background: 'rgba(17, 24, 39, 0.92)',
+            background: 'rgba(31, 41, 55, 0.65)',
             backdropFilter: 'blur(12px)',
             border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: 50,
@@ -396,21 +411,6 @@ export default function ProductionOrderPrintClient({
             zIndex: 100,
           }}
         >
-          {/* Tunnel URL Input for Testing */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: 20 }}>
-            <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600 }}>Tunnel:</span>
-            <input 
-              type="text" 
-              value={tunnelUrl}
-              onChange={(e) => setTunnelUrl(e.target.value)}
-              placeholder="https://..."
-              style={{
-                background: 'transparent', border: 'none', color: '#fff', fontSize: 12, width: 200, outline: 'none'
-              }}
-            />
-          </div>
-
-          <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
 
           {/* Download PDF */}
           <button

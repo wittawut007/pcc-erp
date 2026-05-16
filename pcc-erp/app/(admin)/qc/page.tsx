@@ -21,7 +21,8 @@ async function getQcData() {
           job_order:job_orders(
             bed,
             plan_item:production_plan_items(
-              product:products(name,category,unit)
+              product:products(name,code,category,unit),
+              plan:production_plans(id,plan_date)
             )
           ),
           qc_profile:profiles!qc_inspections_qc_id_fkey(full_name)

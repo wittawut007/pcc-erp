@@ -158,19 +158,21 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
           style={{
             padding: '16px 18px',
             borderRadius: 12,
-            border: `2px solid ${activeStatus === 'all' ? '#2563EB' : '#E5E7EB'}`,
-            background: activeStatus === 'all' ? '#EFF6FF' : '#fff',
+            border: `2px solid ${activeStatus === 'all' ? '#BFDBFE' : 'transparent'}`,
+            background: '#EFF6FF',
             textAlign: 'left',
             cursor: 'pointer',
             transition: 'all 0.15s',
-            boxShadow: activeStatus === 'all' ? '0 0 0 3px rgba(37,99,235,0.15)' : '0 1px 3px rgba(0,0,0,0.05)',
+            boxShadow: activeStatus === 'all' ? '0 0 0 3px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)',
+            opacity: activeStatus === 'all' ? 1 : 0.6,
+            filter: activeStatus === 'all' ? 'none' : 'grayscale(0.4)',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <i className="fas fa-list" style={{ fontSize: 16, color: activeStatus === 'all' ? '#2563EB' : '#9CA3AF' }}></i>
-            <span style={{ fontSize: 28, fontWeight: 900, color: activeStatus === 'all' ? '#2563EB' : '#374151', lineHeight: 1 }}>{counts.all}</span>
+            <i className="fas fa-list" style={{ fontSize: 16, color: '#2563EB' }}></i>
+            <span style={{ fontSize: 28, fontWeight: 900, color: '#2563EB', lineHeight: 1 }}>{counts.all}</span>
           </div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.03em' }}>ทั้งหมด</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#1D4ED8', opacity: 0.8, letterSpacing: '0.03em' }}>ทั้งหมด</div>
         </button>
 
         {(['draft', 'confirmed', 'in_progress', 'completed'] as StatusKey[]).map(key => {
@@ -183,19 +185,21 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
               style={{
                 padding: '16px 18px',
                 borderRadius: 12,
-                border: `2px solid ${isActive ? cfg.badgeBorder : '#E5E7EB'}`,
-                background: isActive ? cfg.kpiBg : '#fff',
+                border: `2px solid ${isActive ? cfg.kpiBorder : 'transparent'}`,
+                background: cfg.kpiBg,
                 textAlign: 'left',
                 cursor: 'pointer',
                 transition: 'all 0.15s',
-                boxShadow: isActive ? `0 0 0 3px ${cfg.ring}` : '0 1px 3px rgba(0,0,0,0.05)',
+                boxShadow: isActive ? `0 0 0 3px ${cfg.ring}` : '0 1px 2px rgba(0,0,0,0.05)',
+                opacity: activeStatus === 'all' || isActive ? 1 : 0.6,
+                filter: activeStatus === 'all' || isActive ? 'none' : 'grayscale(0.4)',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <i className={`fas ${cfg.icon}`} style={{ fontSize: 16, color: isActive ? cfg.kpiText : '#9CA3AF' }}></i>
-                <span style={{ fontSize: 28, fontWeight: 900, color: isActive ? cfg.kpiText : '#374151', lineHeight: 1 }}>{counts[key]}</span>
+                <i className={`fas ${cfg.icon}`} style={{ fontSize: 16, color: cfg.kpiText }}></i>
+                <span style={{ fontSize: 28, fontWeight: 900, color: cfg.kpiText, lineHeight: 1 }}>{counts[key]}</span>
               </div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.03em' }}>{cfg.label}</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: cfg.text, opacity: 0.8, letterSpacing: '0.03em' }}>{cfg.label}</div>
             </button>
           )
         })}

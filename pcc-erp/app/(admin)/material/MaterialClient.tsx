@@ -19,6 +19,7 @@ interface PlanInfo {
   plan_date: string
   status: string
   total_concrete?: number
+  production_orders?: { order_number: string }[]
 }
 
 interface Requisition {
@@ -55,6 +56,7 @@ export default function MaterialClient({ initialData, role }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null)
   
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'partial' | 'dispensed'>('all')
+  const [activeTab, setActiveTab] = useState<'today' | 'history'>('today')
   const [printModalPlanId, setPrintModalPlanId] = useState<string | null>(null)
 
 
@@ -143,12 +145,24 @@ export default function MaterialClient({ initialData, role }: Props) {
     return acc
   }, {})
 
-  // Sort groups by plan_date descending
-  const sortedGroups = Object.entries(grouped).sort((a, b) => {
-    const dateA = a[1].plan?.plan_date || ''
-    const dateB = b[1].plan?.plan_date || ''
-    return dateB.localeCompare(dateA)
+  // Precompute plan completion status (a plan is complete if ALL its items are dispensed)
+  const planCompletionStatus: Record<string, boolean> = {}
+  items.forEach(i => {
+    if (planCompletionStatus[i.plan_id] === undefined) planCompletionStatus[i.plan_id] = true
+    if (i.status !== 'dispensed') planCompletionStatus[i.plan_id] = false
   })
+
+  // Sort groups by plan_date descending, and filter by activeTab
+  const sortedGroups = Object.entries(grouped)
+    .filter(([planId]) => {
+      const isCompleted = planCompletionStatus[planId]
+      return activeTab === 'today' ? !isCompleted : isCompleted
+    })
+    .sort((a, b) => {
+      const dateA = a[1].plan?.plan_date || ''
+      const dateB = b[1].plan?.plan_date || ''
+      return dateB.localeCompare(dateA)
+    })
 
   // Prepare data for the print modal if open
   const activePlanGroup = printModalPlanId ? grouped[printModalPlanId] : null
@@ -178,6 +192,36 @@ export default function MaterialClient({ initialData, role }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 12, borderBottom: '1px solid #E5E7EB', paddingBottom: 16 }}>
+        <button
+          onClick={() => setActiveTab('today')}
+          style={{
+            padding: '10px 24px', borderRadius: 50, fontSize: 14, fontWeight: 700,
+            cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 8,
+            background: activeTab === 'today' ? '#2563EB' : '#fff',
+            color: activeTab === 'today' ? '#fff' : '#6B7280',
+            border: activeTab === 'today' ? 'none' : '1px solid #E5E7EB',
+            boxShadow: activeTab === 'today' ? '0 4px 12px rgba(37,99,235,0.2)' : 'none',
+          }}
+        >
+          <i className="fas fa-clipboard-list"></i> รายการเบิกจ่าย
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          style={{
+            padding: '10px 24px', borderRadius: 50, fontSize: 14, fontWeight: 700,
+            cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 8,
+            background: activeTab === 'history' ? '#475569' : '#fff',
+            color: activeTab === 'history' ? '#fff' : '#6B7280',
+            border: activeTab === 'history' ? 'none' : '1px solid #E5E7EB',
+            boxShadow: activeTab === 'history' ? '0 4px 12px rgba(71,85,105,0.2)' : 'none',
+          }}
+        >
+          <i className="fas fa-history"></i> ประวัติย้อนหลัง
+        </button>
+      </div>
+
       {/* Summary Banner */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
         {[
@@ -213,10 +257,10 @@ export default function MaterialClient({ initialData, role }: Props) {
         ))}
       </div>
 
-      {filteredItems.length === 0 && (
+      {sortedGroups.length === 0 && (
         <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
           <i className="fas fa-folder-open" style={{ fontSize: 40, opacity: 0.3, marginBottom: 12 }} />
-          <p>ไม่มีรายการที่ตรงกับเงื่อนไข</p>
+          <p>ไม่มีรายการที่ตรงกับเงื่อนไขในแท็บนี้</p>
         </div>
       )}
 
@@ -226,6 +270,9 @@ export default function MaterialClient({ initialData, role }: Props) {
           ? new Date(group.plan.plan_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
           : planId.slice(0, 8)
           
+        const orderNumbers = group.plan?.production_orders?.map(o => o.order_number).filter(Boolean) || []
+        const displayOrderNumber = orderNumbers.length > 0 ? orderNumbers.join(', ') : `#${planId.slice(0, 8).toUpperCase()}`
+          
         // Check if all items in this plan are fully dispensed
         const allItemsInPlan = items.filter(i => i.plan_id === planId)
         const isPlanFullyDispensed = allItemsInPlan.every(i => i.status === 'dispensed')
@@ -233,11 +280,16 @@ export default function MaterialClient({ initialData, role }: Props) {
         return (
           <div key={planId} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
             {/* Plan Header */}
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', background: '#FAFAFA', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', background: '#FAFAFA', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <i className="fas fa-calendar-alt" style={{ color: 'var(--accent)', fontSize: 14 }} />
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
                 แผนการผลิต: {planDate}
               </span>
+              
+              <div style={{ padding: '2px 8px', background: '#DBEAFE', color: '#1D4ED8', borderRadius: 4, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <i className="fas fa-hashtag" /> {displayOrderNumber}
+              </div>
+
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                 ({group.items.length} รายการ)
               </span>
@@ -385,18 +437,23 @@ export default function MaterialClient({ initialData, role }: Props) {
         )
       })}
       
-      {activePlanGroup && activePlanGroup.plan && (
-        <MaterialDocumentModal
-          isOpen={printModalPlanId !== null}
-          onClose={() => setPrintModalPlanId(null)}
-          orderNumber={activePlanGroup.plan.id.slice(0, 8).toUpperCase()}
-          date={new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}
-          time={new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-          userFullName="เจ้าหน้าที่เบิกจ่าย"
-          totalConcrete={activePlanGroup.plan.total_concrete ?? 0}
-          planItems={activePlanItems}
-        />
-      )}
+      {activePlanGroup && activePlanGroup.plan && (() => {
+        const orderNumbers = activePlanGroup.plan.production_orders?.map(o => o.order_number).filter(Boolean) || []
+        const modalOrderNumber = orderNumbers.length > 0 ? orderNumbers.join(', ') : activePlanGroup.plan.id.slice(0, 8).toUpperCase()
+        
+        return (
+          <MaterialDocumentModal
+            isOpen={printModalPlanId !== null}
+            onClose={() => setPrintModalPlanId(null)}
+            orderNumber={modalOrderNumber}
+            date={new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}
+            time={new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+            userFullName="เจ้าหน้าที่เบิกจ่าย"
+            totalConcrete={activePlanGroup.plan.total_concrete ?? 0}
+            planItems={activePlanItems}
+          />
+        )
+      })()}
     </div>
   )
 }

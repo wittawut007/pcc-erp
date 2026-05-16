@@ -11,7 +11,10 @@ interface DemoldingRecord {
   created_at: string
   job_order: {
     bed: string
-    plan_item: { product: { name: string; category: string; unit: string } | null } | null
+    plan_item: { 
+      product: { name: string; code?: string; category: string; unit: string } | null
+      plan?: { id: string; plan_date: string; production_order_code?: string } | null
+    } | null
   } | null
   qc_profile: { full_name: string } | null
 }
@@ -48,11 +51,54 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
   }, [filterRange])
 
   const filtered = useMemo(() => displayRecords.filter(r => {
-    const matchSearch = !search || r.job_order?.plan_item?.product?.name.toLowerCase().includes(search.toLowerCase())
+    const planDate = r.job_order?.plan_item?.plan?.plan_date || r.created_at
+    const datePart = planDate.split('T')[0].replace(/-/g, '')
+    const orderNumber = r.job_order?.plan_item?.plan?.production_order_code || (r.job_order?.plan_item?.plan?.id ? `PO-${datePart}-001` : 'ไม่มีระบุใบสั่งผลิต')
+
+    const matchSearch = !search || 
+      (r.job_order?.plan_item?.product?.name?.toLowerCase().includes(search.toLowerCase())) ||
+      (r.job_order?.plan_item?.product?.code?.toLowerCase().includes(search.toLowerCase())) ||
+      (r.job_order?.bed?.toLowerCase().includes(search.toLowerCase())) ||
+      orderNumber?.toLowerCase().includes(search.toLowerCase())
+
     const matchReason = filterReason === 'ทั้งหมด' || (filterReason === 'none' ? r.demold_qty_defect === 0 : r.defect_reason === filterReason)
     const matchDate = new Date(r.created_at) >= cutoff
     return matchSearch && matchReason && matchDate
   }), [displayRecords, search, filterReason, cutoff])
+
+  const planGroups = useMemo(() => {
+    const map = new Map<string, { planId: string; planDate: string; orderNumber: string; records: DemoldingRecord[] }>()
+    filtered.forEach(r => {
+      const plan = r.job_order?.plan_item?.plan
+      const planId = plan?.id || 'unknown'
+      const planDate = plan?.plan_date || r.created_at
+      const datePart = planDate.split('T')[0].replace(/-/g, '')
+      const orderNumber = plan?.production_order_code || (plan?.id ? `PO-${datePart}-001` : 'ไม่มีระบุใบสั่งผลิต')
+
+      if (!map.has(planId)) {
+        map.set(planId, { planId, planDate, orderNumber, records: [] })
+      }
+      map.get(planId)!.records.push(r)
+    })
+    return Array.from(map.values()).sort((a, b) => new Date(b.planDate).getTime() - new Date(a.planDate).getTime())
+  }, [filtered])
+
+  const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set())
+  const togglePlan = (planId: string) => {
+    setExpandedPlans(prev => {
+      const next = new Set(prev)
+      next.has(planId) ? next.delete(planId) : next.add(planId)
+      return next
+    })
+  }
+
+  // Auto-expand all on first load
+  const allPlanIds = useMemo(() => new Set(planGroups.map(g => g.planId)), [planGroups])
+  const [initialized, setInitialized] = useState(false)
+  if (!initialized && planGroups.length > 0) {
+    setExpandedPlans(allPlanIds)
+    setInitialized(true)
+  }
 
   // KPIs
   const totalGood = displaySummary.reduce((s, r) => s + (r.demold_qty_good || 0), 0)
@@ -74,6 +120,9 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
 
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleString('th-TH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+  const fmtPlanDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '24px 36px' }}>
@@ -155,53 +204,92 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
             </select>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: 'var(--bg)' }}>
-                  {['สินค้า', 'โรงผลิต', 'ชิ้นดี', 'ของเสีย', 'สาเหตุ', 'พนักงาน', 'เวลา'].map((h, i) => (
-                    <th key={h} style={{ padding: '10px 12px', textAlign: i >= 2 && i <= 3 ? 'center' : 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(r => {
-                  const reason = r.defect_reason ? DEFECT_REASONS[r.defect_reason] : null
-                  return (
-                    <tr key={r.id} className="hover:bg-[var(--bg)] transition-colors">
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontWeight: 600, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {r.job_order?.plan_item?.product?.name ?? '—'}
-                      </td>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
-                        <span style={{ background: 'var(--accent-light)', color: 'var(--accent)', padding: '2px 8px', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>{r.job_order?.bed ?? '—'}</span>
-                      </td>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, fontSize: 14, color: 'var(--green)' }}>{r.demold_qty_good}</td>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, fontSize: 14, color: (r.demold_qty_defect || 0) > 0 ? 'var(--red)' : 'var(--text-muted)' }}>{r.demold_qty_defect}</td>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
-                        {reason ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '2px 8px', borderRadius: 4, background: `${reason.color}18`, color: reason.color, fontWeight: 600 }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: reason.color, flexShrink: 0, display: 'inline-block' }}></span>
-                            {reason.label}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--text-secondary)' }}>{r.qc_profile?.full_name ?? '—'}</td>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{fmtDate(r.created_at)}</td>
-                    </tr>
-                  )
-                })}
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                      <i className="fas fa-clipboard-check" style={{ fontSize: 28, opacity: 0.2, display: 'block', marginBottom: 10 }}></i>
-                      ไม่พบข้อมูล
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '16px' }}>
+            {planGroups.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                <i className="fas fa-clipboard-check" style={{ fontSize: 28, opacity: 0.2, display: 'block', marginBottom: 10 }}></i>
+                ไม่พบข้อมูล
+              </div>
+            ) : (
+              planGroups.map(group => {
+                const isOpen = expandedPlans.has(group.planId)
+                return (
+                  <div key={group.planId} style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+                    <button
+                      onClick={() => togglePlan(group.planId)}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px', background: 'var(--surface)',
+                        borderTop: 'none', borderLeft: 'none', borderRight: 'none', borderBottom: isOpen ? '1px solid var(--border)' : 'none',
+                        cursor: 'pointer', textAlign: 'left',
+                      }}
+                    >
+                      <i className={`fas ${isOpen ? 'fa-chevron-down' : 'fa-chevron-right'}`} style={{ fontSize: 12, color: 'var(--text-muted)', width: 14 }} />
+                      <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 14, color: 'var(--text-main)' }}>{group.orderNumber}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)', fontSize: 12 }}>
+                        <i className="fas fa-calendar-alt" style={{ fontSize: 11, color: 'var(--text-muted)' }} /> วันที่แผน: <strong style={{ color: 'var(--text-main)' }}>{fmtPlanDate(group.planDate)}</strong>
+                      </div>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <strong style={{ color: 'var(--text-main)' }}>{group.records.length}</strong> รายการ
+                      </span>
+                    </button>
+                    {isOpen && (
+                      <div style={{ overflowX: 'auto', background: 'var(--surface)' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ background: 'var(--bg)' }}>
+                              {['โรงผลิต', 'สินค้า', 'ชิ้นดี', 'ของเสีย', 'สาเหตุ', 'พนักงาน', 'เวลา'].map((h, i) => (
+                                <th key={h} style={{ padding: '10px 12px', textAlign: i >= 2 && i <= 3 ? 'center' : 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.records.map((r, idx) => {
+                              const reason = r.defect_reason ? DEFECT_REASONS[r.defect_reason] : null
+                              return (
+                                <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'var(--surface)' : 'var(--bg)' }}>
+                                  <td style={{ padding: '12px 16px' }}>
+                                    <span style={{
+                                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                      width: 36, height: 36, borderRadius: 8,
+                                      background: 'var(--accent-light)', border: '1px solid var(--accent)',
+                                      fontWeight: 800, fontSize: 15, color: 'var(--accent)',
+                                    }}>
+                                      {r.job_order?.bed ?? '—'}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '12px 16px' }}>
+                                    <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: 13, lineHeight: 1.3 }}>
+                                      {r.job_order?.plan_item?.product?.name ?? '—'}
+                                    </div>
+                                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>
+                                      {r.job_order?.plan_item?.product?.code ?? ''}
+                                    </div>
+                                  </td>
+                                  <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 800, fontSize: 14, color: 'var(--green)' }}>{r.demold_qty_good}</td>
+                                  <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 800, fontSize: 14, color: (r.demold_qty_defect || 0) > 0 ? 'var(--red)' : 'var(--text-muted)' }}>{r.demold_qty_defect}</td>
+                                  <td style={{ padding: '12px 16px' }}>
+                                    {reason ? (
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '4px 10px', borderRadius: 6, background: `${reason.color}18`, color: reason.color, fontWeight: 700 }}>
+                                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: reason.color, flexShrink: 0, display: 'inline-block' }}></span>
+                                        {reason.label}
+                                      </span>
+                                    ) : (
+                                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-secondary)' }}>{r.qc_profile?.full_name ?? '—'}</td>
+                                  <td style={{ padding: '12px 16px', fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{fmtDate(r.created_at)}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
           </div>
         </div>
       </div>

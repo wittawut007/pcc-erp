@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { calculateConcreteRounds } from '@/lib/concrete-utils'
 
 /**
  * Worker สั่งคอนกรีต — สร้าง concrete_order + concrete_rounds และอัปเดต job_order status
@@ -18,7 +19,8 @@ export async function requestConcrete(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
 
-  const roundCount = Math.ceil(qtyRequested)
+  const roundData = calculateConcreteRounds(qtyRequested)
+  const roundCount = roundData.length
   const now = new Date().toISOString()
 
   // Insert concrete order
@@ -41,10 +43,10 @@ export async function requestConcrete(
   if (orderErr || !order) throw new Error(orderErr?.message ?? 'สร้าง concrete_order ไม่สำเร็จ')
 
   // Insert concrete_rounds
-  const rounds = Array.from({ length: roundCount }, (_, i) => ({
+  const rounds = roundData.map((qty, i) => ({
     concrete_order_id: order.id,
     round_number: i + 1,
-    qty_per_round: i < roundCount - 1 ? 1 : Number((qtyRequested - Math.floor(qtyRequested) || 1).toFixed(2)),
+    qty_per_round: qty,
     status: 'pending',
   }))
   const { error: roundsErr } = await supabase.from('concrete_rounds').insert(rounds)

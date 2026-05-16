@@ -159,7 +159,7 @@ export async function getPendingRequisitions() {
     .select(`
       *,
       raw_material:raw_materials(id, name, material_code, unit, qty_on_hand, category, weight_per_meter),
-      plan:production_plans!inner(id, plan_date, status, total_concrete)
+      plan:production_plans!inner(id, plan_date, status, total_concrete, production_orders(order_number))
     `)
     .in('plan.status', ['confirmed', 'completed'])
     .order('created_at', { ascending: false })

@@ -511,43 +511,58 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
           <div className="overflow-x-auto flex-1">
              <table className="w-full text-sm text-left whitespace-nowrap">
                 <thead>
-                   <tr className="text-sm text-gray-600 font-bold bg-gray-50/80 border-b-2 border-gray-200">
-                      <th style={{ padding: "22px 20px" }} className="text-center">NO.</th>
-                      <th style={{ padding: "22px 20px" }} className="hidden text-left">รหัสสินค้า</th>
-                      <th style={{ padding: "22px 20px" }} className="text-left">ชื่อสินค้า</th>
-                      <th style={{ padding: "22px 20px" }} className="hidden sm:table-cell text-left">ขนาดสินค้า</th>
-                      <th style={{ padding: "22px 20px" }} className="hidden md:table-cell text-left">หมวดหมู่</th>
-                      <th style={{ padding: "22px 20px" }} className="text-center">โรงผลิต</th>
-                      <th style={{ padding: "22px 20px" }} className="text-center">จำนวน</th>
-                      <th style={{ padding: "22px 20px" }} className="text-right">คอนกรีต (Q)</th>
-                      <th style={{ padding: "22px 20px" }} className="text-center">จัดการ</th>
+                   <tr style={{ background: '#FAFAFA', borderBottom: '2px solid #E5E7EB' }}>
+                      <th style={{ ...thStyle, textAlign: 'center' }}>NO.</th>
+                      <th style={thStyle}>โรงผลิต</th>
+                      <th style={thStyle}>สินค้า</th>
+                      <th style={{ ...thStyle, textAlign: 'center' }}>จำนวน</th>
+                      <th style={{ ...thStyle, textAlign: 'center' }}>คอนกรีต (Q)</th>
+                      <th style={{ ...thStyle, textAlign: 'center' }}>จัดการ</th>
                    </tr>
                 </thead>
                 <tbody>
                    {planItems.length === 0 ? (
                      <tr>
-                        <td colSpan={9} className="px-5 py-16 text-center text-gray-400">
-                          ไม่มีรายการลงแผน กรุณาเพิ่มรายการผลิตข้างต้น
+                        <td colSpan={6} style={{ padding: '80px 24px', textAlign: 'center', color: '#9CA3AF' }}>
+                          <i className="fas fa-clipboard-list" style={{ fontSize: 48, color: '#E5E7EB', display: 'block', marginBottom: 16 }}></i>
+                          <div style={{ fontSize: 14, fontWeight: 600 }}>ไม่มีรายการลงแผน</div>
+                          <div style={{ fontSize: 12, color: '#D1D5DB', marginTop: 4 }}>กรุณาเพิ่มรายการผลิตข้างต้น</div>
                         </td>
                      </tr>
                    ) : (
                      planItems.map((item, idx) => (
-                       <tr key={idx} className="border-b border-gray-200 hover:bg-blue-50/40 transition-colors">
-                          <td style={{ padding: "30px 20px" }} className=" text-center text-gray-400 font-semibold text-sm">{idx + 1}</td>
-                          <td style={{ padding: "30px 20px" }} className=" hidden font-bold text-gray-800 text-sm tracking-wide">{item.productCode}</td>
-                          <td style={{ padding: "30px 20px" }} className=" text-gray-700 font-medium text-sm">{item.productName}</td>
-                          <td style={{ padding: "30px 20px" }} className=" hidden sm:table-cell text-gray-500 text-sm">{item.size || '-'}</td>
-                          <td style={{ padding: "30px 20px" }} className=" hidden md:table-cell text-gray-500 text-sm">{item.category.split(' ')[0]}</td>
-                          <td style={{ padding: "30px 20px" }} className=" text-center">
-                             <span className="inline-flex items-center justify-center bg-slate-100 text-slate-700 font-bold text-xs px-3 py-1 rounded-md border border-slate-200">โรงผลิต {item.bed}</span>
+                       <tr key={idx} style={{ borderBottom: '1px solid #F3F4F6', background: idx % 2 === 0 ? '#fff' : '#FAFAFA' }}>
+                          <td style={{ padding: '12px 16px', textAlign: 'center', color: '#9CA3AF', fontWeight: 600, fontSize: 13 }}>{idx + 1}</td>
+                          <td style={{ padding: '12px 16px' }}>
+                             <span style={{
+                               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                               width: 36, height: 36, borderRadius: 8,
+                               background: '#EFF6FF', border: '1px solid #BFDBFE',
+                               fontWeight: 800, fontSize: 15, color: '#2563EB',
+                             }}>
+                               {item.bed}
+                             </span>
                           </td>
-                          <td style={{ padding: "30px 20px" }} className=" text-center">
-                             <span className="font-bold text-blue-600 text-[15px]">{item.qty.toLocaleString()}</span>
+                          <td style={{ padding: '12px 16px' }}>
+                             <div style={{ fontWeight: 700, color: '#111827', fontSize: 13, lineHeight: 1.3 }}>
+                               {item.productName} {item.size !== '-' ? item.size : ''}
+                             </div>
+                             <div style={{ fontSize: 10, color: '#9CA3AF', fontFamily: 'monospace', marginTop: 2, display: 'flex', gap: 6, alignItems: 'center' }}>
+                               <span style={{ fontWeight: 600, color: '#6B7280' }}>{item.productCode}</span>
+                               <span style={{ color: '#E5E7EB' }}>|</span>
+                               <span>{item.category.split(' ')[0]}</span>
+                             </div>
                           </td>
-                          <td style={{ padding: "30px 20px" }} className=" text-right font-mono text-gray-500 text-sm">~ {item.concrete.toFixed(2)}</td>
-                          <td style={{ padding: "30px 20px" }} className=" text-center">
-                             <button onClick={() => handleRemove(idx)} className="text-red-400 hover:text-red-600 text-sm transition-colors p-2 rounded-lg hover:bg-red-50" title="ลบรายการ">
-                                <i className="fas fa-trash-alt"></i>
+                          <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                             <span style={{ fontWeight: 800, color: '#2563EB', fontSize: 15 }}>{item.qty.toLocaleString()}</span>
+                             <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 4 }}>{item.unit || 'ชิ้น'}</span>
+                          </td>
+                          <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', color: '#6B7280', fontSize: 13 }}>
+                             {item.concrete.toFixed(2)}
+                          </td>
+                          <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                             <button onClick={() => handleRemove(idx)} style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626', width: 32, height: 32, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.15s' }}>
+                                <i className="fas fa-trash-alt" style={{ fontSize: 12 }}></i>
                              </button>
                           </td>
                        </tr>
@@ -577,27 +592,22 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
 
             <div className="flex flex-col gap-6">
                {/* Main Raw Materials */}
-               <div>
-                  <div className="flex justify-between font-bold text-[15px] mb-4">
-                     <span className="text-gray-800">สรุปวัตถุดิบหลัก</span>
+               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                  <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 10, padding: '14px 16px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 4 }}>คอนกรีตรวม</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: '#2563EB', lineHeight: 1 }}>{totalConcrete.toFixed(2)} <span style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF' }}>คิว</span></div>
                   </div>
-                  <div className="grid grid-cols-2 gap-y-6 gap-x-4">
-                     <div>
-                        <p className="text-[12px] text-gray-500 font-medium mb-1">คอนกรีตรวม</p>
-                        <p className="font-extrabold text-blue-600 text-[20px]">{totalConcrete.toFixed(2)} <span className="text-[11px] text-gray-400 font-medium">คิว</span></p>
-                     </div>
-                     <div>
-                        <p className="text-[12px] text-gray-500 font-medium mb-1">ลวดรวม</p>
-                        <p className="font-extrabold text-blue-600 text-[20px]">{totalWire.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">เมตร</span></p>
-                     </div>
-                     <div>
-                        <p className="text-[12px] text-gray-500 font-medium mb-1">เมชรวม</p>
-                        <p className="font-extrabold text-blue-600 text-[20px]">{totalMesh.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">ตร.ม.</span></p>
-                     </div>
-                     <div>
-                        <p className="text-[12px] text-gray-500 font-medium mb-1">เหล็กเส้นรวม</p>
-                        <p className="font-extrabold text-blue-600 text-[20px]">{totalRebar.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span className="text-[11px] text-gray-400 font-medium">เมตร</span></p>
-                     </div>
+                  <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 10, padding: '14px 16px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 4 }}>ลวดรวม</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: '#2563EB', lineHeight: 1 }}>{totalWire.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF' }}>เมตร</span></div>
+                  </div>
+                  <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 10, padding: '14px 16px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 4 }}>เมชรวม</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: '#2563EB', lineHeight: 1 }}>{totalMesh.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF' }}>ตร.ม.</span></div>
+                  </div>
+                  <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 10, padding: '14px 16px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 4 }}>เหล็กเส้นรวม</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: '#2563EB', lineHeight: 1 }}>{totalRebar.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF' }}>เมตร</span></div>
                   </div>
                </div>
 
@@ -692,7 +702,17 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
          </div>
       </div>
       </div>
-
     </div>
   )
+}
+
+const thStyle: React.CSSProperties = {
+  padding: '11px 20px',
+  textAlign: 'left',
+  fontWeight: 700,
+  color: '#6B7280',
+  fontSize: 11,
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  whiteSpace: 'nowrap',
 }

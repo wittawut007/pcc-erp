@@ -50,7 +50,13 @@ function getDisplayStatus(job: JobOrder): DisplayStatus {
   if (job.status === 'qc_passed') return 'qc_passed'
   if (job.status === 'demolded') return 'demolded'
   if (job.status === 'ready_demold') return 'ready_demold'
-  if (job.status === 'curing') return 'curing'
+  if (job.status === 'curing') {
+    const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
+    if (expectedTime && new Date(expectedTime) <= new Date()) {
+      return 'ready_demold'
+    }
+    return 'curing'
+  }
 
   // casting / concrete_ordered: ตรวจ QC pour_ok
   const qc = Array.isArray(job.qc_inspection) ? job.qc_inspection[0] : null
@@ -221,19 +227,20 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
               onClick={() => setFilterStatus(isActive ? 'all' : key)}
               style={{
                 padding: '16px 18px', borderRadius: 12, textAlign: 'left', cursor: 'pointer',
-                border: `2px solid ${isActive ? cfg.kpiBorder : '#E5E7EB'}`,
-                background: isActive ? cfg.kpiBg : '#fff',
+                border: `2px solid ${isActive ? cfg.kpiText : cfg.kpiBorder}`,
+                background: cfg.kpiBg,
                 boxShadow: isActive ? `0 0 0 3px ${cfg.ring}` : '0 1px 3px rgba(0,0,0,0.05)',
                 transition: 'all 0.15s',
+                opacity: filterStatus !== 'all' && !isActive ? 0.5 : 1,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <i className={`fas ${cfg.icon}`} style={{ fontSize: 16, color: isActive ? cfg.kpiText : '#9CA3AF' }} />
-                <span style={{ fontSize: 28, fontWeight: 900, lineHeight: 1, color: isActive ? cfg.kpiText : '#374151' }}>
+                <i className={`fas ${cfg.icon}`} style={{ fontSize: 16, color: cfg.kpiText }} />
+                <span style={{ fontSize: 28, fontWeight: 900, lineHeight: 1, color: cfg.kpiText }}>
                   {kpiCounts[key] ?? 0}
                 </span>
               </div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.03em' }}>{cfg.label}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: cfg.kpiText, opacity: 0.9 }}>{cfg.label}</div>
             </button>
           )
         })}
@@ -466,16 +473,20 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
                                 )}
                               </td>
 
-                                {/* Expected Demold */}
+                              {/* Expected Demold */}
                               <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                                {job.expected_demold_at ? (
-                                  <div style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>
-                                    <i className="fas fa-calendar-check" style={{ marginRight: 4, fontSize: 10 }} />
-                                    {fmtDate(job.expected_demold_at)}
-                                  </div>
-                                ) : (
-                                  <span style={{ color: '#D1D5DB', fontSize: 12 }}>—</span>
-                                )}
+                                {(() => {
+                                  const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
+                                  if (expectedTime) {
+                                    return (
+                                      <div style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>
+                                        <i className="fas fa-calendar-check" style={{ marginRight: 4, fontSize: 10 }} />
+                                        {fmtDate(expectedTime)}
+                                      </div>
+                                    )
+                                  }
+                                  return <span style={{ color: '#D1D5DB', fontSize: 12 }}>—</span>
+                                })()}
                               </td>
 
                               {/* Admin Actions */}
