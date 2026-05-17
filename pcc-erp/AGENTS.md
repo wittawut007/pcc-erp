@@ -28,7 +28,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **หน้าที่รับผิดชอบ:**
   - ออกแบบ Schema, ตาราง และความสัมพันธ์ใน Supabase PostgreSQL
   - กำหนดนโยบายความปลอดภัย Row Level Security (RLS)
-  - วางแผนโครงสร้างโฟลเดอร์สำหรับฟีเจอร์ใหม่ๆ (เช่น การแยกส่วน Admin กับ Worker)
+  - วางแผนโครงสร้างโฟลเดอร์สำหรับฟีเจอร์ใหม่ๆ (เช่น การแยกส่วน Admin กับ Worker,QC)
 - **ข้อจำกัด:** ห้ามเขียนโค้ด UI เด็ดขาด ให้สร้างเฉพาะ Database Schemas (SQL/TypeScript types) และเอกสาร Markdown สรุปสถาปัตยกรรมเท่านั้น
 
 ### 2. [BACKEND] - วิศวกรข้อมูลและลอจิก

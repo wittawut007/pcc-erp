@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import { receiveConcreteRound } from '@/app/actions/concrete'
 import { calculateConcreteRounds } from '@/lib/concrete-utils'
+import { compressImage } from '@/lib/utils/compress-image'
 
 interface Job {
   id: string
@@ -101,13 +102,16 @@ export default function WorkerClient({
   }[]>([])
   const [concreteLoading, setConcreteLoading] = useState(false)
 
+  const planIdsString = JSON.stringify(
+    Array.from(new Set(jobOrders.map(j => j.plan_item?.plan_id || (j.plan_item_id && planItemToPlanMap ? planItemToPlanMap[j.plan_item_id] : null)).filter(Boolean)))
+  )
+
   useEffect(() => {
     async function fetchMaterials() {
-      const planIds = Array.from(new Set(jobOrders.map(j => j.plan_item?.plan_id || (j.plan_item_id && planItemToPlanMap ? planItemToPlanMap[j.plan_item_id] : null)).filter(Boolean)))
+      const planIds = JSON.parse(planIdsString)
       if (planIds.length === 0) return
       
-      const { data, error } = await supabase.from('plan_materials').select('plan_id, raw_material:raw_materials(name)').in('plan_id', planIds as string[])
-      console.log('fetchMaterials data:', data, 'error:', error)
+      const { data } = await supabase.from('plan_materials').select('plan_id, raw_material:raw_materials(name)').in('plan_id', planIds)
       
       const newMap: Record<string, {name: string}[]> = {}
       data?.forEach((d: any) => {
@@ -117,7 +121,7 @@ export default function WorkerClient({
       setMaterialsByPlan(newMap)
     }
     fetchMaterials()
-  }, [jobOrders, planItemToPlanMap])
+  }, [planIdsString, supabase])
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -293,9 +297,12 @@ export default function WorkerClient({
 
 
   const uploadPhoto = async (file: File, folder: string) => {
-    const ext = file.name.split('.').pop()
-    const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`
-    const { error } = await supabase.storage.from('job_photos').upload(fileName, file)
+    // บีบอัดรูปก่อน upload เพื่อลดพื้นที่ Storage (~80%)
+    const compressed = await compressImage(file, 1280, 0.75)
+    const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`
+    const { error } = await supabase.storage
+      .from('job_photos')
+      .upload(fileName, compressed, { contentType: 'image/jpeg' })
     if (error) {
       toast.error('อัปโหลดรูปไม่สำเร็จ: ' + error.message)
       return null
@@ -753,7 +760,6 @@ export default function WorkerClient({
                     
                     const planId = j.plan_item?.plan_id || (j.plan_item_id && planItemToPlanMap ? planItemToPlanMap[j.plan_item_id] : null)
                     const materials = planId ? materialsByPlan[planId] || [] : []
-                    console.log('Job:', j.id, 'Plan:', planId, 'Materials:', materials)
                     
                     const getStatusDisplay = () => {
                       let effectiveStatus = j.status

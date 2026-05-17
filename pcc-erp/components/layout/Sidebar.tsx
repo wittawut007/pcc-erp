@@ -65,7 +65,6 @@ const allNavItems: NavSection[] = [
       { href: '/products',     icon: 'fa-box-open',       label: 'ข้อมูลสินค้า',    roles: ['admin', 'planner'] },
       { href: '/users',        icon: 'fa-users-cog',      label: 'จัดการผู้ใช้งาน', roles: ['admin'] },
       { href: '/logs',         icon: 'fa-history',        label: 'ประวัติการทำงาน', roles: ['admin'] },
-      { href: '/data-catalog', icon: 'fa-database',       label: 'Data Catalog',   roles: ['admin'] },
     ],
   },
 ]

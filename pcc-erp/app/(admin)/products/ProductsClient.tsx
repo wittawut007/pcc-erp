@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
@@ -63,6 +63,120 @@ export default function ProductsClient({ products: initial, rawMaterials }: { pr
   const [editProduct, setEditProduct] = useState<Product | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+
+  // CSV Import state
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importRows, setImportRows] = useState<any[]>([])
+  const [importing, setImporting] = useState(false)
+
+  // --- Export CSV ---
+  const handleExportCSV = () => {
+    const headers = ['code','name','category','size','unit','concrete_per_unit','wire_per_unit','mesh_per_unit','rebar_per_unit','bom_code','wip_code','length','is_active']
+    const rows = products.map(p => [
+      p.code, p.name, p.category, p.size, p.unit,
+      p.concrete_per_unit, p.wire_per_unit ?? '', p.mesh_per_unit ?? '', p.rebar_per_unit ?? '',
+      p.bom_code ?? '', p.wip_code ?? '', p.length ?? '',
+      p.is_active ? 'TRUE' : 'FALSE'
+    ])
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `products_export_${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success(`ดาวน์โหลด CSV สำเร็จ (${products.length} รายการ)`)
+  }
+
+  // --- Import CSV ---
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.name.endsWith('.csv')) { toast.error('กรุณาเลือกไฟล์ .csv เท่านั้น'); return }
+
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target?.result as string
+        const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim())
+        if (lines.length < 2) { toast.error('ไฟล์ CSV ต้องมีข้อมูลอย่างน้อย 1 แถว'); return }
+
+        const parseCSVLine = (line: string): string[] => {
+          const result: string[] = []
+          let current = ''
+          let inQuotes = false
+          for (let i = 0; i < line.length; i++) {
+            const ch = line[i]
+            if (ch === '"' && inQuotes && line[i+1] === '"') { current += '"'; i++; continue }
+            if (ch === '"') { inQuotes = !inQuotes; continue }
+            if (ch === ',' && !inQuotes) { result.push(current.trim()); current = ''; continue }
+            current += ch
+          }
+          result.push(current.trim())
+          return result
+        }
+
+        const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim())
+        const requiredCols = ['code', 'name', 'category']
+        const missing = requiredCols.filter(c => !headers.includes(c))
+        if (missing.length > 0) { toast.error(`ไม่พบคอลัมน์ที่จำเป็น: ${missing.join(', ')}`); return }
+
+        const parsed = lines.slice(1).map(line => {
+          const vals = parseCSVLine(line)
+          const row: any = {}
+          headers.forEach((h, i) => { row[h] = vals[i] ?? '' })
+          return {
+            code: row['code'] || '',
+            name: row['name'] || '',
+            category: row['category'] || CATEGORIES[0],
+            size: row['size'] || '',
+            unit: row['unit'] || 'ชิ้น',
+            concrete_per_unit: parseFloat(row['concrete_per_unit']) || 0,
+            wire_per_unit: parseFloat(row['wire_per_unit']) || 0,
+            mesh_per_unit: parseFloat(row['mesh_per_unit']) || 0,
+            rebar_per_unit: parseFloat(row['rebar_per_unit']) || 0,
+            bom_code: row['bom_code'] || null,
+            wip_code: row['wip_code'] || null,
+            length: parseFloat(row['length']) || null,
+            is_active: row['is_active']?.toUpperCase() !== 'FALSE',
+          }
+        }).filter(r => r.code && r.name)
+
+        if (parsed.length === 0) { toast.error('ไม่พบข้อมูลที่ถูกต้องในไฟล์'); return }
+        setImportRows(parsed)
+        setShowImportModal(true)
+      } catch (err) {
+        toast.error('เกิดข้อผิดพลาดในการอ่านไฟล์ CSV')
+      }
+    }
+    reader.readAsText(file, 'UTF-8')
+    // reset input
+    e.target.value = ''
+  }
+
+  const handleConfirmImport = async () => {
+    if (importing) return
+    setImporting(true)
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .upsert(importRows, { onConflict: 'code' })
+        .select()
+      if (error) throw error
+      // Refresh product list
+      const { data: refreshed } = await supabase.from('products').select('*').order('category').order('code')
+      setProducts(refreshed ?? [])
+      toast.success(`นำเข้าสำเร็จ ${importRows.length} รายการ`)
+      setShowImportModal(false)
+      setImportRows([])
+    } catch (e: any) {
+      toast.error('เกิดข้อผิดพลาด: ' + e.message)
+    } finally {
+      setImporting(false)
+    }
+  }
 
   const filtered = useMemo(() => {
     return products.filter(p => {
@@ -227,8 +341,18 @@ export default function ProductsClient({ products: initial, rawMaterials }: { pr
         </select>
 
         <div style={{ display: 'flex', gap: 10, marginLeft: 'auto' }}>
+            {/* Hidden file input */}
+            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleFileChange} />
+            
             <button 
-                onClick={() => toast('รอการเชื่อมต่อระบบ Import', { icon: '🚧' })}
+                onClick={handleExportCSV}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--surface)', color: '#16A34A', border: '1px solid #BBF7D0', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            >
+                <i className="fas fa-file-arrow-down"></i>
+                Export CSV
+            </button>
+            <button 
+                onClick={() => fileInputRef.current?.click()}
                 style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
             >
                 <i className="fas fa-file-import"></i>
@@ -369,6 +493,59 @@ export default function ProductsClient({ products: initial, rawMaterials }: { pr
           </div>
         </div>
       </div>
+
+      {/* Import CSV Preview Modal */}
+      {showImportModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 16 }}>
+          <div style={{ background: 'white', borderRadius: 14, padding: 24, width: '100%', maxWidth: 760, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div>
+                <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>ตรวจสอบข้อมูลก่อน Import</h2>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '4px 0 0' }}>พบ {importRows.length} รายการ — ระบบจะ Upsert โดยใช้ "รหัสสินค้า" เป็น Key</p>
+              </div>
+              <button onClick={() => setShowImportModal(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1, border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead style={{ position: 'sticky', top: 0, background: 'var(--bg)', zIndex: 1 }}>
+                  <tr>
+                    {['รหัส', 'ชื่อสินค้า', 'หมวดหมู่', 'ขนาด', 'หน่วย', 'คอนกรีต/หน่วย', 'สถานะ'].map(h => (
+                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {importRows.map((r, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '7px 10px', fontWeight: 700 }}>{r.code}</td>
+                      <td style={{ padding: '7px 10px' }}>{r.name}</td>
+                      <td style={{ padding: '7px 10px' }}>{r.category}</td>
+                      <td style={{ padding: '7px 10px' }}>{r.size || '-'}</td>
+                      <td style={{ padding: '7px 10px' }}>{r.unit}</td>
+                      <td style={{ padding: '7px 10px' }}>{r.concrete_per_unit}</td>
+                      <td style={{ padding: '7px 10px' }}>
+                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 600, background: r.is_active ? 'var(--green-light)' : 'var(--red-light)', color: r.is_active ? 'var(--green)' : 'var(--red)' }}>
+                          {r.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button onClick={() => setShowImportModal(false)} style={{ flex: 1, padding: '10px', border: '1px solid var(--border)', borderRadius: 8, background: 'white', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
+              <button
+                onClick={handleConfirmImport}
+                disabled={importing}
+                style={{ flex: 2, padding: '10px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: 'white', fontSize: 13, fontWeight: 700, cursor: importing ? 'wait' : 'pointer', opacity: importing ? 0.7 : 1 }}
+              >
+                {importing ? <><i className="fas fa-spinner fa-spin" style={{ marginRight: 6 }}></i>กำลัง Import...</> : <><i className="fas fa-file-import" style={{ marginRight: 6 }}></i>ยืนยัน Import {importRows.length} รายการ</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Form */}
       {showModal && (
