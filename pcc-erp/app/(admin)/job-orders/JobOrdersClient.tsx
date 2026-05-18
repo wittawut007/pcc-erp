@@ -31,7 +31,9 @@ interface JobOrder {
     plan?: { id: string; plan_date: string; created_at: string; status: string }
   } | null
   worker: { full_name: string; employee_code: string | null } | null
-  qc_inspection?: { pour_ok: boolean | null; demold_qty_good: number | null }[]
+  photo_ready_url: string | null
+  photo_cast_url: string | null
+  qc_inspection?: { pour_ok: boolean | null; demold_qty_good: number | null; inspector?: { full_name: string } | null }[]
   concrete_orders?: ConcreteOrder[]
 }
 
@@ -68,11 +70,11 @@ function getDisplayStatus(job: JobOrder): DisplayStatus {
 function getProgressPct(displayStatus: DisplayStatus): number {
   const map: Record<DisplayStatus, number> = {
     pending: 0,
-    concrete_ordered: 50,
-    casting: 60,
+    concrete_ordered: 25,
+    casting: 50,
     curing: 75,
     ready_demold: 90,
-    demolded: 95,
+    demolded: 100,
     qc_passed: 100,
     cancelled: 0,
   }
@@ -111,10 +113,43 @@ const fmtDate = (iso: string | null) => {
 const fmtPlanDate = (iso: string) =>
   new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
 
+function getLocalDateString(d: Date) {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getTodayRange() {
+  const t = new Date()
+  const d = getLocalDateString(t)
+  return { start: d, end: d }
+}
+
+function getThisWeekRange() {
+  const t = new Date()
+  const day = t.getDay()
+  const diffToMonday = t.getDate() - day + (day === 0 ? -6 : 1)
+  const start = new Date(t)
+  start.setDate(diffToMonday)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  return { start: getLocalDateString(start), end: getLocalDateString(end) }
+}
+
+function getThisMonthRange() {
+  const t = new Date()
+  const start = new Date(t.getFullYear(), t.getMonth(), 1)
+  const end = new Date(t.getFullYear(), t.getMonth() + 1, 0)
+  return { start: getLocalDateString(start), end: getLocalDateString(end) }
+}
+
 export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobOrders: JobOrder[]; workers: Worker[]; userRole?: string }) {
   const [filterStatus, setFilterStatus] = useState<DisplayStatus | 'all'>('all')
   const [search, setSearch] = useState('')
+  const [dateRange, setDateRange] = useState<{ start: string, end: string }>({ start: '', end: '' })
   const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set())
+  const [viewingPhotoUrl, setViewingPhotoUrl] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [resettingJobId, setResettingJobId] = useState<string | null>(null)
 
@@ -194,8 +229,15 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
           g.orderNumber.toLowerCase().includes(search.toLowerCase())
         return matchStatus && matchSearch
       }),
-    })).filter(g => g.jobs.length > 0)
-  }, [planGroups, filterStatus, search])
+    })).filter(g => {
+      if (g.jobs.length === 0) return false;
+      if (dateRange.start && dateRange.end) {
+        const pDate = g.planDate.split('T')[0];
+        if (pDate < dateRange.start || pDate > dateRange.end) return false;
+      }
+      return true;
+    })
+  }, [planGroups, filterStatus, search, dateRange])
 
   const togglePlan = (planId: string) => {
     setExpandedPlans(prev => {
@@ -246,21 +288,72 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
         })}
       </div>
 
-      {/* Search Bar */}
-      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ position: 'relative', flex: 1 }}>
-          <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#9CA3AF' }} />
-          <input
-            type="text"
-            placeholder="ค้นหาสินค้า, รหัส, โรงผลิต, เลขที่ PO..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ paddingLeft: 32, paddingRight: 12, height: 36, width: '100%', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 12, outline: 'none', color: '#374151', background: '#F9FAFB', boxSizing: 'border-box' }}
-          />
+      {/* Filters (Search & Date) */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {/* Search Bar */}
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
+          <div style={{ position: 'relative', flex: 1 }}>
+            <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#9CA3AF' }} />
+            <input
+              type="text"
+              placeholder="ค้นหาสินค้า, รหัส, โรงผลิต, เลขที่ PO..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ paddingLeft: 32, paddingRight: 12, height: 36, width: '100%', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 12, outline: 'none', color: '#374151', background: '#F9FAFB', boxSizing: 'border-box' }}
+            />
+          </div>
+          <span style={{ fontSize: 12, color: '#9CA3AF', whiteSpace: 'nowrap' }}>
+            {filteredGroups.reduce((s, g) => s + g.jobs.length, 0)} รายการ จาก {filteredGroups.length} ใบสั่งผลิต
+          </span>
         </div>
-        <span style={{ fontSize: 12, color: '#9CA3AF', whiteSpace: 'nowrap' }}>
-          {filteredGroups.reduce((s, g) => s + g.jobs.length, 0)} รายการ จาก {filteredGroups.length} ใบสั่งผลิต
-        </span>
+
+        {/* Date Filter */}
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <i className="fas fa-calendar-alt" style={{ color: '#9CA3AF', fontSize: 14 }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>วันที่แผน:</span>
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 8, padding: '4px 8px' }}>
+            <input 
+              type="date" 
+              value={dateRange.start} 
+              onChange={e => setDateRange(p => ({ ...p, start: e.target.value }))}
+              style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: '#374151', cursor: 'pointer' }}
+            />
+            <span style={{ color: '#9CA3AF', fontSize: 12 }}>-</span>
+            <input 
+              type="date" 
+              value={dateRange.end} 
+              onChange={e => setDateRange(p => ({ ...p, end: e.target.value }))}
+              style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: '#374151', cursor: 'pointer' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              onClick={() => setDateRange(getTodayRange())}
+              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
+            >วันนี้</button>
+            <button
+              onClick={() => setDateRange(getThisWeekRange())}
+              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
+            >สัปดาห์นี้</button>
+            <button
+              onClick={() => setDateRange(getThisMonthRange())}
+              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
+            >เดือนนี้</button>
+            {(dateRange.start || dateRange.end) && (
+              <button
+                onClick={() => setDateRange({ start: '', end: '' })}
+                style={{ padding: '6px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', background: '#FEE2E2', color: '#DC2626', cursor: 'pointer', marginLeft: 4 }}
+                title="ล้างตัวกรอง"
+              >
+                <i className="fas fa-times" />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Plan Groups */}
@@ -344,6 +437,7 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
                           <th style={{ ...thStyle, textAlign: 'center' }}>เป้า / เทแล้ว</th>
                           <th style={{ ...thStyle, textAlign: 'center' }}>ความคืบหน้า</th>
                           <th style={{ ...thStyle, textAlign: 'center' }}>สถานะ</th>
+                          <th style={{ ...thStyle, textAlign: 'center' }}>ภาพถ่าย</th>
                           <th style={thStyle}>พนักงาน</th>
                           <th style={thStyle}>วันที่/เวลา</th>
                           <th style={{ ...thStyle, textAlign: 'center' }}>ถอดแบบได้</th>
@@ -442,23 +536,81 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
                                 </span>
                               </td>
 
-                              {/* Worker / Requester */}
+                              {/* Photos */}
+                              <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                  <button
+                                    disabled={!job.photo_ready_url}
+                                    onClick={() => job.photo_ready_url && setViewingPhotoUrl(job.photo_ready_url)}
+                                    style={{
+                                      background: job.photo_ready_url ? '#EFF6FF' : '#F3F4F6',
+                                      color: job.photo_ready_url ? '#2563EB' : '#D1D5DB',
+                                      border: '1px solid',
+                                      borderColor: job.photo_ready_url ? '#BFDBFE' : '#E5E7EB',
+                                      width: 28, height: 28, borderRadius: 6, cursor: job.photo_ready_url ? 'pointer' : 'not-allowed',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s'
+                                    }}
+                                    title="ภาพก่อนสั่งคอนกรีต"
+                                  >
+                                    <i className="fas fa-camera" style={{ fontSize: 12 }} />
+                                  </button>
+                                  <button
+                                    disabled={!job.photo_cast_url}
+                                    onClick={() => job.photo_cast_url && setViewingPhotoUrl(job.photo_cast_url)}
+                                    style={{
+                                      background: job.photo_cast_url ? '#F5F3FF' : '#F3F4F6',
+                                      color: job.photo_cast_url ? '#7C3AED' : '#D1D5DB',
+                                      border: '1px solid',
+                                      borderColor: job.photo_cast_url ? '#C4B5FD' : '#E5E7EB',
+                                      width: 28, height: 28, borderRadius: 6, cursor: job.photo_cast_url ? 'pointer' : 'not-allowed',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s'
+                                    }}
+                                    title="ภาพเทคอนกรีตแล้ว"
+                                  >
+                                    <i className="fas fa-camera" style={{ fontSize: 12 }} />
+                                  </button>
+                                </div>
+                              </td>
+
+                              {/* Worker / Requester / QC */}
                               <td style={{ padding: '12px 16px' }}>
-                                {requesterName ? (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                                    <div style={{
-                                      width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-                                      background: '#DBEAFE', color: '#2563EB',
-                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                      fontSize: 10, fontWeight: 700,
-                                    }}>
-                                      {requesterName.charAt(0)}
+                                {(() => {
+                                  let employeeName = '—'
+                                  let roleText = ''
+                                  
+                                  if (ds === 'pending') {
+                                    employeeName = 'ยังไม่ระบุชื่อ'
+                                  } else if (ds === 'concrete_ordered') {
+                                    employeeName = requesterName ?? job.worker?.full_name ?? '—'
+                                    roleText = 'Worker'
+                                  } else {
+                                    const qcInspector = Array.isArray(job.qc_inspection) ? job.qc_inspection[0]?.inspector?.full_name : null
+                                    employeeName = qcInspector ?? requesterName ?? job.worker?.full_name ?? '—'
+                                    roleText = 'QC'
+                                  }
+
+                                  if (employeeName === 'ยังไม่ระบุชื่อ' || employeeName === '—') {
+                                    return <span style={{ color: '#D1D5DB', fontSize: 12 }}>{employeeName}</span>
+                                  }
+
+                                  return (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                      <div style={{
+                                        width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                                        background: roleText === 'QC' ? '#F5F3FF' : '#DBEAFE', 
+                                        color: roleText === 'QC' ? '#7C3AED' : '#2563EB',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        fontSize: 10, fontWeight: 700,
+                                      }}>
+                                        {employeeName.charAt(0)}
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>{employeeName}</span>
+                                        <span style={{ fontSize: 10, color: '#9CA3AF' }}>{roleText}</span>
+                                      </div>
                                     </div>
-                                    <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>{requesterName}</span>
-                                  </div>
-                                ) : (
-                                  <span style={{ color: '#D1D5DB', fontSize: 12 }}>—</span>
-                                )}
+                                  )
+                                })()}
                               </td>
 
                               {/* Date/Time (concrete order time) */}
@@ -534,6 +686,46 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Image Viewer Modal */}
+      {viewingPhotoUrl && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.85)', zIndex: 9999,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+            backdropFilter: 'blur(4px)'
+          }}
+          onClick={() => setViewingPhotoUrl(null)}
+        >
+          <div style={{ position: 'relative', maxWidth: '90%', maxHeight: '90%' }}>
+            <button
+              onClick={() => setViewingPhotoUrl(null)}
+              style={{
+                position: 'absolute', top: -16, right: -16,
+                background: '#EF4444', color: '#fff', border: 'none',
+                width: 36, height: 36, borderRadius: '50%', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 10000,
+                fontSize: 16
+              }}
+              title="ปิด"
+            >
+              <i className="fas fa-times" />
+            </button>
+            <img
+              src={viewingPhotoUrl}
+              alt="ภาพถ่ายจากหน้างาน"
+              style={{ 
+                maxWidth: '100%', maxHeight: '85vh', 
+                borderRadius: 12, objectFit: 'contain', background: '#000',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+              }}
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
         </div>
       )}
     </div>

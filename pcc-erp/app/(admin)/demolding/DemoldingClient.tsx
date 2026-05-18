@@ -14,7 +14,7 @@ interface Job {
 
 interface DemoldRecord {
   id: string; qty_good: number; qty_defect: number; defect_reason: string | null
-  defect_detail: string | null; created_at: string
+  defect_detail: string | null; created_at: string; photo_url: string | null
   job_order: { bed: string; plan_item: { product: { name: string; code?: string; unit: string } | null; plan?: { id: string; plan_date: string } | null } | null } | null
   worker: { full_name: string } | null
 }
@@ -47,13 +47,46 @@ const fmtDate = (iso: string | null) => {
 const fmtPlanDate = (iso: string) =>
   new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
 
+function getLocalDateString(d: Date) {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getTodayRange() {
+  const t = new Date()
+  const d = getLocalDateString(t)
+  return { start: d, end: d }
+}
+
+function getThisWeekRange() {
+  const t = new Date()
+  const day = t.getDay()
+  const diffToMonday = t.getDate() - day + (day === 0 ? -6 : 1)
+  const start = new Date(t)
+  start.setDate(diffToMonday)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  return { start: getLocalDateString(start), end: getLocalDateString(end) }
+}
+
+function getThisMonthRange() {
+  const t = new Date()
+  const start = new Date(t.getFullYear(), t.getMonth(), 1)
+  const end = new Date(t.getFullYear(), t.getMonth() + 1, 0)
+  return { start: getLocalDateString(start), end: getLocalDateString(end) }
+}
+
 export default function DemoldingClient({ readyJobs, recentDemolding, workers }: { readyJobs: Job[]; recentDemolding: DemoldRecord[]; workers: Worker[] }) {
   const [tab, setTab] = useState<'queue' | 'history'>('queue')
   const [jobs, setJobs] = useState<Job[]>(readyJobs)
   const [records, setRecords] = useState<DemoldRecord[]>(recentDemolding)
   const [searchQuery, setSearchQuery] = useState('')
+  const [dateRange, setDateRange] = useState<{ start: string, end: string }>({ start: '', end: '' })
   
   const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set())
+  const [viewingPhotoUrl, setViewingPhotoUrl] = useState<string | null>(null)
 
   const isReady = (job: Job) => {
     if (job.status === 'ready_demold') return true;
@@ -88,21 +121,28 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
   }
 
   const filteredJobs = useMemo(() => {
-    if (!searchQuery) return jobs
+    if (!searchQuery && !dateRange.start && !dateRange.end) return jobs
     const q = searchQuery.toLowerCase()
     return jobs.filter(j => {
       const planDate = j.plan_item?.plan?.plan_date || new Date().toISOString()
-      const datePart = planDate.split('T')[0].replace(/-/g, '')
-      const orderNumber = `PO-${datePart}-001`.toLowerCase()
+      const datePart = planDate.split('T')[0]
+      const orderNumber = `PO-${datePart.replace(/-/g, '')}-001`.toLowerCase()
       
-      return (
+      const matchSearch = !q || (
         orderNumber.includes(q) ||
         (j.plan_item?.product?.name || '').toLowerCase().includes(q) ||
         (j.bed || '').toLowerCase().includes(q) ||
         (j.worker?.full_name || '').toLowerCase().includes(q)
       )
+
+      let matchDate = true
+      if (dateRange.start && dateRange.end) {
+        if (datePart < dateRange.start || datePart > dateRange.end) matchDate = false
+      }
+
+      return matchSearch && matchDate
     })
-  }, [jobs, searchQuery])
+  }, [jobs, searchQuery, dateRange])
 
   const planGroups = useMemo(() => {
     const map = new Map<string, PlanGroup>()
@@ -154,21 +194,29 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
   }
 
   const filteredRecords = useMemo(() => {
-    if (!searchQuery) return records
+    if (!searchQuery && !dateRange.start && !dateRange.end) return records
     const q = searchQuery.toLowerCase()
     return records.filter(r => {
+      const createdDate = r.created_at.split('T')[0]
       const planDate = r.job_order?.plan_item?.plan?.plan_date || r.created_at
       const datePart = planDate.split('T')[0].replace(/-/g, '')
       const orderNumber = r.job_order?.plan_item?.plan?.id ? `PO-${datePart}-001`.toLowerCase() : 'ไม่มีระบุใบสั่งผลิต'
       
-      return (
+      const matchSearch = !q || (
         orderNumber.includes(q) ||
         (r.job_order?.plan_item?.product?.name || '').toLowerCase().includes(q) ||
         (r.job_order?.bed || '').toLowerCase().includes(q) ||
         (r.worker?.full_name || '').toLowerCase().includes(q)
       )
+
+      let matchDate = true
+      if (dateRange.start && dateRange.end) {
+        if (createdDate < dateRange.start || createdDate > dateRange.end) matchDate = false
+      }
+
+      return matchSearch && matchDate
     })
-  }, [records, searchQuery])
+  }, [records, searchQuery, dateRange])
 
   const historyGroups = useMemo(() => {
     const map = new Map<string, HistoryGroup>()
@@ -217,21 +265,72 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
         ))}
       </div>
 
-      {/* Search Bar */}
-      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ position: 'relative', flex: 1 }}>
-          <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#9CA3AF' }} />
-          <input
-            type="text"
-            placeholder="ค้นหาสินค้า, ใบสั่งผลิต, โรงผลิต, หรือชื่อพนักงาน..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            style={{ paddingLeft: 32, paddingRight: 12, height: 36, width: '100%', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 12, outline: 'none', color: '#374151', background: '#F9FAFB', boxSizing: 'border-box' }}
-          />
+      {/* Filters (Search & Date) */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {/* Search Bar */}
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
+          <div style={{ position: 'relative', flex: 1 }}>
+            <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#9CA3AF' }} />
+            <input
+              type="text"
+              placeholder="ค้นหาสินค้า, ใบสั่งผลิต, โรงผลิต, หรือชื่อพนักงาน..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{ paddingLeft: 32, paddingRight: 12, height: 36, width: '100%', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 12, outline: 'none', color: '#374151', background: '#F9FAFB', boxSizing: 'border-box' }}
+            />
+          </div>
+          <span style={{ fontSize: 12, color: '#9CA3AF', whiteSpace: 'nowrap' }}>
+            พบ <strong style={{ color: '#374151' }}>{tab === 'queue' ? filteredJobs.length : filteredRecords.length}</strong> รายการ
+          </span>
         </div>
-        <span style={{ fontSize: 12, color: '#9CA3AF', whiteSpace: 'nowrap' }}>
-          พบ <strong style={{ color: '#374151' }}>{tab === 'queue' ? filteredJobs.length : filteredRecords.length}</strong> รายการ
-        </span>
+
+        {/* Date Filter */}
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <i className="fas fa-calendar-alt" style={{ color: '#9CA3AF', fontSize: 14 }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>{tab === 'queue' ? 'วันที่แผน:' : 'วันที่ถอดแบบ:'}</span>
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 8, padding: '4px 8px' }}>
+            <input 
+              type="date" 
+              value={dateRange.start} 
+              onChange={e => setDateRange(p => ({ ...p, start: e.target.value }))}
+              style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: '#374151', cursor: 'pointer' }}
+            />
+            <span style={{ color: '#9CA3AF', fontSize: 12 }}>-</span>
+            <input 
+              type="date" 
+              value={dateRange.end} 
+              onChange={e => setDateRange(p => ({ ...p, end: e.target.value }))}
+              style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: '#374151', cursor: 'pointer' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              onClick={() => setDateRange(getTodayRange())}
+              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
+            >วันนี้</button>
+            <button
+              onClick={() => setDateRange(getThisWeekRange())}
+              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
+            >สัปดาห์นี้</button>
+            <button
+              onClick={() => setDateRange(getThisMonthRange())}
+              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
+            >เดือนนี้</button>
+            {(dateRange.start || dateRange.end) && (
+              <button
+                onClick={() => setDateRange({ start: '', end: '' })}
+                style={{ padding: '6px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', background: '#FEE2E2', color: '#DC2626', cursor: 'pointer', marginLeft: 4 }}
+                title="ล้างตัวกรอง"
+              >
+                <i className="fas fa-times" />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -405,6 +504,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
                                 <th style={{ ...thStyle, textAlign: 'center' }}>ดี</th>
                                 <th style={{ ...thStyle, textAlign: 'center' }}>เสีย</th>
                                 <th style={thStyle}>สาเหตุ</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>ภาพถ่าย</th>
                                 <th style={thStyle}>พนักงาน</th>
                               </tr>
                             </thead>
@@ -433,6 +533,23 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
                                   <td style={{ padding: '12px 16px', textAlign: 'center', color: '#10B981', fontWeight: 800 }}>{r.qty_good}</td>
                                   <td style={{ padding: '12px 16px', textAlign: 'center', color: r.qty_defect > 0 ? '#EF4444' : '#9CA3AF', fontWeight: 800 }}>{r.qty_defect}</td>
                                   <td style={{ padding: '12px 16px', fontSize: 12, color: '#6B7280' }}>{r.defect_reason ? DEFECT_REASONS.find(x => x.value === r.defect_reason)?.label : '—'}</td>
+                                  <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                    <button
+                                      disabled={!r.photo_url}
+                                      onClick={() => r.photo_url && setViewingPhotoUrl(r.photo_url)}
+                                      style={{
+                                        background: r.photo_url ? '#EFF6FF' : '#F3F4F6',
+                                        color: r.photo_url ? '#2563EB' : '#D1D5DB',
+                                        border: '1px solid',
+                                        borderColor: r.photo_url ? '#BFDBFE' : '#E5E7EB',
+                                        width: 28, height: 28, borderRadius: 6, cursor: r.photo_url ? 'pointer' : 'not-allowed',
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s'
+                                      }}
+                                      title="ภาพถ่ายตอนถอดแบบ"
+                                    >
+                                      <i className="fas fa-camera" style={{ fontSize: 12 }} />
+                                    </button>
+                                  </td>
                                   <td style={{ padding: '12px 16px', fontSize: 12, color: '#6B7280' }}>
                                     {r.worker?.full_name ? (
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -457,6 +574,46 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
           )}
         </div>
       </div>
+
+      {/* Image Viewer Modal */}
+      {viewingPhotoUrl && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.85)', zIndex: 9999,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+            backdropFilter: 'blur(4px)'
+          }}
+          onClick={() => setViewingPhotoUrl(null)}
+        >
+          <div style={{ position: 'relative', maxWidth: '90%', maxHeight: '90%' }}>
+            <button
+              onClick={() => setViewingPhotoUrl(null)}
+              style={{
+                position: 'absolute', top: -16, right: -16,
+                background: '#EF4444', color: '#fff', border: 'none',
+                width: 36, height: 36, borderRadius: '50%', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 10000,
+                fontSize: 16
+              }}
+              title="ปิด"
+            >
+              <i className="fas fa-times" />
+            </button>
+            <img
+              src={viewingPhotoUrl}
+              alt="ภาพถ่ายจากหน้างาน"
+              style={{ 
+                maxWidth: '100%', maxHeight: '85vh', 
+                borderRadius: 12, objectFit: 'contain', background: '#000',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+              }}
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

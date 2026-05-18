@@ -35,20 +35,57 @@ const DEFECT_REASONS: Record<string, { label: string; color: string }> = {
 
 
 
+function getLocalDateString(d: Date) {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getTodayRange() {
+  const t = new Date()
+  const d = getLocalDateString(t)
+  return { start: d, end: d }
+}
+
+function getThisWeekRange() {
+  const t = new Date()
+  const day = t.getDay()
+  const diffToMonday = t.getDate() - day + (day === 0 ? -6 : 1)
+  const start = new Date(t)
+  start.setDate(diffToMonday)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  return { start: getLocalDateString(start), end: getLocalDateString(end) }
+}
+
+function getThisMonthRange() {
+  const t = new Date()
+  const start = new Date(t.getFullYear(), t.getMonth(), 1)
+  const end = new Date(t.getFullYear(), t.getMonth() + 1, 0)
+  return { start: getLocalDateString(start), end: getLocalDateString(end) }
+}
+
 export default function QcClient({ records, summary }: { records: DemoldingRecord[]; summary: SummaryRecord[] }) {
   const [search, setSearch] = useState('')
   const [filterReason, setFilterReason] = useState('ทั้งหมด')
-  const [filterRange, setFilterRange] = useState('7')
+  const [dateRange, setDateRange] = useState<{ start: string, end: string }>({ start: '', end: '' })
 
   const displayRecords = records
   const displaySummary = summary
 
-  // Filter
-  const cutoff = useMemo(() => {
-    const d = new Date()
-    d.setDate(d.getDate() - parseInt(filterRange))
-    return d
-  }, [filterRange])
+  // Filter Summary
+  const filteredSummary = useMemo(() => {
+    if (!dateRange.start && !dateRange.end) return displaySummary
+    return displaySummary.filter(r => {
+      const createdDate = r.created_at.split('T')[0]
+      let matchDate = true
+      if (dateRange.start && dateRange.end) {
+        if (createdDate < dateRange.start || createdDate > dateRange.end) matchDate = false
+      }
+      return matchDate
+    })
+  }, [displaySummary, dateRange])
 
   const filtered = useMemo(() => displayRecords.filter(r => {
     const planDate = r.job_order?.plan_item?.plan?.plan_date || r.created_at
@@ -62,9 +99,15 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
       orderNumber?.toLowerCase().includes(search.toLowerCase())
 
     const matchReason = filterReason === 'ทั้งหมด' || (filterReason === 'none' ? r.demold_qty_defect === 0 : r.defect_reason === filterReason)
-    const matchDate = new Date(r.created_at) >= cutoff
+
+    let matchDate = true
+    const createdDate = r.created_at.split('T')[0]
+    if (dateRange.start && dateRange.end) {
+      if (createdDate < dateRange.start || createdDate > dateRange.end) matchDate = false
+    }
+
     return matchSearch && matchReason && matchDate
-  }), [displayRecords, search, filterReason, cutoff])
+  }), [displayRecords, search, filterReason, dateRange])
 
   const planGroups = useMemo(() => {
     const map = new Map<string, { planId: string; planDate: string; orderNumber: string; records: DemoldingRecord[] }>()
@@ -101,20 +144,20 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
   }
 
   // KPIs
-  const totalGood = displaySummary.reduce((s, r) => s + (r.demold_qty_good || 0), 0)
-  const totalDefect = displaySummary.reduce((s, r) => s + (r.demold_qty_defect || 0), 0)
+  const totalGood = filteredSummary.reduce((s, r) => s + (r.demold_qty_good || 0), 0)
+  const totalDefect = filteredSummary.reduce((s, r) => s + (r.demold_qty_defect || 0), 0)
   const totalAll = totalGood + totalDefect
   const defectRate = totalAll > 0 ? ((totalDefect / totalAll) * 100).toFixed(2) : '0.00'
 
   const defectByReason = useMemo(() => {
     const map: Record<string, number> = {}
-    displaySummary.forEach(r => {
+    filteredSummary.forEach(r => {
       if ((r.demold_qty_defect || 0) > 0 && r.defect_reason) {
         map[r.defect_reason] = (map[r.defect_reason] ?? 0) + r.demold_qty_defect
       }
     })
     return map
-  }, [displaySummary])
+  }, [filteredSummary])
 
   const maxDefect = Math.max(...Object.values(defectByReason), 1)
 
@@ -195,13 +238,49 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
               <option value="none">ไม่มีของเสีย</option>
               {Object.entries(DEFECT_REASONS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
-            <select value={filterRange} onChange={e => setFilterRange(e.target.value)}
-              style={{ padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white' }}>
-              <option value="1">วันนี้</option>
-              <option value="7">7 วันล่าสุด</option>
-              <option value="30">30 วันล่าสุด</option>
-              <option value="9999">ทั้งหมด</option>
-            </select>
+            
+            {/* Date Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 8px' }}>
+                <input 
+                  type="date" 
+                  value={dateRange.start} 
+                  onChange={e => setDateRange(p => ({ ...p, start: e.target.value }))}
+                  style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: 'var(--text-main)', cursor: 'pointer' }}
+                />
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>-</span>
+                <input 
+                  type="date" 
+                  value={dateRange.end} 
+                  onChange={e => setDateRange(p => ({ ...p, end: e.target.value }))}
+                  style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: 'var(--text-main)', cursor: 'pointer' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  onClick={() => setDateRange(getTodayRange())}
+                  style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
+                >วันนี้</button>
+                <button
+                  onClick={() => setDateRange(getThisWeekRange())}
+                  style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
+                >สัปดาห์นี้</button>
+                <button
+                  onClick={() => setDateRange(getThisMonthRange())}
+                  style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
+                >เดือนนี้</button>
+                {(dateRange.start || dateRange.end) && (
+                  <button
+                    onClick={() => setDateRange({ start: '', end: '' })}
+                    style={{ padding: '6px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', background: 'var(--red-light)', color: 'var(--red)', cursor: 'pointer', marginLeft: 4 }}
+                    title="ล้างตัวกรอง"
+                  >
+                    <i className="fas fa-times" />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '16px' }}>

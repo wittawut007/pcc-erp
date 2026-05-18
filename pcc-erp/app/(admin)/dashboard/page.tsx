@@ -24,7 +24,7 @@ async function getSupabaseData() {
       supabase.from('job_orders').select(`
         *,
         plan_item:production_plan_items!inner(
-          product:products(name,category),
+          product:products(name,category,code),
           plan:production_plans!inner(plan_date)
         ),
         qc:qc_inspections(pour_ok, demold_qty_good, demold_qty_defect, defect_reason)
@@ -71,12 +71,51 @@ export default async function DashboardPage() {
     { label: 'อัตราของเสียวันนี้', value: defectRate, badge: 'Defect', icon: 'fa-exclamation-circle', bg: 'var(--red-light)', color: 'var(--red)', isRed: true },
   ]
 
-  const statusBadge: Record<string, { label: string; bg: string; color: string }> = {
+  type DisplayStatus = 'pending' | 'concrete_ordered' | 'casting' | 'curing' | 'ready_demold' | 'demolded' | 'qc_passed' | 'cancelled'
+
+  function getDisplayStatus(job: any): DisplayStatus {
+    if (job.status === 'pending') return 'pending'
+    if (job.status === 'cancelled') return 'cancelled'
+    if (job.status === 'qc_passed') return 'qc_passed'
+    if (job.status === 'demolded') return 'demolded'
+    if (job.status === 'ready_demold') return 'ready_demold'
+    if (job.status === 'curing') {
+      const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
+      if (expectedTime && new Date(expectedTime) <= new Date()) {
+        return 'ready_demold'
+      }
+      return 'curing'
+    }
+  
+    // casting / concrete_ordered: ตรวจ QC pour_ok
+    const qc = Array.isArray(job.qc) ? job.qc[0] : null
+    if (qc?.pour_ok === true) return 'casting'
+    return 'concrete_ordered'
+  }
+  
+  function getProgressPct(displayStatus: DisplayStatus): number {
+    const map: Record<DisplayStatus, number> = {
+      pending: 0,
+      concrete_ordered: 25,
+      casting: 50,
+      curing: 75,
+      ready_demold: 90,
+      demolded: 100,
+      qc_passed: 100,
+      cancelled: 0,
+    }
+    return map[displayStatus] ?? 0
+  }
+  
+  const statusBadgeMap: Record<DisplayStatus, { label: string; bg: string; color: string }> = {
     pending: { label: 'รอเริ่ม', bg: 'var(--amber-light)', color: '#B45309' },
-    casting: { label: 'ดำเนินการ', bg: 'var(--accent-light)', color: 'var(--accent)' },
-    curing: { label: 'บ่ม', bg: 'var(--green-light)', color: '#059669' },
+    concrete_ordered: { label: 'สั่งคอนกรีตแล้ว', bg: 'var(--indigo-light)', color: 'var(--indigo)' },
+    casting: { label: 'เทคอนกรีตแล้ว', bg: 'var(--accent-light)', color: 'var(--accent)' },
+    curing: { label: 'กำลังบ่ม', bg: 'var(--green-light)', color: '#059669' },
     ready_demold: { label: 'พร้อมถอดแบบ', bg: 'var(--green-light)', color: '#059669' },
-    demolded: { label: 'เสร็จสิ้น', bg: '#F3F4F6', color: '#6B7280' },
+    demolded: { label: 'ถอดแบบแล้ว', bg: '#F3F4F6', color: '#6B7280' },
+    qc_passed: { label: 'QC ตรวจผ่าน', bg: '#F3F4F6', color: '#6B7280' },
+    cancelled: { label: 'ยกเลิก', bg: 'var(--red-light)', color: 'var(--red)' },
   }
 
   const mockJobs = [
@@ -100,9 +139,27 @@ export default async function DashboardPage() {
     { time: '08:15', name: 'สมชาย ใจดี', dept: 'โรงผลิต 1', action: 'เริ่มงาน (สแกน QR)', detail: 'Job: #JO-2610-042', status: 'เริ่มระบบ', green: true },
   ]
 
-  const displayJobs = (jobOrders as any[])?.slice(0, 5).map((j: any) => ({
-    id: j.id, name: j.plan_item?.product?.name ?? '—', bed: j.bed, qty_cast: j.qty_cast, qty_target: j.qty_target, status: j.status,
-  })) || []
+  const activeJobs = (jobOrders as any[])?.filter((j: any) => {
+    const s = getDisplayStatus(j)
+    return !['demolded', 'qc_passed', 'cancelled'].includes(s)
+  }) || []
+
+  const demoldingJobs = (jobOrders as any[])?.filter((j: any) => {
+    const s = getDisplayStatus(j)
+    return ['ready_demold', 'curing'].includes(s)
+  }).sort((a, b) => {
+    const expectedA = a.expected_demold_at || (a.cast_at ? new Date(new Date(a.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : '')
+    const expectedB = b.expected_demold_at || (b.cast_at ? new Date(new Date(b.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : '')
+    if (!expectedA) return 1
+    if (!expectedB) return -1
+    return new Date(expectedA).getTime() - new Date(expectedB).getTime()
+  }) || []
+
+  function fmtDate(isoStr: string) {
+    if (!isoStr) return '—'
+    const d = new Date(isoStr)
+    return d.toLocaleString('th-TH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
 
   const allMaterials = (lowStock as any[]) || []
   const lowStockItems = allMaterials.filter(m => (m.qty_on_hand || 0) <= (m.min_stock || 0))
@@ -308,9 +365,9 @@ export default async function DashboardPage() {
         </div>
 
         {/* Bottom Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 1fr)', gap: 16, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16, marginBottom: 24 }}>
           {/* Job Orders Table */}
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, minWidth: 0 }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <span style={{ fontSize: 13, fontWeight: 700 }}>สถานะงานเทคอนกรีตวันนี้</span>
               <Link href="/job-orders" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>ดูทั้งหมด →</Link>
@@ -318,34 +375,116 @@ export default async function DashboardPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['รายการสินค้า', 'โรงผลิต', 'ความคืบหน้า', 'สำเร็จ', 'สถานะ'].map((th, i) => (
-                    <th key={th} style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0 8px 10px', textAlign: i >= 3 ? 'center' : 'left', borderBottom: '1px solid var(--border)' }}>{th}</th>
+                  {['โรงผลิต', 'สินค้า', 'เทแล้ว / เป้า', 'ความคืบหน้า', 'สถานะ'].map((th, i) => (
+                    <th key={th} style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0 8px 10px', textAlign: i >= 2 ? 'center' : 'left', borderBottom: '1px solid var(--border)' }}>{th}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {displayJobs.map((job) => {
-                  const pct = job.qty_target > 0 ? Math.round((job.qty_cast / job.qty_target) * 100) : 0
-                  const s = statusBadge[job.status] ?? { label: job.status, bg: '#F3F4F6', color: '#6B7280' }
+                {activeJobs.slice(0, 8).map((job) => {
+                  const displayStatus = getDisplayStatus(job)
+                  const pct = getProgressPct(displayStatus)
+                  const s = statusBadgeMap[displayStatus] ?? { label: job.status, bg: '#F3F4F6', color: '#6B7280' }
                   return (
                     <tr key={job.id} className="hover:bg-[var(--bg)] transition-colors">
-                      <td style={{ padding: '10px 8px', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>{job.name}</td>
-                      <td style={{ padding: '10px 8px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>โรงผลิต {job.bed}</td>
+                      <td style={{ padding: '10px 8px', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 6, background: 'var(--accent-light)', color: 'var(--accent)', marginRight: 8 }}>{job.bed}</span>
+                      </td>
                       <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 70, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
-                            <div style={{ width: `${pct}%`, height: '100%', background: pct === 100 ? 'var(--green)' : 'var(--accent)', borderRadius: 2 }}></div>
-                          </div>
-                          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{pct}%</span>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 12, lineHeight: 1.3 }}>
+                          {job.plan_item?.product?.name ?? '—'}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>
+                          {job.plan_item?.product?.code ?? ''}
                         </div>
                       </td>
-                      <td style={{ padding: '10px 8px', textAlign: 'right', fontSize: 11, fontFamily: 'monospace', borderBottom: '1px solid var(--border)' }}>{job.qty_cast} / {job.qty_target}</td>
+                      <td style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ fontWeight: 700, color: job.qty_cast > 0 ? 'var(--green)' : 'var(--text-main)' }}>{job.qty_cast ?? 0}</span> / <span style={{ color: 'var(--text-muted)' }}>{job.qty_target ?? 0}</span>
+                      </td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+                          <div style={{ width: 70, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: pct === 100 ? '#10B981' : pct >= 50 ? '#8B5CF6' : '#2563EB', borderRadius: 2 }}></div>
+                          </div>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', width: 24, textAlign: 'right' }}>{pct}%</span>
+                        </div>
+                      </td>
                       <td style={{ padding: '10px 8px', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: s.bg, color: s.color }}>{s.label}</span>
                       </td>
                     </tr>
                   )
                 })}
+                {activeJobs.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ padding: '20px', textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+                      ไม่มีรายการผลิตที่กำลังดำเนินการ
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Demolding Queue Table */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, minWidth: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>งานตัดยก (รอถอดแบบ)</span>
+              <Link href="/demolding" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>ดูทั้งหมด →</Link>
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  {['โรงผลิต', 'สินค้า', 'จำนวน', 'ถอดได้', 'สถานะ'].map((th, i) => (
+                    <th key={th} style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0 8px 10px', textAlign: i >= 2 ? 'center' : 'left', borderBottom: '1px solid var(--border)' }}>{th}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {demoldingJobs.slice(0, 8).map((job) => {
+                  const displayStatus = getDisplayStatus(job)
+                  const ready = displayStatus === 'ready_demold'
+                  const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
+
+                  return (
+                    <tr key={job.id} className="hover:bg-[var(--bg)] transition-colors">
+                      <td style={{ padding: '10px 8px', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 6, background: ready ? '#ECFDF5' : '#FFFBEB', color: ready ? '#059669' : '#D97706', border: `1px solid ${ready ? '#A7F3D0' : '#FDE68A'}`, marginRight: 8 }}>{job.bed}</span>
+                      </td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 12, lineHeight: 1.3 }}>
+                          {job.plan_item?.product?.name ?? '—'}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>
+                          {job.plan_item?.product?.code ?? ''}
+                        </div>
+                      </td>
+                      <td style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ fontWeight: 700, color: 'var(--accent)' }}>{job.qty_cast ?? 0}</span>
+                      </td>
+                      <td style={{ padding: '10px 8px', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>
+                        {expectedTime ? (
+                          <div style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>
+                            <i className="fas fa-calendar-check" style={{ marginRight: 4 }} />
+                            {fmtDate(expectedTime)}
+                          </div>
+                        ) : <span style={{ color: '#D1D5DB' }}>—</span>}
+                      </td>
+                      <td style={{ padding: '10px 8px', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: ready ? '#D1FAE5' : '#FEF3C7', color: ready ? '#065F46' : '#B45309', border: `1px solid ${ready ? '#A7F3D0' : '#FDE68A'}` }}>
+                          {ready ? <><i className="fas fa-check-circle" style={{ marginRight: 4 }} /> พร้อมถอดแบบ</> : <><i className="fas fa-hourglass-half" style={{ marginRight: 4 }} /> กำลังบ่ม</>}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {demoldingJobs.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ padding: '20px', textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+                      ไม่มีรายการถอดแบบที่รออยู่
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
