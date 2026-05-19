@@ -91,14 +91,6 @@ export default function LoginPage() {
               width={56}
               height={56}
               style={{ objectFit: 'contain' }}
-              onError={(e) => {
-                const el = e.currentTarget
-                el.style.display = 'none'
-                const icon = document.createElement('i')
-                icon.className = 'fas fa-industry'
-                icon.style.cssText = 'color:#fff;font-size:36px'
-                el.parentElement?.appendChild(icon)
-              }}
             />
           </div>
           <h1 className="text-slate-900 tracking-tight uppercase font-bold" style={{ fontSize: '46px', marginBottom: '16px' }}>
@@ -133,14 +125,6 @@ export default function LoginPage() {
                 width={48}
                 height={48}
                 style={{ objectFit: 'contain' }}
-                onError={(e) => {
-                  const el = e.currentTarget
-                  el.style.display = 'none'
-                  const icon = document.createElement('i')
-                  icon.className = 'fas fa-industry'
-                  icon.style.cssText = 'color:#fff;font-size:28px'
-                  el.parentElement?.appendChild(icon)
-                }}
               />
             </div>
             {/* Title */}

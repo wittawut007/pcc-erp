@@ -358,8 +358,15 @@ export default function WorkerClient({
               borderRadius: '10px',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               boxShadow: '0 4px 12px rgba(37,99,235,0.3)',
+              overflow: 'hidden',
             }}>
-              <i className="fas fa-box" style={{ color: '#fff', fontSize: '14px' }}></i>
+              <img
+                src="/logo.png"
+                alt="PCC Logo"
+                width={24}
+                height={24}
+                style={{ objectFit: 'contain' }}
+              />
             </div>
             <span style={{ fontWeight: 900, fontSize: '16px', color: '#1E3A8A', letterSpacing: '-0.3px' }}>
               PCC<span style={{ color: '#3B82F6' }}>ERP</span>

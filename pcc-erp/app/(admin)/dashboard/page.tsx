@@ -19,7 +19,7 @@ async function getSupabaseData() {
     sixDaysAgo.setDate(now.getDate() - 5)
     const startDateStr = sixDaysAgo.toISOString().split('T')[0]
     
-    const [{ data: todayPlan }, { data: jobOrders }, { data: recentLogs }, { data: lowStock }, { data: fgStock }, { data: wipStock }, { data: qcData }] = await Promise.all([
+    const [{ data: todayPlan }, { data: jobOrders }, { data: recentLogs }, { data: lowStock }, { data: fgStock }, { data: wipStock }, { data: qcData }, { data: demoldingRecs }, { data: concreteOrders }, { data: concreteRounds }] = await Promise.all([
       supabase.from('production_plans').select('*,items:production_plan_items(*,product:products(*))').eq('plan_date', today).single(),
       supabase.from('job_orders').select(`
         *,
@@ -35,17 +35,20 @@ async function getSupabaseData() {
       supabase.from('raw_materials').select('*'),
       supabase.from('fg_inventory').select('qty'),
       supabase.from('wip_inventory').select('qty'),
-      supabase.from('qc_inspections').select('demold_qty_defect, defect_reason').gte('created_at', startDateStr)
+      supabase.from('qc_inspections').select('demold_qty_defect, defect_reason, created_at').gte('created_at', startDateStr),
+      supabase.from('demolding_records').select('job_order_id, qty_good, qty_defect, defect_reason, created_at, worker:profiles!demolding_records_worker_id_fkey(full_name)').gte('created_at', startDateStr),
+      supabase.from('concrete_orders').select('id, bed, qty_requested, total_qty_requested, status, requested_at, created_at').gte('created_at', today),
+      supabase.from('concrete_rounds').select('concrete_order_id, round_number, qty_per_round, status, supplied_at').gte('created_at', today)
     ])
-    return { todayPlan, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, today }
+    return { todayPlan, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today }
   } catch (err) {
     console.error('Dashboard Fetch Error:', err)
-    return { todayPlan: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, wipStock: null, qcData: null, today: '' }
+    return { todayPlan: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, wipStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, today: '' }
   }
 }
 
 export default async function DashboardPage() {
-  const { todayPlan, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, today } = await getSupabaseData()
+  const { todayPlan, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today } = await getSupabaseData()
 
   const todaysJobOrders = (jobOrders as any[])?.filter((j: any) => j.plan_item?.plan?.plan_date === today) || []
 
@@ -59,6 +62,11 @@ export default async function DashboardPage() {
   const totalQcCast = qtyCast
   const defectRate = totalQcCast > 0 ? ((totalQcFail / totalQcCast) * 100).toFixed(1) + '%' : '0%'
 
+  // Completion Rate = ชิ้นที่ถอดแบบแล้ว / เป้าหมายวันนี้
+  const completionRate = totalTarget > 0 ? Math.min(100, Math.round((qtyDemolded / totalTarget) * 100)) : 0
+  const completionColor = completionRate >= 80 ? 'var(--green)' : completionRate >= 50 ? 'var(--amber)' : 'var(--red)'
+  const completionBg = completionRate >= 80 ? 'var(--green-light)' : completionRate >= 50 ? 'var(--amber-light)' : 'var(--red-light)'
+
   const thMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
   const now = new Date()
   const dateDisplay = `${now.getDate()} ${thMonths[now.getMonth()]} ${now.getFullYear() + 543}`
@@ -69,6 +77,7 @@ export default async function DashboardPage() {
     { label: 'กำลังบ่ม / รอถอดแบบ', value: qtyCuring, badge: 'Curing', icon: 'fa-clock', bg: 'var(--amber-light)', color: 'var(--amber)' },
     { label: 'ถอดแบบแล้ว (FG)', value: qtyDemolded, badge: 'Demolded', icon: 'fa-cubes', bg: 'var(--green-light)', color: 'var(--green)' },
     { label: 'อัตราของเสียวันนี้', value: defectRate, badge: 'Defect', icon: 'fa-exclamation-circle', bg: 'var(--red-light)', color: 'var(--red)', isRed: true },
+    { label: 'ความสำเร็จวันนี้ (%)', value: `${completionRate}%`, badge: 'Complete', icon: 'fa-chart-line', bg: completionBg, color: completionColor },
   ]
 
   type DisplayStatus = 'pending' | 'concrete_ordered' | 'casting' | 'curing' | 'ready_demold' | 'demolded' | 'qc_passed' | 'cancelled'
@@ -155,6 +164,17 @@ export default async function DashboardPage() {
     return new Date(expectedA).getTime() - new Date(expectedB).getTime()
   }) || []
 
+  // Pipeline: count job orders by stage
+  const pipelineCounts: Record<DisplayStatus, number> = { pending: 0, concrete_ordered: 0, casting: 0, curing: 0, ready_demold: 0, demolded: 0, qc_passed: 0, cancelled: 0 }
+  const pipelineQty: Record<DisplayStatus, number> = { pending: 0, concrete_ordered: 0, casting: 0, curing: 0, ready_demold: 0, demolded: 0, qc_passed: 0, cancelled: 0 }
+  ;(jobOrders as any[])?.forEach((job: any) => {
+    const s = getDisplayStatus(job)
+    if (s && s !== 'cancelled') {
+      pipelineCounts[s] = (pipelineCounts[s] || 0) + 1
+      pipelineQty[s] = (pipelineQty[s] || 0) + (job.qty_cast || job.qty_target || 0)
+    }
+  })
+
   function fmtDate(isoStr: string) {
     if (!isoStr) return '—'
     const d = new Date(isoStr)
@@ -163,6 +183,12 @@ export default async function DashboardPage() {
 
   const allMaterials = (lowStock as any[]) || []
   const lowStockItems = allMaterials.filter(m => (m.qty_on_hand || 0) <= (m.min_stock || 0))
+
+  // Build demolding_records lookup: job_order_id -> record
+  const demoldMap = new Map<string, any>()
+  ;(demoldingRecs as any[])?.forEach((r: any) => {
+    if (!demoldMap.has(r.job_order_id)) demoldMap.set(r.job_order_id, r)
+  })
   const displayLowStock = lowStockItems.slice(0, 4)
   const displayLogs = (recentLogs as any[])?.map(l => ({
     time: new Date(l.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
@@ -268,6 +294,88 @@ export default async function DashboardPage() {
      })
   })
 
+  // Bed Utilization Chart Data
+  const bedStatusColorMap: Record<string, string> = {
+    qc_passed: '#10B981', demolded: '#10B981',
+    ready_demold: '#8B5CF6', curing: '#8B5CF6',
+    casting: '#2563EB',
+    concrete_ordered: '#F59E0B',
+    pending: '#9CA3AF',
+    cancelled: '#E5E7EB',
+  }
+  const bedMap = new Map<string, { cast: number; target: number; dominantStatus: string }>()
+  ;(jobOrders as any[])?.forEach((job: any) => {
+    const bedKey = `Bed ${job.bed}`
+    if (!bedMap.has(bedKey)) bedMap.set(bedKey, { cast: 0, target: 0, dominantStatus: 'pending' })
+    const entry = bedMap.get(bedKey)!
+    entry.cast += job.qty_cast || 0
+    entry.target += job.qty_target || 0
+    // Use the most-advanced status seen for this bed as dominant color
+    const statusOrder = ['qc_passed', 'demolded', 'ready_demold', 'curing', 'casting', 'concrete_ordered', 'pending', 'cancelled']
+    const ds = getDisplayStatus(job)
+    if (ds && statusOrder.indexOf(ds) < statusOrder.indexOf(entry.dominantStatus)) {
+      entry.dominantStatus = ds
+    }
+  })
+  const bedLabels = Array.from(bedMap.keys()).sort()
+  const bedChartData = {
+    labels: bedLabels,
+    castData: bedLabels.map(k => bedMap.get(k)!.cast),
+    targetData: bedLabels.map(k => bedMap.get(k)!.target),
+    statusColors: bedLabels.map(k => bedStatusColorMap[bedMap.get(k)!.dominantStatus] || '#9CA3AF'),
+  }
+
+  // Defect Trend Chart Data — 6 days × 4 reasons
+  type DefectReason = 'crack' | 'chip' | 'honeycomb' | 'other'
+  const defectReasonKeys: DefectReason[] = ['crack', 'chip', 'honeycomb', 'other']
+  const defectReasonConfig: Record<DefectReason, { label: string; color: string; bg: string }> = {
+    crack:     { label: 'แตก/ร้าว (Crack)',    color: '#EF4444', bg: 'rgba(239,68,68,0.12)' },
+    chip:      { label: 'บิ่น/หัก (Chip)',     color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
+    honeycomb: { label: 'Honeycomb',              color: '#3B82F6', bg: 'rgba(59,130,246,0.12)' },
+    other:     { label: 'อื่นๆ (Other)',            color: '#8B5CF6', bg: 'rgba(139,92,246,0.12)' },
+  }
+  // daily counts per reason: { 'crack': { '2026-05-14': 3, ... }, ... }
+  const defectByDay: Record<DefectReason, Record<string, number>> = { crack: {}, chip: {}, honeycomb: {}, other: {} }
+  ;(qcData as any[])?.forEach((qc: any) => {
+    if (!qc.demold_qty_defect || qc.demold_qty_defect <= 0) return
+    const dateStr = qc.created_at ? new Date(qc.created_at).toISOString().split('T')[0] : null
+    if (!dateStr) return
+    const reason: DefectReason = defectReasonKeys.includes(qc.defect_reason) ? qc.defect_reason : 'other'
+    defectByDay[reason][dateStr] = (defectByDay[reason][dateStr] || 0) + qc.demold_qty_defect
+  })
+  const defectTrendData = {
+    labels: days.map(d => d.label),
+    datasets: defectReasonKeys.map(reason => ({
+      label: defectReasonConfig[reason].label,
+      data: days.map(d => defectByDay[reason][d.dateStr] || 0),
+      borderColor: defectReasonConfig[reason].color,
+      backgroundColor: defectReasonConfig[reason].bg,
+      fill: true,
+      tension: 0.4,
+      borderWidth: 2,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+    })),
+  }
+
+  // Concrete Usage Summary
+  const concreteList = (concreteOrders as any[]) || []
+  const roundsList = (concreteRounds as any[]) || []
+  const totalConcreteOrdered = concreteList.reduce((s: number, o: any) => s + (o.total_qty_requested || o.qty_requested || 0), 0)
+  const totalRounds = roundsList.length
+  const suppliedRounds = roundsList.filter((r: any) => r.status === 'supplied' || r.supplied_at).length
+  const totalConcreteSupplied = roundsList.filter((r: any) => r.status === 'supplied' || r.supplied_at).reduce((s: number, r: any) => s + (r.qty_per_round || 0), 0)
+  const pendingOrders = concreteList.filter((o: any) => o.status !== 'supplied' && o.status !== 'completed').length
+  // Per-bed breakdown
+  const bedConcreteMap = new Map<string, number>()
+  concreteList.forEach((o: any) => {
+    if (o.bed) {
+      const k = `Bed ${o.bed}`
+      bedConcreteMap.set(k, (bedConcreteMap.get(k) || 0) + (o.total_qty_requested || o.qty_requested || 0))
+    }
+  })
+  const bedConcreteEntries = Array.from(bedConcreteMap.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+
   return (
     <>
       <Header title="Executive Dashboard" subtitle={`อัปเดต: วันนี้ ${dateDisplay}`} />
@@ -279,7 +387,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* KPI Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 16, marginBottom: 24 }}>
           {kpiCards.map((kpi) => (
             <div key={kpi.badge} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '20px 24px', transition: 'box-shadow 0.15s' }}
               className="hover:shadow-md">
@@ -299,12 +407,150 @@ export default async function DashboardPage() {
           ))}
         </div>
 
-        {/* Mid Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 1fr)', gap: 16, marginBottom: 20 }}>
+        {/* Production Pipeline Flow */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 12 }}>Production Pipeline — สายการผลิตปัจจุบัน</div>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '20px 24px' }}>
+            <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
+              {([
+                { key: 'pending' as DisplayStatus, label: 'รอเริ่ม', icon: 'fa-hourglass-start', color: '#6B7280', bg: '#F9FAFB', border: '#E5E7EB' },
+                { key: 'concrete_ordered' as DisplayStatus, label: 'สั่งคอนกรีต', icon: 'fa-truck', color: '#4F46E5', bg: '#EEF2FF', border: '#C7D2FE' },
+                { key: 'casting' as DisplayStatus, label: 'เทคอนกรีต', icon: 'fa-fill-drip', color: '#0284C7', bg: '#E0F2FE', border: '#BAE6FD' },
+                { key: 'curing' as DisplayStatus, label: 'กำลังบ่ม', icon: 'fa-clock', color: '#D97706', bg: '#FEF3C7', border: '#FDE68A' },
+                { key: 'ready_demold' as DisplayStatus, label: 'พร้อมถอดแบบ', icon: 'fa-check-circle', color: '#059669', bg: '#D1FAE5', border: '#6EE7B7' },
+                { key: 'demolded' as DisplayStatus, label: 'ถอดแบบแล้ว', icon: 'fa-cubes', color: '#7C3AED', bg: '#EDE9FE', border: '#C4B5FD' },
+                { key: 'qc_passed' as DisplayStatus, label: 'QC ผ่าน ✓', icon: 'fa-medal', color: '#065F46', bg: '#ECFDF5', border: '#A7F3D0' },
+              ]).map((step, idx, arr) => {
+                const count = pipelineCounts[step.key]
+                const qty = pipelineQty[step.key]
+                const isLast = idx === arr.length - 1
+                const active = count > 0
+                return (
+                  <div key={step.key} style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, gap: 8 }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 8px', borderRadius: 10, background: active ? step.bg : 'var(--bg)', border: `1.5px solid ${active ? step.border : 'var(--border)'}`, opacity: active ? 1 : 0.5, transition: 'all 0.2s' }}>
+                      <div style={{ fontSize: 18, color: active ? step.color : '#9CA3AF', marginBottom: 8 }}><i className={`fas ${step.icon}`} /></div>
+                      <div style={{ fontSize: 28, fontWeight: 800, color: active ? step.color : '#9CA3AF', lineHeight: 1 }}>{count}</div>
+                      <div style={{ fontSize: 9, color: active ? step.color : '#9CA3AF', fontWeight: 700, opacity: 0.75, marginTop: 2, letterSpacing: '0.05em' }}>JOB</div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginTop: 8, textAlign: 'center', lineHeight: 1.3 }}>{step.label}</div>
+                      <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4, fontFamily: 'monospace' }}>{qty > 0 ? `${qty.toLocaleString()} ชิ้น` : '—'}</div>
+                    </div>
+                    {!isLast && <i className="fas fa-chevron-right" style={{ fontSize: 12, color: '#D1D5DB', flexShrink: 0 }} />}
+                  </div>
+                )
+              })}
+            </div>
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <i className="fas fa-info-circle" style={{ color: 'var(--accent)', fontSize: 11 }} />
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>แสดง Job Orders ทั้งหมดในช่วง 6 วันย้อนหลัง แยกตามขั้นตอนการผลิต</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Band 2: Production Analytics & Quality */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 7fr) minmax(0, 3fr)', gap: 16, marginBottom: 20 }}>
+          {/* Left Column (Performance) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-            <DashboardCharts dailyData={dailyChartData} weeklyData={weeklyChartData} />
+            <DashboardCharts dailyData={dailyChartData} weeklyData={weeklyChartData} bedData={bedChartData} renderGroup="analytics" />
           </div>
 
+          {/* Right Column (Quality) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+            <DashboardCharts defectTrendData={defectTrendData} renderGroup="quality" />
+            
+            {/* Defect Reasons */}
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ marginBottom: 20 }}>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>Defect Reasons</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 30, flex: 1, justifyContent: 'center' }}>
+                <div style={{ width: 160, height: 160, borderRadius: '50%', background: `conic-gradient(#EF4444 0% ${defectStats.total > 0 ? (defectStats.crack/defectStats.total)*100 : 0}%, #F59E0B ${(defectStats.crack/defectStats.total)*100}% ${(defectStats.crack+defectStats.chip)/defectStats.total*100}%, #3B82F6 ${(defectStats.crack+defectStats.chip)/defectStats.total*100}% ${(defectStats.crack+defectStats.chip+defectStats.honeycomb)/defectStats.total*100}%, #8B5CF6 ${(defectStats.crack+defectStats.chip+defectStats.honeycomb)/defectStats.total*100}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+                  <div style={{ width: 110, height: 110, background: 'white', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{defectStats.total}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, marginTop: 4 }}>TOTAL</span>
+                  </div>
+                </div>
+                <div style={{ width: '100%' }}>
+                  {defectReasons.map((r) => (
+                    <div key={r.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0 }}></div>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{r.label}</span>
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 800 }}>{r.pct}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Band 3: Resources & Materials */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 7fr) minmax(0, 3fr)', gap: 16, marginBottom: 20 }}>
+          {/* Left Column (Concrete Usage) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '20px 24px', flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 14 }}>Concrete Usage — สรุปการใช้คอนกรีตวันนี้</div>
+              {concreteList.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+                  <i className="fas fa-hard-hat" style={{ fontSize: 24, marginBottom: 8, display: 'block', opacity: 0.3 }} />
+                  ยังไม่มีการสั่งคอนกรีตวันนี้
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  {/* KPI mini cards */}
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', flex: '0 0 auto' }}>
+                    {[
+                      { icon: 'fa-tint', label: 'สั่งทั้งหมด (ลบม.)', value: totalConcreteOrdered.toFixed(2), unit: 'ลบม.', color: '#0284C7', bg: '#E0F2FE', border: '#BAE6FD' },
+                      { icon: 'fa-check-circle', label: 'จ่ายแล้ว (ลบม.)', value: totalConcreteSupplied.toFixed(2), unit: 'ลบม.', color: '#059669', bg: '#D1FAE5', border: '#6EE7B7' },
+                      { icon: 'fa-redo', label: 'รอบทั้งหมด', value: `${suppliedRounds}/${totalRounds}`, unit: 'รอบ', color: '#7C3AED', bg: '#EDE9FE', border: '#C4B5FD' },
+                      { icon: 'fa-clock', label: 'คำสั่งที่ยังค้าง', value: pendingOrders.toString(), unit: 'รายการ', color: pendingOrders > 0 ? '#D97706' : '#6B7280', bg: pendingOrders > 0 ? '#FEF3C7' : '#F9FAFB', border: pendingOrders > 0 ? '#FDE68A' : '#E5E7EB' },
+                    ].map(kpi => (
+                      <div key={kpi.label} style={{ background: kpi.bg, border: `1px solid ${kpi.border}`, borderRadius: 10, padding: '14px 18px', minWidth: 110, textAlign: 'center' }}>
+                        <div style={{ fontSize: 16, color: kpi.color, marginBottom: 6 }}><i className={`fas ${kpi.icon}`} /></div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: kpi.color, lineHeight: 1 }}>{kpi.value}</div>
+                        <div style={{ fontSize: 9, color: kpi.color, opacity: 0.8, fontWeight: 700, marginTop: 2 }}>{kpi.unit}</div>
+                        <div style={{ fontSize: 10, color: '#6B7280', marginTop: 6, lineHeight: 1.3 }}>{kpi.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Per-bed breakdown */}
+                  {bedConcreteEntries.length > 0 && (
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>ปริมาณคอนกรีตต่อโรงผลิต</div>
+                      {bedConcreteEntries.map(([bed, qty]) => {
+                        const pct = totalConcreteOrdered > 0 ? (qty / totalConcreteOrdered) * 100 : 0
+                        return (
+                          <div key={bed} style={{ marginBottom: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{bed}</span>
+                              <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#0284C7', fontWeight: 700 }}>{qty.toFixed(2)} ลบม.</span>
+                            </div>
+                            <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #BAE6FD, #0284C7)', borderRadius: 3, transition: 'width 0.3s' }} />
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{pct.toFixed(1)}% ของทั้งหมด</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {/* Progress supplier */}
+                  <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <div style={{ width: 80, height: 80, borderRadius: '50%', background: `conic-gradient(#0284C7 0% ${totalRounds > 0 ? (suppliedRounds / totalRounds) * 100 : 0}%, #E0F2FE ${totalRounds > 0 ? (suppliedRounds / totalRounds) * 100 : 0}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+                      <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ fontSize: 16, fontWeight: 800, color: '#0284C7', lineHeight: 1 }}>{totalRounds > 0 ? Math.round((suppliedRounds / totalRounds) * 100) : 0}%</span>
+                        <span style={{ fontSize: 8, color: 'var(--text-muted)', fontWeight: 600 }}>DONE</span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>ความคืบหน้า<br/>การจ่าย</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Column (Inventory Flow) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
             {/* Inventory Summary */}
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16 }}>
@@ -312,7 +558,7 @@ export default async function DashboardPage() {
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Inventory Summary</span>
               </div>
               {[
-                { icon: 'fa-layer-group', bg: '#FFF7ED', color: '#EA580C', value: '-', unit: '', label: 'ระบบจัดการวัตถุดิบหลัก', alert: false },
+                { icon: 'fa-layer-group', bg: '#FFF7ED', color: '#EA580C', value: allMaterials.length.toString(), unit: 'รายการ', label: `วัตถุดิบในคลัง (ปกติ ${allMaterials.length - lowStockItems.length} / ทั้งหมด ${allMaterials.length})`, alert: false },
                 { icon: 'fa-th-large', bg: 'var(--indigo-light)', color: 'var(--indigo)', value: totalWip.toLocaleString(), unit: 'ชุด', label: 'โครงเหล็กพร้อมผลิต (WIP)', alert: false },
                 { icon: 'fa-cubes', bg: 'var(--green-light)', color: 'var(--green)', value: totalFg.toLocaleString(), unit: 'ชิ้น', label: 'สินค้าพร้อมขาย (FG)', alert: false },
                 { icon: 'fa-exclamation-triangle', bg: 'white', color: 'var(--red)', value: lowStockItems.length.toString(), unit: 'รายการ', label: 'สต็อกใกล้หมด', alert: lowStockItems.length > 0 },
@@ -336,36 +582,37 @@ export default async function DashboardPage() {
               ))}
             </div>
 
-            {/* Defect Reasons */}
+            {/* Low Stock */}
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16 }}>
-              <div style={{ marginBottom: 14 }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>Defect Reasons</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>สต็อกวัตถุดิบใกล้หมด</span>
+                <Link href="/inventory/raw" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>ดูทั้งหมด →</Link>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ width: 90, height: 90, borderRadius: '50%', background: `conic-gradient(#EF4444 0% ${defectStats.total > 0 ? (defectStats.crack/defectStats.total)*100 : 0}%, #F59E0B ${(defectStats.crack/defectStats.total)*100}% ${(defectStats.crack+defectStats.chip)/defectStats.total*100}%, #3B82F6 ${(defectStats.crack+defectStats.chip)/defectStats.total*100}% ${(defectStats.crack+defectStats.chip+defectStats.honeycomb)/defectStats.total*100}%, #8B5CF6 ${(defectStats.crack+defectStats.chip+defectStats.honeycomb)/defectStats.total*100}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-                  <div style={{ width: 60, height: 60, background: 'white', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: 16, fontWeight: 700 }}>{defectStats.total}</span>
-                    <span style={{ fontSize: 8, color: 'var(--text-muted)', fontWeight: 600 }}>Total</span>
-                  </div>
-                </div>
-                <div style={{ flex: 1 }}>
-                  {defectReasons.map((r) => (
-                    <div key={r.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: r.color, flexShrink: 0 }}></div>
-                        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{r.label}</span>
+              {displayLowStock.map((item: any) => {
+                const isLow = item.qty_on_hand <= item.min_stock * 0.5
+                return (
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 7, background: 'var(--bg)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }}>
+                        <i className="fas fa-boxes"></i>
                       </div>
-                      <span style={{ fontSize: 11, fontWeight: 700 }}>{r.pct}</span>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{item.name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>คงเหลือ: {item.qty_on_hand} {item.unit}</div>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: isLow ? 'var(--red-light)' : '#FFF7ED', color: isLow ? 'var(--red)' : '#C2410C' }}>
+                      {isLow ? 'Low' : 'Warning'}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
 
         {/* Bottom Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16, marginBottom: 24 }}>
           {/* Job Orders Table */}
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -435,7 +682,7 @@ export default async function DashboardPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['โรงผลิต', 'สินค้า', 'จำนวน', 'ถอดได้', 'สถานะ'].map((th, i) => (
+                  {['โรงผลิต', 'สินค้า', 'จำนวน (เท)', 'ถอดได้เมื่อ', 'ผลการถอด', 'ผู้ถอด', 'เวลาจริง vs คาด'].map((th, i) => (
                     <th key={th} style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0 8px 10px', textAlign: i >= 2 ? 'center' : 'left', borderBottom: '1px solid var(--border)' }}>{th}</th>
                   ))}
                 </tr>
@@ -445,6 +692,7 @@ export default async function DashboardPage() {
                   const displayStatus = getDisplayStatus(job)
                   const ready = displayStatus === 'ready_demold'
                   const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
+                  const demoldRec = demoldMap.get(job.id) ?? null
 
                   return (
                     <tr key={job.id} className="hover:bg-[var(--bg)] transition-colors">
@@ -459,61 +707,74 @@ export default async function DashboardPage() {
                           {job.plan_item?.product?.code ?? ''}
                         </div>
                       </td>
+                      {/* จำนวนเท */}
                       <td style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', borderBottom: '1px solid var(--border)' }}>
                         <span style={{ fontWeight: 700, color: 'var(--accent)' }}>{job.qty_cast ?? 0}</span>
                       </td>
+                      {/* เวลาที่ควรถอด */}
                       <td style={{ padding: '10px 8px', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>
                         {expectedTime ? (
-                          <div style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>
-                            <i className="fas fa-calendar-check" style={{ marginRight: 4 }} />
+                          <div style={{ fontSize: 11, color: ready ? '#059669' : '#D97706', fontWeight: 600 }}>
+                            <i className={`fas ${ready ? 'fa-check-circle' : 'fa-hourglass-half'}`} style={{ marginRight: 4 }} />
                             {fmtDate(expectedTime)}
                           </div>
                         ) : <span style={{ color: '#D1D5DB' }}>—</span>}
                       </td>
+                      {/* ผลการถอด (จาก demolding_records) */}
                       <td style={{ padding: '10px 8px', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: ready ? '#D1FAE5' : '#FEF3C7', color: ready ? '#065F46' : '#B45309', border: `1px solid ${ready ? '#A7F3D0' : '#FDE68A'}` }}>
-                          {ready ? <><i className="fas fa-check-circle" style={{ marginRight: 4 }} /> พร้อมถอดแบบ</> : <><i className="fas fa-hourglass-half" style={{ marginRight: 4 }} /> กำลังบ่ม</>}
-                        </span>
+                        {demoldRec ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                            <div style={{ display: 'flex', gap: 6, fontSize: 11, fontWeight: 700 }}>
+                              <span style={{ color: '#059669' }}><i className="fas fa-thumbs-up" style={{ marginRight: 3 }} />{demoldRec.qty_good}</span>
+                              {demoldRec.qty_defect > 0 && <span style={{ color: '#EF4444' }}><i className="fas fa-thumbs-down" style={{ marginRight: 3 }} />{demoldRec.qty_defect}</span>}
+                            </div>
+                            {demoldRec.defect_reason && <span style={{ fontSize: 9, color: '#9CA3AF', textTransform: 'uppercase' }}>{demoldRec.defect_reason}</span>}
+                          </div>
+                        ) : <span style={{ fontSize: 11, color: '#D1D5DB' }}>ยังไม่ถอด</span>}
+                      </td>
+                      {/* ผู้ถอด */}
+                      <td style={{ padding: '10px 8px', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>
+                        {demoldRec?.worker?.full_name ? (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                            <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, flexShrink: 0 }}>
+                              {demoldRec.worker.full_name.charAt(0)}
+                            </div>
+                            <span style={{ fontSize: 11, color: 'var(--text-secondary)', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{demoldRec.worker.full_name}</span>
+                          </div>
+                        ) : <span style={{ fontSize: 11, color: '#D1D5DB' }}>—</span>}
+                      </td>
+                      {/* เวลาถอดจริง vs คาด */}
+                      <td style={{ padding: '10px 8px', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>
+                        {demoldRec?.created_at ? (() => {
+                          const actualMs = new Date(demoldRec.created_at).getTime()
+                          const expectedMs = expectedTime ? new Date(expectedTime).getTime() : null
+                          const diffMin = expectedMs ? Math.round((actualMs - expectedMs) / 60000) : null
+                          const isLate = diffMin !== null && diffMin > 0
+                          const isEarly = diffMin !== null && diffMin < 0
+                          return (
+                            <div style={{ fontSize: 10 }}>
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{fmtDate(demoldRec.created_at)}</div>
+                              {diffMin !== null && (
+                                <div style={{ marginTop: 2, color: isLate ? '#EF4444' : isEarly ? '#059669' : '#6B7280', fontWeight: 600 }}>
+                                  {isLate ? <><i className="fas fa-exclamation-circle" style={{ marginRight: 2 }} />ช้า {diffMin} น.</> : isEarly ? <><i className="fas fa-bolt" style={{ marginRight: 2 }} />เร็ว {Math.abs(diffMin)} น.</> : <><i className="fas fa-check" style={{ marginRight: 2 }} />ตรงเวลา</>}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })() : <span style={{ fontSize: 11, color: '#D1D5DB' }}>—</span>}
                       </td>
                     </tr>
                   )
                 })}
                 {demoldingJobs.length === 0 && (
                   <tr>
-                    <td colSpan={5} style={{ padding: '20px', textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+                    <td colSpan={7} style={{ padding: '20px', textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
                       ไม่มีรายการถอดแบบที่รออยู่
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
-          </div>
-
-          {/* Low Stock */}
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>สต็อกวัตถุดิบใกล้หมด</span>
-              <Link href="/inventory/raw" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>ดูทั้งหมด →</Link>
-            </div>
-            {displayLowStock.map((item: any) => {
-              const isLow = item.qty_on_hand <= item.min_stock * 0.5
-              return (
-                <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 7, background: 'var(--bg)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }}>
-                      <i className="fas fa-boxes"></i>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{item.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>คงเหลือ: {item.qty_on_hand} {item.unit}</div>
-                    </div>
-                  </div>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: isLow ? 'var(--red-light)' : '#FFF7ED', color: isLow ? 'var(--red)' : '#C2410C' }}>
-                    {isLow ? 'Low' : 'Warning'}
-                  </span>
-                </div>
-              )
-            })}
           </div>
         </div>
 
