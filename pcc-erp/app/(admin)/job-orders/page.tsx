@@ -27,7 +27,7 @@ export default async function JobOrdersPage() {
       worker:profiles(full_name, employee_code),
       qc_inspection:qc_inspections(pour_ok, demold_qty_good, inspector:profiles!qc_inspections_qc_id_fkey(full_name)),
       concrete_orders(
-        id, requested_at, status,
+        id, requested_at, status, notes,
         requester:profiles!concrete_orders_requested_by_fkey(full_name)
       )
     `)

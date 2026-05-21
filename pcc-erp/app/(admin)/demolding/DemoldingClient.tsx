@@ -105,7 +105,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
   const qtyDefect = records.reduce((sum, r) => sum + (r.qty_defect || 0), 0)
 
   const kpis = [
-    { label: 'รอถอดแบบ', value: countCuring, icon: 'fa-hourglass-half', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
+    { label: 'กำลังบ่ม', value: countCuring, icon: 'fa-hourglass-half', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
     { label: 'พร้อมถอดแบบ', value: countReady, icon: 'fa-check-circle', color: '#059669', bg: '#ECFDF5', border: '#A7F3D0' },
     { label: 'ถอดแบบแล้ว', value: countDemolded, icon: 'fa-cubes', color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE' },
     { label: 'สินค้าดี', value: qtyGood, icon: 'fa-box-open', color: '#16A34A', bg: '#F0FDF4', border: '#86EFAC' },

@@ -99,7 +99,7 @@ export default function FgInventoryClient({ productionOrders: initialOrders }: {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr>
-              {['วันที่', 'ใบสั่งผลิต', 'จำนวนรายการ (ชิ้น)', 'สถานะ', 'หมายเลขอ้างอิง', 'จัดการ'].map((h, i) => (
+              {['วันที่', 'ใบสั่งผลิต', 'จำนวนรายการ (ชิ้น)', 'สถานะ', 'หมายเลขอ้างอิง', 'เอกสาร', 'จัดการ'].map((h, i) => (
                 <th key={h} style={{ padding: '10px 14px', textAlign: i >= 5 ? 'center' : 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>{h}</th>
               ))}
             </tr>
@@ -145,6 +145,13 @@ export default function FgInventoryClient({ productionOrders: initialOrders }: {
                     {order.erp_reference ? (
                       <span style={{ background: '#F1F5F9', padding: '2px 6px', borderRadius: 4, border: '1px solid #E2E8F0' }}>{order.erp_reference}</span>
                     ) : '-'}
+                  </td>
+                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
+                    <a href={`/inventory/fg/print/${order.id}`} target="_blank" rel="noopener noreferrer"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontWeight: 600, textDecoration: 'none' }}
+                      className="hover:bg-slate-100 transition-colors">
+                      <i className="fas fa-print" style={{ color: 'var(--accent)' }}></i> พิมพ์เอกสาร
+                    </a>
                   </td>
                   <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
                     {statusText === 'QC ตรวจสอบแล้ว' ? (

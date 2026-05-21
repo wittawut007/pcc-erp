@@ -22,6 +22,7 @@ interface ConcreteOrder {
   status: string
   requested_at: string
   supplied_at: string | null
+  notes?: string | null
   requested_by_profile?: { full_name: string; employee_code?: string | null } | null
   supplied_by_profile?: { full_name: string } | null
   job_order?: {
@@ -177,6 +178,12 @@ function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
             <span><i className="fas fa-user" style={{ marginRight: 4, fontSize: 10 }} />{order.requested_by_profile?.full_name ?? '—'}</span>
             <span><i className="fas fa-clock" style={{ marginRight: 4, fontSize: 10 }} />{fmtTime(order.requested_at)}</span>
           </div>
+          {order.notes && (
+            <div style={{ marginTop: 4, fontSize: 11, color: '#D97706', fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+              <i className="fas fa-exclamation-circle" style={{ marginTop: 3, flexShrink: 0 }} />
+              <span>{order.notes}</span>
+            </div>
+          )}
         </div>
 
         {/* Volume & Progress */}
@@ -281,7 +288,15 @@ function HistorySection({ orders }: { orders: ConcreteOrder[] }) {
               <tr key={o.id} style={{ borderBottom: '1px solid #F3F4F6', background: idx % 2 === 0 ? '#fff' : '#FAFAFA' }}>
                 <td style={{ padding: '12px 16px', color: '#6B7280', fontSize: 12 }}>{fmtTime(o.requested_at)}</td>
                 <td style={{ padding: '12px 16px', fontWeight: 700 }}>โรงผลิต {o.bed ?? '?'}</td>
-                <td style={{ padding: '12px 16px' }}>{o.job_order?.plan_item?.product?.name ?? 'สั่งแบบรวม'}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  {o.job_order?.plan_item?.product?.name ?? 'สั่งแบบรวม'}
+                  {o.notes && (
+                    <div style={{ marginTop: 4, fontSize: 10, color: '#D97706', fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                      <i className="fas fa-exclamation-circle" style={{ marginTop: 2, flexShrink: 0 }} />
+                      <span>{o.notes}</span>
+                    </div>
+                  )}
+                </td>
                 <td style={{ padding: '12px 16px', fontWeight: 700, color: '#2563EB' }}>{o.qty_requested.toFixed(2)} คิว</td>
                 <td style={{ padding: '12px 16px', textAlign: 'center' }}>{o.round_count}</td>
                 <td style={{ padding: '12px 16px', textAlign: 'center', color: isAllDone ? '#059669' : '#D97706', fontWeight: 700 }}>{suppliedCount}</td>

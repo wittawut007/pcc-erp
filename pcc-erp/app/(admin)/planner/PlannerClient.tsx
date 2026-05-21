@@ -56,10 +56,12 @@ interface PlanItem {
 
 interface Props {
   products: Product[]
-  todayPlan: any
+  editingPlan: any          // plan being viewed/edited (null = new plan)
+  recentPlans: any[]        // list of recent plans for the sidebar
   rawMaterials: RawMaterial[]
   wipInventory?: WipItem[]
   today: string
+  selectedDate: string
   workerToken?: string
 }
 
@@ -74,9 +76,13 @@ const CATEGORIES = [
   'A42 กำแพงกันดิน',
 ]
 
-export default function PlannerClient({ products, todayPlan, rawMaterials, wipInventory = [], today, workerToken = '' }: Props) {
+export default function PlannerClient({ products, editingPlan, recentPlans, rawMaterials, wipInventory = [], today, selectedDate, workerToken = '' }: Props) {
   const supabase = createClient()
   const [isPending, startTransition] = useTransition()
+  const supabaseRouter = useRouter()
+
+  // Date picker state — starts from selectedDate from URL
+  const [planDate, setPlanDate] = useState(selectedDate)
 
   // Select Cascades
   const [selCat, setSelCat] = useState('')
@@ -87,7 +93,7 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
   const [selectedBed, setSelectedBed] = useState('1')
   const [qty, setQty] = useState(1)
   const [planItems, setPlanItems] = useState<PlanItem[]>(
-    todayPlan?.items?.map((item: any) => {
+    editingPlan?.items?.map((item: any) => {
       const p = item.product || {};
       const wireVal = p.wire_per_unit || p.length || 0;
       return {
@@ -108,7 +114,6 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
     }) ?? []
   )
 
-  const supabaseRouter = useRouter()
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
 
@@ -233,24 +238,41 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not authenticated')
 
-    const payload: any = {
-      plan_date: today,
-      created_by: user.id,
-      status,
-      total_qty: totalQty,
-      total_concrete: totalConcrete
+    let plan: any
+
+    if (editingPlan?.id) {
+      // UPDATE existing plan
+      const { data: updated, error: planError } = await supabase
+        .from('production_plans')
+        .update({
+          status,
+          total_qty: totalQty,
+          total_concrete: totalConcrete,
+        })
+        .eq('id', editingPlan.id)
+        .select()
+        .single()
+      if (planError) throw planError
+      plan = updated
+
+      // Clear old items
+      await clearOldPlanData(plan.id)
+    } else {
+      // INSERT new plan (no upsert — allow multiple per day)
+      const { data: inserted, error: planError } = await supabase
+        .from('production_plans')
+        .insert({
+          plan_date: planDate,
+          created_by: user.id,
+          status,
+          total_qty: totalQty,
+          total_concrete: totalConcrete,
+        })
+        .select()
+        .single()
+      if (planError) throw planError
+      plan = inserted
     }
-    if (todayPlan?.id) payload.id = todayPlan.id
-
-    const { data: plan, error: planError } = await supabase
-      .from('production_plans')
-      .upsert(payload, { onConflict: 'plan_date' })
-      .select()
-      .single()
-    if (planError) throw planError
-
-    // Safe deletion using service role to bypass RLS limits
-    await clearOldPlanData(plan.id)
 
     let createdItems: any[] = []
     if (planItems.length > 0) {
@@ -323,6 +345,10 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
   }
 
   const handleSaveDraft = async () => {
+    if (planItems.length === 0) {
+      toast.error('กรุณาเพิ่มรายการสินค้าลงแผนก่อน')
+      return
+    }
     setSaving(true)
     try {
       const { plan } = await savePlanData('draft')
@@ -336,22 +362,29 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
   }
 
   const handleConfirmPlan = async () => {
+    if (planItems.length === 0) {
+      toast.error('กรุณาเพิ่มรายการสินค้าลงแผนก่อน')
+      return
+    }
     setConfirming(true)
     try {
       const { plan, items } = await savePlanData('confirmed')
 
       const { data: { user } } = await supabase.auth.getUser()
 
-      // Check if order already exists
+      // Check if order already exists for this plan
       let finalOrderId;
       const { data: existing } = await supabase.from('production_orders').select('id').eq('plan_id', plan.id).single();
-      
+
       if (existing) {
-         finalOrderId = existing.id;
+        finalOrderId = existing.id;
       } else {
-        // Generate order number
-        const datePart = today.replace(/-/g, '')
-        const { count } = await supabase.from('production_orders').select('*', { count: 'exact', head: true }).like('order_number', `PO-${datePart}-%`)
+        // Generate sequential PO number: count ALL POs for this date
+        const datePart = planDate.replace(/-/g, '')
+        const { count } = await supabase
+          .from('production_orders')
+          .select('*', { count: 'exact', head: true })
+          .like('order_number', `PO-${datePart}-%`)
         const seq = String((count || 0) + 1).padStart(3, '0')
         const orderNumber = `PO-${datePart}-${seq}`
 
@@ -361,7 +394,7 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
           confirmed_by: user?.id,
           status: 'active'
         }).select().single()
-        
+
         if (prodOrderErr) throw prodOrderErr
         finalOrderId = prodOrder.id;
       }
@@ -388,28 +421,25 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
     }
   }
 
-  const isPlanConfirmed = false // Unlock UI so they can always edit
+  // Start a completely new blank plan
+  const handleNewPlan = () => {
+    supabaseRouter.push(`/planner?date=${planDate}`)
+  }
 
-  // PC wire BOM check
-  const pcWireNeeded = totalQty * 18.5 // Estimation formula
-  const pcWireLocal = rawMaterials.find(r => r.name.toLowerCase().includes('ลวด') || r.name.toLowerCase().includes('pc wire'))
-  const pcWireStock = pcWireLocal?.qty_on_hand || 3100
+  const isPlanConfirmed = editingPlan?.status === 'confirmed'
 
   // Calculate dynamic WIP requirements
   const wipRequirements = planItems.reduce((acc, item) => {
     const product = products.find(p => p.id === item.productId)
     if (product && product.wip_code) {
       if (!acc[product.wip_code]) {
-        // Find the WIP product details to get its name and ID
         const wipProduct = products.find(p => p.code === product.wip_code)
-        
         acc[product.wip_code] = {
           wip_code: product.wip_code,
           name: wipProduct ? `${wipProduct.name} ${wipProduct.size !== '-' ? wipProduct.size : ''}` : `โครง ${product.name}`,
           needed: 0,
           onHand: 0,
         }
-        
         if (wipProduct) {
           const inv = wipInventory.find(w => w.product_id === wipProduct.id)
           acc[product.wip_code].onHand = inv ? inv.qty_on_hand : 0
@@ -423,9 +453,86 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
   const wipList = Object.values(wipRequirements)
   const isWipShortage = wipList.some(w => w.onHand < w.needed)
 
+  // Group recentPlans by date for the sidebar
+  const plansByDate = useMemo(() => {
+    const map = new Map<string, any[]>()
+    recentPlans.forEach(p => {
+      if (!map.has(p.plan_date)) map.set(p.plan_date, [])
+      map.get(p.plan_date)!.push(p)
+    })
+    return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]))
+  }, [recentPlans])
+
+  const formatThDate = (dateStr: string) => {
+    const d = new Date(dateStr + 'T00:00:00')
+    return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '24px 32px', background: '#F7F8FA', display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div style={{ display: 'flex', flexDirection: 'row', gap: 20, alignItems: 'flex-start' }}>
+
+      {/* FAR LEFT — Recent Plans Sidebar */}
+      <div style={{ width: 240, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* Date Picker + New Plan */}
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>วันที่แผน</div>
+          <input
+            type="date"
+            value={planDate}
+            onChange={e => setPlanDate(e.target.value)}
+            style={{ width: '100%', height: 36, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 13, outline: 'none', color: '#374151', marginBottom: 10, boxSizing: 'border-box' }}
+          />
+          <button
+            onClick={handleNewPlan}
+            style={{ width: '100%', height: 38, background: '#2563EB', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          >
+            <i className="fas fa-plus" />
+            สร้างแผนใหม่
+          </button>
+        </div>
+
+        {/* Recent Plans List */}
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', maxHeight: 600, overflowY: 'auto' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>แผนล่าสุด (30 วัน)</div>
+          {plansByDate.length === 0 && <div style={{ fontSize: 12, color: '#D1D5DB', textAlign: 'center', padding: '16px 0' }}>ยังไม่มีแผน</div>}
+          {plansByDate.map(([date, plans]) => (
+            <div key={date} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', marginBottom: 6, textTransform: 'uppercase' }}>{formatThDate(date)}</div>
+              {plans.map((p: any) => {
+                const po = Array.isArray(p.production_orders) ? p.production_orders[0] : null
+                const isActive = editingPlan?.id === p.id
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => supabaseRouter.push(`/planner?plan_id=${p.id}`)}
+                    style={{
+                      width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, marginBottom: 4,
+                      background: isActive ? '#EFF6FF' : '#F9FAFB',
+                      border: `1.5px solid ${isActive ? '#2563EB' : '#E5E7EB'}`,
+                      cursor: 'pointer', transition: 'all 0.15s',
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 700, color: isActive ? '#2563EB' : '#374151' }}>
+                      {po?.order_number ?? `แผนร่าง`}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>
+                      {p.total_qty?.toLocaleString() ?? 0} ชิ้น &middot;{' '}
+                      <span style={{
+                        color: p.status === 'confirmed' ? '#059669' : '#D97706',
+                        fontWeight: 600,
+                      }}>
+                        {p.status === 'confirmed' ? 'ยืนยันแล้ว' : 'ร่าง'}
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* LEFT — Product Selector & Plan Table */}
       <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
         
@@ -492,17 +599,20 @@ export default function PlannerClient({ products, todayPlan, rawMaterials, wipIn
         <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 300, overflow: 'hidden' }}>
           <div style={{ padding: '20px 20px 16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: '#fff' }}>
              <div>
-               <h3 className="font-bold text-gray-900 text-[15px]">สรุปแผนการผลิตวันนี้ {planItems.length > 0 && <span className="font-normal text-gray-500">({isPlanConfirmed ? 'Confirmed' : 'Draft'})</span>}</h3>
+               <h3 className="font-bold text-gray-900 text-[15px]">
+                 {editingPlan ? `แผนวันที่ ${formatThDate(planDate)}` : `แผนใหม่ — ${formatThDate(planDate)}`}
+                 {planItems.length > 0 && <span className="font-normal text-gray-500 ml-1">({isPlanConfirmed ? 'Confirmed' : 'Draft'})</span>}
+               </h3>
                <p className="text-xs text-gray-500 mt-0.5">รวมทั้งหมด: <span className="font-bold text-blue-600">{planItems.length}</span> รายการ | <span className="font-bold text-blue-600">{totalQty.toLocaleString()}</span> ชิ้น</p>
              </div>
              <div>
-               {todayPlan?.status === 'confirmed' ? (
+               {editingPlan?.status === 'confirmed' ? (
                  <span className="bg-emerald-100 text-emerald-700 text-[11px] px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 border border-emerald-200">
                     <i className="fas fa-check-circle"></i> ยืนยันแล้ว
                  </span>
                ) : (
                  <span className="bg-amber-100 text-amber-700 text-[11px] px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 border border-amber-200">
-                    <i className="fas fa-pencil-alt"></i> สถานะ: กำลังร่างแผน
+                    <i className="fas fa-pencil-alt"></i> {editingPlan ? 'กำลังแก้ไข' : 'แผนใหม่'}
                  </span>
                )}
              </div>

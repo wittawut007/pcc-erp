@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import Header from '@/components/layout/Header'
 import DashboardCharts from './DashboardCharts'
 import Link from 'next/link'
+import DashboardRefresh from './DashboardRefresh'
 
 async function getSupabaseData() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -27,6 +28,7 @@ async function getSupabaseData() {
           product:products(name,category,code),
           plan:production_plans!inner(plan_date)
         ),
+        production_order:production_orders(id, status),
         qc:qc_inspections(pour_ok, demold_qty_good, demold_qty_defect, defect_reason)
       `)
       .gte('plan_item.plan.plan_date', startDateStr)
@@ -37,7 +39,7 @@ async function getSupabaseData() {
       supabase.from('wip_inventory').select('qty'),
       supabase.from('qc_inspections').select('demold_qty_defect, defect_reason, created_at').gte('created_at', startDateStr),
       supabase.from('demolding_records').select('job_order_id, qty_good, qty_defect, defect_reason, created_at, worker:profiles!demolding_records_worker_id_fkey(full_name)').gte('created_at', startDateStr),
-      supabase.from('concrete_orders').select('id, bed, qty_requested, total_qty_requested, status, requested_at, created_at').gte('created_at', today),
+      supabase.from('concrete_orders').select('id, job_order_id, bed, qty_requested, total_qty_requested, status, requested_at, created_at, round_count').gte('created_at', today),
       supabase.from('concrete_rounds').select('concrete_order_id, round_number, qty_per_round, status, supplied_at').gte('created_at', today)
     ])
     return { todayPlan, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today }
@@ -73,14 +75,28 @@ export default async function DashboardPage() {
 
   const kpiCards = [
     { label: 'เป้าหมายวันนี้ (ชิ้น)', value: totalTarget, badge: 'Target', icon: 'fa-bullseye', bg: 'var(--accent-light)', color: 'var(--accent)' },
-    { label: 'เทคอนกรีตแล้ว', value: qtyCast, badge: 'Casting', icon: 'fa-truck-monster', bg: 'var(--indigo-light)', color: 'var(--indigo)' },
-    { label: 'กำลังบ่ม / รอถอดแบบ', value: qtyCuring, badge: 'Curing', icon: 'fa-clock', bg: 'var(--amber-light)', color: 'var(--amber)' },
+    { label: 'เทคอนกรีต', value: qtyCast, badge: 'Casting', icon: 'fa-truck-monster', bg: 'var(--indigo-light)', color: 'var(--indigo)' },
+    { label: 'กำลังบ่ม / พร้อมถอดแบบ', value: qtyCuring, badge: 'Curing', icon: 'fa-clock', bg: 'var(--amber-light)', color: 'var(--amber)' },
     { label: 'ถอดแบบแล้ว (FG)', value: qtyDemolded, badge: 'Demolded', icon: 'fa-cubes', bg: 'var(--green-light)', color: 'var(--green)' },
     { label: 'อัตราของเสียวันนี้', value: defectRate, badge: 'Defect', icon: 'fa-exclamation-circle', bg: 'var(--red-light)', color: 'var(--red)', isRed: true },
     { label: 'ความสำเร็จวันนี้ (%)', value: `${completionRate}%`, badge: 'Complete', icon: 'fa-chart-line', bg: completionBg, color: completionColor },
   ]
 
   type DisplayStatus = 'pending' | 'concrete_ordered' | 'casting' | 'curing' | 'ready_demold' | 'demolded' | 'qc_passed' | 'cancelled'
+
+  // Build a Set of beds that have received all concrete today
+  // (All rounds status = 'received' → รับคอนกรีตครบแล้ว = เทคอนกรีตเรียบร้อย)
+  const receivedBeds = new Set<string>()
+  if (Array.isArray(concreteOrders) && Array.isArray(concreteRounds)) {
+    concreteOrders.forEach((co: any) => {
+      const rounds = concreteRounds.filter((r: any) => r.concrete_order_id === co.id)
+      const roundCount = co.round_count ?? 0
+      const allReceived = rounds.length > 0 && rounds.length === roundCount && rounds.every((r: any) => r.status === 'received')
+      if (allReceived && co.bed) {
+        receivedBeds.add(String(co.bed))
+      }
+    })
+  }
 
   function getDisplayStatus(job: any): DisplayStatus {
     if (job.status === 'pending') return 'pending'
@@ -95,8 +111,13 @@ export default async function DashboardPage() {
       }
       return 'curing'
     }
-  
-    // casting / concrete_ordered: ตรวจ QC pour_ok
+
+    // concrete_ordered → ถ้าคอนกรีตที่สั่งในโรงนี้ (bed) รับครบเรียบร้อยแล้ว -> แสดงเป็น "เทคอนกรีต"
+    if (job.status === 'concrete_ordered' && receivedBeds.has(String(job.bed))) {
+      return 'casting'
+    }
+
+    // Fallback: ตรวจ QC pour_ok เพื่อรองรับการเปลี่ยนไป casting ในสถานการณ์อื่น
     const qc = Array.isArray(job.qc) ? job.qc[0] : null
     if (qc?.pour_ok === true) return 'casting'
     return 'concrete_ordered'
@@ -118,12 +139,12 @@ export default async function DashboardPage() {
   
   const statusBadgeMap: Record<DisplayStatus, { label: string; bg: string; color: string }> = {
     pending: { label: 'รอเริ่ม', bg: 'var(--amber-light)', color: '#B45309' },
-    concrete_ordered: { label: 'สั่งคอนกรีตแล้ว', bg: 'var(--indigo-light)', color: 'var(--indigo)' },
-    casting: { label: 'เทคอนกรีตแล้ว', bg: 'var(--accent-light)', color: 'var(--accent)' },
+    concrete_ordered: { label: 'สั่งคอนกรีต', bg: 'var(--indigo-light)', color: 'var(--indigo)' },
+    casting: { label: 'เทคอนกรีต', bg: 'var(--accent-light)', color: 'var(--accent)' },
     curing: { label: 'กำลังบ่ม', bg: 'var(--green-light)', color: '#059669' },
     ready_demold: { label: 'พร้อมถอดแบบ', bg: 'var(--green-light)', color: '#059669' },
     demolded: { label: 'ถอดแบบแล้ว', bg: '#F3F4F6', color: '#6B7280' },
-    qc_passed: { label: 'QC ตรวจผ่าน', bg: '#F3F4F6', color: '#6B7280' },
+    qc_passed: { label: 'QC ตรวจสอบแล้ว', bg: 'var(--accent-light)', color: 'var(--accent)' },
     cancelled: { label: 'ยกเลิก', bg: 'var(--red-light)', color: 'var(--red)' },
   }
 
@@ -148,12 +169,33 @@ export default async function DashboardPage() {
     { time: '08:15', name: 'สมชาย ใจดี', dept: 'โรงผลิต 1', action: 'เริ่มงาน (สแกน QR)', detail: 'Job: #JO-2610-042', status: 'เริ่มระบบ', green: true },
   ]
 
+  // Pre-compute which production_order IDs have ALL jobs finished (demolded or qc_passed)
+  // This mirrors the FG Inventory logic: if every job in a PO is done → PO = "QC ตรวจสอบแล้ว"
+  const poJobGroupMap = new Map<string, any[]>()
+  ;(jobOrders as any[])?.forEach((job: any) => {
+    const poId = job.production_order?.id
+    if (!poId) return
+    if (!poJobGroupMap.has(poId)) poJobGroupMap.set(poId, [])
+    poJobGroupMap.get(poId)!.push(job)
+  })
+  const fullyDonePoIds = new Set<string>()
+  poJobGroupMap.forEach((jobs, poId) => {
+    if (
+      jobs.length > 0 &&
+      jobs.every((j: any) => j.status === 'demolded' || j.status === 'qc_passed')
+    ) {
+      fullyDonePoIds.add(poId)
+    }
+  })
+
   const activeJobs = (jobOrders as any[])?.filter((j: any) => {
+    if (j.production_order?.status === 'erp_synced') return false
     const s = getDisplayStatus(j)
     return !['demolded', 'qc_passed', 'cancelled'].includes(s)
   }) || []
 
   const demoldingJobs = (jobOrders as any[])?.filter((j: any) => {
+    if (j.production_order?.status === 'erp_synced') return false
     const s = getDisplayStatus(j)
     return ['ready_demold', 'curing'].includes(s)
   }).sort((a, b) => {
@@ -165,10 +207,17 @@ export default async function DashboardPage() {
   }) || []
 
   // Pipeline: count job orders by stage
+  // Jobs that belong to a fully-done PO (all jobs demolded/qc_passed) are promoted to qc_passed
   const pipelineCounts: Record<DisplayStatus, number> = { pending: 0, concrete_ordered: 0, casting: 0, curing: 0, ready_demold: 0, demolded: 0, qc_passed: 0, cancelled: 0 }
   const pipelineQty: Record<DisplayStatus, number> = { pending: 0, concrete_ordered: 0, casting: 0, curing: 0, ready_demold: 0, demolded: 0, qc_passed: 0, cancelled: 0 }
   ;(jobOrders as any[])?.forEach((job: any) => {
-    const s = getDisplayStatus(job)
+    if (job.production_order?.status === 'erp_synced') return
+    let s = getDisplayStatus(job)
+    // If this job is 'demolded' but its entire PO is fully done → show as qc_passed
+    const poId = job.production_order?.id
+    if (s === 'demolded' && poId && fullyDonePoIds.has(poId)) {
+      s = 'qc_passed'
+    }
     if (s && s !== 'cancelled') {
       pipelineCounts[s] = (pipelineCounts[s] || 0) + 1
       pipelineQty[s] = (pipelineQty[s] || 0) + (job.qty_cast || job.qty_target || 0)
@@ -305,6 +354,7 @@ export default async function DashboardPage() {
   }
   const bedMap = new Map<string, { cast: number; target: number; dominantStatus: string }>()
   ;(jobOrders as any[])?.forEach((job: any) => {
+    if (job.production_order?.status === 'erp_synced') return
     const bedKey = `Bed ${job.bed}`
     if (!bedMap.has(bedKey)) bedMap.set(bedKey, { cast: 0, target: 0, dominantStatus: 'pending' })
     const entry = bedMap.get(bedKey)!
@@ -312,7 +362,10 @@ export default async function DashboardPage() {
     entry.target += job.qty_target || 0
     // Use the most-advanced status seen for this bed as dominant color
     const statusOrder = ['qc_passed', 'demolded', 'ready_demold', 'curing', 'casting', 'concrete_ordered', 'pending', 'cancelled']
-    const ds = getDisplayStatus(job)
+    let ds = getDisplayStatus(job)
+    // Promote fully-done PO jobs to qc_passed for chart coloring
+    const poId = job.production_order?.id
+    if (ds === 'demolded' && poId && fullyDonePoIds.has(poId)) ds = 'qc_passed'
     if (ds && statusOrder.indexOf(ds) < statusOrder.indexOf(entry.dominantStatus)) {
       entry.dominantStatus = ds
     }
@@ -382,8 +435,11 @@ export default async function DashboardPage() {
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 36px' }}>
 
         {/* Section Label */}
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 12 }}>
-          Production Overview
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            Production Overview
+          </div>
+          <DashboardRefresh />
         </div>
 
         {/* KPI Grid */}
@@ -419,7 +475,7 @@ export default async function DashboardPage() {
                 { key: 'curing' as DisplayStatus, label: 'กำลังบ่ม', icon: 'fa-clock', color: '#D97706', bg: '#FEF3C7', border: '#FDE68A' },
                 { key: 'ready_demold' as DisplayStatus, label: 'พร้อมถอดแบบ', icon: 'fa-check-circle', color: '#059669', bg: '#D1FAE5', border: '#6EE7B7' },
                 { key: 'demolded' as DisplayStatus, label: 'ถอดแบบแล้ว', icon: 'fa-cubes', color: '#7C3AED', bg: '#EDE9FE', border: '#C4B5FD' },
-                { key: 'qc_passed' as DisplayStatus, label: 'QC ผ่าน ✓', icon: 'fa-medal', color: '#065F46', bg: '#ECFDF5', border: '#A7F3D0' },
+                { key: 'qc_passed' as DisplayStatus, label: 'QC ตรวจสอบแล้ว', icon: 'fa-check-double', color: '#2563EB', bg: '#EFF4FF', border: '#DBEAFE' },
               ]).map((step, idx, arr) => {
                 const count = pipelineCounts[step.key]
                 const qty = pipelineQty[step.key]
@@ -676,7 +732,7 @@ export default async function DashboardPage() {
           {/* Demolding Queue Table */}
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>งานตัดยก (รอถอดแบบ)</span>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>งานตัดยก (กำลังบ่ม / พร้อมถอดแบบ)</span>
               <Link href="/demolding" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>ดูทั้งหมด →</Link>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>

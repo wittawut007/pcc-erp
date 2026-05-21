@@ -81,7 +81,8 @@ export async function removePlanMaterial(planMaterialId: string) {
  */
 export async function dispenseMaterial(
   planMaterialId: string,
-  qtyDispensed: number
+  qtyDispensed: number,
+  receiverName?: string
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -132,6 +133,7 @@ export async function dispenseMaterial(
       status: newStatus,
       dispensed_by: user.id,
       dispensed_at: new Date().toISOString(),
+      receiver_name: receiverName || null,
     })
     .eq('id', planMaterialId)
 
@@ -159,7 +161,8 @@ export async function getPendingRequisitions() {
     .select(`
       *,
       raw_material:raw_materials(id, name, material_code, unit, qty_on_hand, category, weight_per_meter),
-      plan:production_plans!inner(id, plan_date, status, total_concrete, production_orders(order_number))
+      plan:production_plans!inner(id, plan_date, status, total_concrete, production_orders(order_number)),
+      dispensed_by_profile:profiles!plan_materials_dispensed_by_fkey(full_name)
     `)
     .in('plan.status', ['confirmed', 'completed'])
     .order('created_at', { ascending: false })

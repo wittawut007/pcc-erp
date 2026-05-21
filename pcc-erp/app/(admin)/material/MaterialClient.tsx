@@ -34,11 +34,13 @@ interface Requisition {
   raw_material: RawMaterial | null
   plan: PlanInfo | null
   dispensed_by_profile: { full_name: string } | null
+  receiver_name: string | null
 }
 
 interface Props {
   initialData: Requisition[]
   role?: string
+  userFullName?: string
 }
 
 const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }> = {
@@ -49,9 +51,10 @@ const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }>
 
 import MaterialDocumentModal from '@/components/shared/MaterialDocumentModal'
 
-export default function MaterialClient({ initialData, role }: Props) {
+export default function MaterialClient({ initialData, role, userFullName }: Props) {
   const [items, setItems] = useState<Requisition[]>(initialData)
   const [qtyMap, setQtyMap] = useState<Record<string, string>>({})
+  const [receiverMap, setReceiverMap] = useState<Record<string, string>>({})
   const [isPending, startTransition] = useTransition()
   const [activeId, setActiveId] = useState<string | null>(null)
   
@@ -59,11 +62,34 @@ export default function MaterialClient({ initialData, role }: Props) {
   const [activeTab, setActiveTab] = useState<'today' | 'history'>('today')
   const [printModalPlanId, setPrintModalPlanId] = useState<string | null>(null)
 
+  const handleReceiverChange = (itemId: string, planId: string, value: string) => {
+    setReceiverMap(prev => {
+      const updated = { ...prev, [itemId]: value };
+      const siblingItems = items.filter(
+        i => i.plan_id === planId && i.id !== itemId && i.status !== 'dispensed'
+      );
+      siblingItems.forEach(sibling => {
+        const currentSiblingVal = prev[sibling.id] || '';
+        const currentItemVal = prev[itemId] || '';
+        if (currentSiblingVal === '' || currentSiblingVal === currentItemVal) {
+          updated[sibling.id] = value;
+        }
+      });
+      return updated;
+    });
+  }
+
 
   const handleDispense = (item: Requisition) => {
     const qty = parseFloat(qtyMap[item.id] ?? '0')
     if (!qty || qty <= 0) {
       toast.error('กรุณาระบุจำนวนที่ต้องการจ่าย')
+      return
+    }
+
+    const receiverName = receiverMap[item.id] || ''
+    if (!receiverName.trim()) {
+      toast.error('กรุณาระบุชื่อผู้มารับวัตถุดิบ')
       return
     }
 
@@ -75,7 +101,7 @@ export default function MaterialClient({ initialData, role }: Props) {
     setActiveId(item.id)
     startTransition(async () => {
       try {
-        await dispenseMaterial(item.id, qty)
+        await dispenseMaterial(item.id, qty, receiverName)
         toast.success(`จ่าย ${qty} ${item.raw_material?.unit ?? ''} เรียบร้อย`)
         setQtyMap(prev => ({ ...prev, [item.id]: '' }))
         // Optimistically update
@@ -87,6 +113,8 @@ export default function MaterialClient({ initialData, role }: Props) {
                 ...r,
                 qty_dispensed: newQtyDispensed,
                 status: newQtyDispensed >= (requiredTarget - 0.01) ? 'dispensed' : 'partial',
+                receiver_name: receiverName,
+                dispensed_by_profile: { full_name: userFullName || 'เจ้าหน้าที่คลังวัตถุดิบ' }
               }
             }
             return r;
@@ -317,7 +345,7 @@ export default function MaterialClient({ initialData, role }: Props) {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
               <thead>
                 <tr>
-                  {['วัตถุดิบ', 'ความยาว (ถ้ามี)', 'ต้องใช้ (น้ำหนัก)', 'จ่ายแล้ว', 'สต็อกคงเหลือ', 'สถานะ', 'จ่ายเพิ่ม', 'ยืนยัน'].map((th, i) => (
+                  {['วัตถุดิบ', 'ความยาว (ถ้ามี)', 'ต้องใช้ (น้ำหนัก)', 'จ่ายแล้ว', 'สต็อกคงเหลือ', 'สถานะ', 'ผู้มารับวัตถุดิบ', 'จ่ายเพิ่ม', 'ยืนยัน'].map((th, i) => (
                     <th key={th + i} style={{
                       fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase',
                       letterSpacing: '0.05em', padding: '10px 16px', textAlign: 'left',
@@ -377,6 +405,25 @@ export default function MaterialClient({ initialData, role }: Props) {
                         <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color }}>
                           {badge.label}
                         </span>
+                      </td>
+                      <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+                        {item.status === 'dispensed' ? (
+                          <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>
+                            {item.receiver_name || '—'}
+                          </span>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="ระบุชื่อผู้มารับ"
+                            value={receiverMap[item.id] ?? ''}
+                            onChange={e => handleReceiverChange(item.id, item.plan_id, e.target.value)}
+                            style={{
+                              width: 140, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)',
+                              fontSize: 13, outline: 'none', transition: 'border-color 0.2s',
+                            }}
+                            disabled={isLoading}
+                          />
+                        )}
                       </td>
                       <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
                         <input
@@ -448,7 +495,7 @@ export default function MaterialClient({ initialData, role }: Props) {
             orderNumber={modalOrderNumber}
             date={new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}
             time={new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-            userFullName="เจ้าหน้าที่เบิกจ่าย"
+            userFullName={userFullName || "เจ้าหน้าที่เบิกจ่าย"}
             totalConcrete={activePlanGroup.plan.total_concrete ?? 0}
             planItems={activePlanItems}
           />

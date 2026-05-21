@@ -85,6 +85,12 @@ export default function WorkerClient({
   const [saving, setSaving] = useState(false)
   const [userProfile, setUserProfile] = useState<{full_name: string, role: string} | null>(null)
 
+  // Concrete Confirm Modal states
+  const [showConcreteConfirmModal, setShowConcreteConfirmModal] = useState(false)
+  const [orderMoreMode, setOrderMoreMode] = useState<'system' | 'custom'>('system')
+  const [customConcreteQty, setCustomConcreteQty] = useState<string>('')
+  const [confirmingBedIndex, setConfirmingBedIndex] = useState<number>(0)
+
   // Daily Jobs — per-item checklist, photo, expand state
   const [jobItemChecks, setJobItemChecks] = useState<Record<string, { clean: boolean; wip: boolean }>>({ })
   const [jobItemPhotos, setJobItemPhotos] = useState<Record<string, { file: File; preview: string }>>({ })
@@ -97,6 +103,7 @@ export default function WorkerClient({
   const [concreteRoundsReceived, setConcreteRoundsReceived] = useState(0)
   const [activeConcreteOrders, setActiveConcreteOrders] = useState<{
     id: string; job_order_id: string; bed: string | null; qty_requested: number; round_count: number; requested_at: string;
+    notes?: string | null;
     job_order?: { bed: string; status: string; plan_item?: { product?: { name: string } | null } | null } | null
     rounds: { id: string; round_number: number; qty_per_round: number; status: string; supplied_at: string | null }[]
   }[]>([])
@@ -254,7 +261,7 @@ export default function WorkerClient({
     try {
       const { data } = await supabase
         .from('concrete_orders')
-        .select(`id, job_order_id, bed, qty_requested, round_count, requested_at,
+        .select(`id, job_order_id, bed, qty_requested, round_count, requested_at, notes,
           job_order:job_orders(id, bed, status, plan_item:production_plan_items(product:products(name))),
           rounds:concrete_rounds(id, round_number, qty_per_round, status, supplied_at)`)
         .in('status', ['requested', 'supplied'])
@@ -295,6 +302,91 @@ export default function WorkerClient({
   }, [])
 
 
+
+  const handleSubmitConcreteOrder = async () => {
+    setSaving(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const bedJobs = jobsByBed[confirmingBedIndex].jobs
+      const bed = jobsByBed[confirmingBedIndex].bed
+      
+      let totalCalculatedQty = 0
+      for (const job of bedJobs) {
+        const p1PhotoUrl = photos[`phase1-${job.id}`] ? await uploadPhoto(photos[`phase1-${job.id}`].file, 'preparation') : null
+        const jobConcreteQty = (job.plan_item?.product?.concrete_per_unit || 0) * job.qty_target
+        totalCalculatedQty += jobConcreteQty
+        await supabase.from('job_orders').update({
+          status: 'concrete_ordered',
+          cast_at: new Date().toISOString(),
+          qty_cast: job.qty_target,
+          photo_ready_url: p1PhotoUrl,
+        }).eq('id', job.id)
+      }
+
+      // Check if custom qty is selected and greater than calculated
+      let finalQty = totalCalculatedQty
+      let notes: string | null = null
+      let excess = 0
+
+      if (orderMoreMode === 'custom') {
+        const customQty = parseFloat(customConcreteQty)
+        if (isNaN(customQty)) {
+          throw new Error('กรุณาระบุจำนวนคอนกรีตที่ต้องการสั่งให้ถูกต้อง')
+        }
+        if (customQty < totalCalculatedQty) {
+          throw new Error(`จำนวนคอนกรีตที่สั่งเพิ่มต้องไม่น้อยกว่าจำนวนที่คำนวณจากระบบ (${totalCalculatedQty.toFixed(2)} คิว)`)
+        }
+        if (customQty > totalCalculatedQty) {
+          excess = customQty - totalCalculatedQty
+          finalQty = customQty
+          notes = `สั่งเพิ่มจากที่ระบบคำนวณให้ (จำนวนคำนวณจากระบบ: ${totalCalculatedQty.toFixed(2)} คิว, สั่งเพิ่ม: ${excess.toFixed(2)} คิว)`
+        }
+      }
+
+      const roundsData = calculateConcreteRounds(totalCalculatedQty)
+      const bedRounds = roundsData.length
+      if (bedRounds > 0) {
+        // Add excess to the last round
+        if (excess > 0) {
+          roundsData[roundsData.length - 1] = Number((roundsData[roundsData.length - 1] + excess).toFixed(2))
+        }
+
+        const { data: order } = await supabase.from('concrete_orders').insert({
+          bed,
+          requested_by: user!.id,
+          qty_requested: finalQty,
+          total_qty_requested: finalQty,
+          round_count: bedRounds,
+          status: 'requested',
+          notes: notes,
+        }).select('id').single()
+
+        if (order?.id) {
+          const rounds = roundsData.map((qty, i) => ({
+            concrete_order_id: order.id,
+            round_number: i + 1,
+            qty_per_round: qty,
+            status: 'pending',
+          }))
+          await supabase.from('concrete_rounds').insert(rounds)
+        }
+      }
+
+      // Close modal
+      setShowConcreteConfirmModal(false)
+
+      // Move to next bed or success
+      if (confirmingBedIndex < jobsByBed.length - 1) {
+        setCurrentBedIndex(confirmingBedIndex + 1)
+      } else {
+        setActiveSection('success')
+      }
+    } catch(e:any) {
+      toast.error(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const uploadPhoto = async (file: File, folder: string) => {
     // บีบอัดรูปก่อน upload เพื่อลดพื้นที่ Storage (~80%)
@@ -600,57 +692,12 @@ export default function WorkerClient({
                   style={{ flex: 1, backgroundColor: '#ffffff', border: '1px solid #E2E8F0', color: '#64748B', padding: '16px', borderRadius: '16px', fontWeight: 800, fontSize: '15px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                   แก้ไข
                 </button>
-                <button disabled={saving} onClick={async () => {
-                  setSaving(true)
-                  try {
-                    const { data: { user } } = await supabase.auth.getUser()
-                    const bedJobs = jobsByBed[currentBedIndex].jobs
-                    const bed = jobsByBed[currentBedIndex].bed
-                    
-                    let totalConcreteQty = 0
-                    for (const job of bedJobs) {
-                      const p1PhotoUrl = photos[`phase1-${job.id}`] ? await uploadPhoto(photos[`phase1-${job.id}`].file, 'preparation') : null
-                      const jobConcreteQty = (job.plan_item?.product?.concrete_per_unit || 0) * job.qty_target
-                      totalConcreteQty += jobConcreteQty
-                      await supabase.from('job_orders').update({
-                        status: 'concrete_ordered',
-                        cast_at: new Date().toISOString(),
-                        qty_cast: job.qty_target,
-                        photo_ready_url: p1PhotoUrl,
-                      }).eq('id', job.id)
-                    }
-
-                    const roundsData = calculateConcreteRounds(totalConcreteQty)
-                    const bedRounds = roundsData.length
-                    if (bedRounds > 0) {
-                      const { data: order } = await supabase.from('concrete_orders').insert({
-                        bed,
-                        requested_by: user!.id,
-                        qty_requested: totalConcreteQty,
-                        round_count: bedRounds,
-                        status: 'requested',
-                      }).select('id').single()
-
-                      if (order?.id) {
-                        const rounds = roundsData.map((qty, i) => ({
-                          concrete_order_id: order.id,
-                          round_number: i + 1,
-                          qty_per_round: qty,
-                          status: 'pending',
-                        }))
-                        await supabase.from('concrete_rounds').insert(rounds)
-                      }
-                    }
-                    if (currentBedIndex < jobsByBed.length - 1) {
-                      setCurrentBedIndex(currentBedIndex + 1)
-                    } else {
-                      setActiveSection('success')
-                    }
-                  } catch(e:any) {
-                    toast.error(e.message)
-                  } finally {
-                    setSaving(false)
-                  }
+                <button disabled={saving} onClick={() => {
+                  const calculatedQty = jobsByBed[currentBedIndex].jobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0)
+                  setConfirmingBedIndex(currentBedIndex)
+                  setOrderMoreMode('system')
+                  setCustomConcreteQty(calculatedQty.toFixed(1))
+                  setShowConcreteConfirmModal(true)
                 }} 
                   style={{ flex: 2, backgroundColor: '#2563EB', color: '#ffffff', padding: '16px', borderRadius: '16px', fontWeight: 900, fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: 'pointer', boxShadow: '0 10px 20px -5px rgba(37,99,235,0.4)', border: 'none' }}>
                   {saving ? <i className="fas fa-spinner fa-spin"></i> : <>{currentBedIndex < jobsByBed.length - 1 ? 'ถัดไป' : 'ส่งคำสั่งปูน'} <i className="fas fa-paper-plane" style={{ marginLeft: '4px' }}></i></>}
@@ -1084,6 +1131,12 @@ export default function WorkerClient({
                         <p style={{ margin: 0, fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
                           สั่ง {new Date(order.requested_at).toLocaleString('th-TH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </p>
+                        {order.notes && (
+                          <div style={{ marginTop: 4, fontSize: 10, color: '#D97706', fontWeight: 700, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                            <i className="fas fa-exclamation-circle" style={{ marginTop: 2, flexShrink: 0 }} />
+                            <span>{order.notes}</span>
+                          </div>
+                        )}
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <p style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#2563EB', lineHeight: 1 }}>{Number(order.qty_requested).toFixed(2)} <span style={{ fontSize: 11, color: '#94A3B8' }}>คิว</span></p>
@@ -1212,6 +1265,208 @@ export default function WorkerClient({
             <span style={{ fontSize: '10px', fontWeight: 700, color: '#EF4444' }}>ออกจากระบบ</span>
           </button>
         </nav>
+
+      {/* Concrete Order Confirmation & Order More Modal */}
+      {showConcreteConfirmModal && jobsByBed[confirmingBedIndex] && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '28px',
+            maxWidth: '440px',
+            width: '100%',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            border: '1px solid rgba(255, 255, 255, 0.8)',
+            position: 'relative'
+          }}>
+            {/* Top decorative bar */}
+            <div style={{ height: '6px', background: 'linear-gradient(to right, #3B82F6, #2563EB)' }} />
+            
+            {/* Header */}
+            <div style={{ padding: '24px 28px 16px', borderBottom: '1px solid #F1F5F9' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <i className="fas fa-fill-drip" style={{ color: '#2563EB' }} /> ยืนยันการสั่งคอนกรีต
+              </h3>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748B', fontWeight: 700 }}>
+                โรงผลิต {jobsByBed[confirmingBedIndex].bed}
+              </p>
+            </div>
+
+            {/* Content */}
+            <div style={{ padding: '24px 28px' }}>
+              {(() => {
+                const calculatedQty = jobsByBed[confirmingBedIndex].jobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0)
+                const parsedCustomQty = parseFloat(customConcreteQty)
+                const extraQty = !isNaN(parsedCustomQty) && parsedCustomQty > calculatedQty ? parsedCustomQty - calculatedQty : 0
+                const isError = orderMoreMode === 'custom' && (!customConcreteQty || isNaN(parsedCustomQty) || parsedCustomQty < calculatedQty)
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <p style={{ margin: 0, fontSize: '14px', color: '#475569', lineHeight: 1.5, fontWeight: 500 }}>
+                      ระบบคำนวณปริมาณคอนกรีตที่ต้องใช้สำหรับงานบนโรงผลิตนี้รวมทั้งสิ้น <strong style={{ color: '#2563EB' }}>{calculatedQty.toFixed(1)} คิว</strong> ต้องการสั่งปูนตามจำนวนนี้หรือต้องการสั่งเพิ่ม?
+                    </p>
+
+                    {/* Option 1: System Qty */}
+                    <div 
+                      onClick={() => {
+                        setOrderMoreMode('system')
+                        setCustomConcreteQty(calculatedQty.toFixed(1))
+                      }}
+                      style={{
+                        padding: '16px 20px',
+                        borderRadius: '16px',
+                        border: orderMoreMode === 'system' ? '2.5px solid #2563EB' : '1px solid #E2E8F0',
+                        backgroundColor: orderMoreMode === 'system' ? '#EFF6FF' : '#ffffff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <div>
+                        <span style={{ display: 'block', fontSize: '14px', fontWeight: 800, color: orderMoreMode === 'system' ? '#1E3A8A' : '#475569' }}>สั่งตามระบบคำนวณ</span>
+                        <span style={{ fontSize: '11px', color: orderMoreMode === 'system' ? '#60A5FA' : '#94A3B8', fontWeight: 600 }}>ปริมาณพอดีตามเป้าหมายแผนผลิต</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '18px', fontWeight: 900, color: orderMoreMode === 'system' ? '#2563EB' : '#475569' }}>{calculatedQty.toFixed(1)} <span style={{ fontSize: '12px', fontWeight: 700 }}>คิว</span></span>
+                        <div style={{
+                          width: '20px', height: '20px', borderRadius: '50%',
+                          border: orderMoreMode === 'system' ? '5px solid #2563EB' : '2px solid #CBD5E1',
+                          boxSizing: 'border-box',
+                          backgroundColor: '#ffffff'
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* Option 2: Order More */}
+                    <div 
+                      onClick={() => setOrderMoreMode('custom')}
+                      style={{
+                        padding: '16px 20px',
+                        borderRadius: '16px',
+                        border: orderMoreMode === 'custom' ? '2.5px solid #2563EB' : '1px solid #E2E8F0',
+                        backgroundColor: orderMoreMode === 'custom' ? '#FAFEFF' : '#ffffff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                        <div>
+                          <span style={{ display: 'block', fontSize: '14px', fontWeight: 800, color: orderMoreMode === 'custom' ? '#1E3A8A' : '#475569' }}>ต้องการสั่งเพิ่ม</span>
+                          <span style={{ fontSize: '11px', color: orderMoreMode === 'custom' ? '#0284C7' : '#94A3B8', fontWeight: 600 }}>ระบุจำนวนปูนทั้งหมดรวมที่ต้องการจริง</span>
+                        </div>
+                        <div style={{
+                          width: '20px', height: '20px', borderRadius: '50%',
+                          border: orderMoreMode === 'custom' ? '5px solid #2563EB' : '2px solid #CBD5E1',
+                          boxSizing: 'border-box',
+                          backgroundColor: '#ffffff'
+                        }} />
+                      </div>
+
+                      {orderMoreMode === 'custom' && (
+                        <div style={{ borderTop: '1px solid #E0F2FE', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <input 
+                              type="number"
+                              step="0.1"
+                              min={calculatedQty}
+                              value={customConcreteQty}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => setCustomConcreteQty(e.target.value)}
+                              placeholder={`ขั้นต่ำ ${calculatedQty.toFixed(1)} คิว`}
+                              style={{
+                                flex: 1,
+                                padding: '12px 16px',
+                                borderRadius: '12px',
+                                border: isError ? '1.5px solid #EF4444' : '1.5px solid #0EA5E9',
+                                outline: 'none',
+                                fontSize: '16px',
+                                fontWeight: 800,
+                                color: '#0F172A',
+                                backgroundColor: '#ffffff',
+                                fontFamily: 'monospace'
+                              }}
+                            />
+                            <span style={{ fontSize: '15px', fontWeight: 800, color: '#475569' }}>คิว</span>
+                          </div>
+
+                          {/* Extra feedback or error message */}
+                          {isError ? (
+                            <span style={{ fontSize: '11px', color: '#EF4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <i className="fas fa-exclamation-circle" /> จำนวนที่ระบุต้องไม่น้อยกว่ายอดคำนวณ {calculatedQty.toFixed(1)} คิว
+                            </span>
+                          ) : extraQty > 0 ? (
+                            <span style={{ fontSize: '11px', color: '#059669', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <i className="fas fa-plus-circle" /> สั่งปูนเพิ่มพิเศษ +{extraQty.toFixed(1)} คิว (จะนำไปรวมที่รอบสุดท้าย)
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                      <button 
+                        onClick={() => setShowConcreteConfirmModal(false)}
+                        disabled={saving}
+                        style={{
+                          flex: 1,
+                          padding: '14px',
+                          borderRadius: '14px',
+                          border: '1px solid #E2E8F0',
+                          backgroundColor: '#ffffff',
+                          color: '#64748B',
+                          fontWeight: 800,
+                          fontSize: '14px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ยกเลิก
+                      </button>
+                      <button 
+                        onClick={handleSubmitConcreteOrder}
+                        disabled={saving || isError}
+                        style={{
+                          flex: 2,
+                          padding: '14px',
+                          borderRadius: '14px',
+                          border: 'none',
+                          backgroundColor: isError ? '#94A3B8' : '#2563EB',
+                          color: '#ffffff',
+                          fontWeight: 900,
+                          fontSize: '14px',
+                          cursor: isError || saving ? 'not-allowed' : 'pointer',
+                          boxShadow: isError ? 'none' : '0 8px 20px -4px rgba(37,99,235,0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        {saving ? <i className="fas fa-spinner fa-spin" /> : <><i className="fas fa-check" /> ยืนยันสั่งคอนกรีต</>}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

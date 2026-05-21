@@ -13,8 +13,16 @@ export async function proxy(request: NextRequest) {
   if (!supabaseUrl || supabaseUrl === 'your_supabase_project_url' || !supabaseKey) {
     return NextResponse.next()
   }
-
   const path = request.nextUrl.pathname
+
+  // Bypass proxy for static public assets (images, fonts, etc.)
+  if (
+    path.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|css|js|woff2?|eot|ttf)$/) ||
+    path.startsWith('/_next/') ||
+    path.startsWith('/api/')
+  ) {
+    return NextResponse.next()
+  }
 
   // ─── กรณี A: Worker QR Entry ─────────────────────────────────────────────
   // /worker-entry?token=xxx → validate token → set cookie → redirect /worker
@@ -173,5 +181,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api|logo\\.png|.*\\.png$|.*\\.svg$|.*\\.jpg$|.*\\.jpeg$|.*\\.gif$|.*\\.webp$|.*\\.ico$|.*\\.css$|.*\\.js$).*)'],
 }

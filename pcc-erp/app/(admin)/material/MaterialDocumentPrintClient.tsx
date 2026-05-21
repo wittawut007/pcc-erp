@@ -102,6 +102,19 @@ export default function MaterialDocumentPrintClient({
     return acc;
   }, {});
 
+  // Extract unique receiver names and dispenser names
+  const receivers = Array.from(new Set(planItems.map(i => i.receiver_name).filter(Boolean))) as string[]
+  const displayReceiver = receivers.length > 0 ? receivers.join(', ') : ''
+
+  const dispensers = Array.from(new Set(planItems.map(i => i.dispensed_by_profile?.full_name).filter(Boolean))) as string[]
+  const displayDispenser = dispensers.length > 0 ? dispensers.join(', ') : (userFullName || '')
+
+  // Find the first non-null dispensed_at date to display in the signature date
+  const dispensedAtItem = planItems.find(i => i.dispensed_at)
+  const displayDate = dispensedAtItem && dispensedAtItem.dispensed_at
+    ? new Date(dispensedAtItem.dispensed_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+    : ''
+
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: `
@@ -275,17 +288,29 @@ export default function MaterialDocumentPrintClient({
           {/* Signature lines */}
           <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: 80 }}>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ width: 180, borderBottom: '1px dashed #9CA3AF', marginBottom: 8, height: 30 }}></div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>(..........................................................)</div>
+              <div style={{ width: 180, borderBottom: '1px dashed #9CA3AF', marginBottom: 8, height: 30, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                {displayReceiver && <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>{displayReceiver}</span>}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>
+                ( {displayReceiver || '..........................................................'} )
+              </div>
               <div style={{ fontSize: 12, color: '#6B7280', marginTop: 6 }}>ผู้เบิกวัตถุดิบ</div>
-              <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>วันที่ ......../......../..............</div>
+              <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>
+                วันที่ {displayDate || '......../......../..............'}
+              </div>
             </div>
             
             <div style={{ textAlign: 'center' }}>
-              <div style={{ width: 180, borderBottom: '1px dashed #9CA3AF', marginBottom: 8, height: 30 }}></div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>(..........................................................)</div>
+              <div style={{ width: 180, borderBottom: '1px dashed #9CA3AF', marginBottom: 8, height: 30, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                {displayDispenser && <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>{displayDispenser}</span>}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>
+                ( {displayDispenser || '..........................................................'} )
+              </div>
               <div style={{ fontSize: 12, color: '#6B7280', marginTop: 6 }}>เจ้าหน้าที่คลังวัตถุดิบ</div>
-              <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>วันที่ ......../......../..............</div>
+              <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>
+                วันที่ {displayDate || '......../......../..............'}
+              </div>
             </div>
           </div>
 

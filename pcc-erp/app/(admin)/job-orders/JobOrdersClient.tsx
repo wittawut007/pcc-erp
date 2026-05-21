@@ -8,6 +8,7 @@ interface ConcreteOrder {
   id: string
   requested_at: string | null
   status: string
+  notes?: string | null
   requester: { full_name: string } | null
 }
 
@@ -83,12 +84,12 @@ function getProgressPct(displayStatus: DisplayStatus): number {
 
 const STATUS_CFG: Record<DisplayStatus, { label: string; icon: string; badgeBg: string; badgeBorder: string; badgeText: string; kpiBg: string; kpiBorder: string; kpiText: string; ring: string }> = {
   pending:          { label: 'รอเริ่ม',           icon: 'fa-clock',         badgeBg: '#F3F4F6', badgeBorder: '#E5E7EB', badgeText: '#6B7280', kpiBg: '#F9FAFB', kpiBorder: '#E5E7EB', kpiText: '#6B7280', ring: 'rgba(107,114,128,0.2)' },
-  concrete_ordered: { label: 'สั่งคอนกรีตแล้ว',  icon: 'fa-truck-loading', badgeBg: '#DBEAFE', badgeBorder: '#BFDBFE', badgeText: '#1D4ED8', kpiBg: '#EFF6FF', kpiBorder: '#BFDBFE', kpiText: '#2563EB', ring: 'rgba(37,99,235,0.2)' },
-  casting:          { label: 'เทคอนกรีตแล้ว',    icon: 'fa-fill-drip',     badgeBg: '#EDE9FE', badgeBorder: '#C4B5FD', badgeText: '#5B21B6', kpiBg: '#F5F3FF', kpiBorder: '#C4B5FD', kpiText: '#7C3AED', ring: 'rgba(124,58,237,0.2)' },
+  concrete_ordered: { label: 'สั่งคอนกรีต',      icon: 'fa-truck-loading', badgeBg: '#DBEAFE', badgeBorder: '#BFDBFE', badgeText: '#1D4ED8', kpiBg: '#EFF6FF', kpiBorder: '#BFDBFE', kpiText: '#2563EB', ring: 'rgba(37,99,235,0.2)' },
+  casting:          { label: 'เทคอนกรีต',        icon: 'fa-fill-drip',     badgeBg: '#EDE9FE', badgeBorder: '#C4B5FD', badgeText: '#5B21B6', kpiBg: '#F5F3FF', kpiBorder: '#C4B5FD', kpiText: '#7C3AED', ring: 'rgba(124,58,237,0.2)' },
   curing:           { label: 'กำลังบ่ม',          icon: 'fa-hourglass-half',badgeBg: '#FEF3C7', badgeBorder: '#FDE68A', badgeText: '#B45309', kpiBg: '#FFFBEB', kpiBorder: '#FDE68A', kpiText: '#D97706', ring: 'rgba(217,119,6,0.2)' },
   ready_demold:     { label: 'พร้อมถอดแบบ',       icon: 'fa-check-circle',  badgeBg: '#D1FAE5', badgeBorder: '#A7F3D0', badgeText: '#065F46', kpiBg: '#ECFDF5', kpiBorder: '#A7F3D0', kpiText: '#059669', ring: 'rgba(5,150,105,0.2)' },
   demolded:         { label: 'ถอดแบบแล้ว',         icon: 'fa-cubes',         badgeBg: '#ECFDF5', badgeBorder: '#6EE7B7', badgeText: '#065F46', kpiBg: '#F0FDF4', kpiBorder: '#86EFAC', kpiText: '#16A34A', ring: 'rgba(22,163,74,0.2)' },
-  qc_passed:        { label: 'QC ตรวจผ่าน',       icon: 'fa-check-double',  badgeBg: '#D1FAE5', badgeBorder: '#A7F3D0', badgeText: '#065F46', kpiBg: '#ECFDF5', kpiBorder: '#A7F3D0', kpiText: '#059669', ring: 'rgba(5,150,105,0.2)' },
+  qc_passed:        { label: 'QC ตรวจสอบแล้ว',    icon: 'fa-check-double',  badgeBg: '#EFF4FF', badgeBorder: '#DBEAFE', badgeText: '#2563EB', kpiBg: '#EFF4FF', kpiBorder: '#DBEAFE', kpiText: '#2563EB', ring: 'rgba(37,99,235,0.2)' },
   cancelled:        { label: 'ยกเลิก',             icon: 'fa-times-circle',  badgeBg: '#FEE2E2', badgeBorder: '#FECACA', badgeText: '#991B1B', kpiBg: '#FEF2F2', kpiBorder: '#FECACA', kpiText: '#DC2626', ring: 'rgba(220,38,38,0.2)' },
 }
 
@@ -498,6 +499,12 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
                                 <div style={{ fontSize: 10, color: '#9CA3AF', fontFamily: 'monospace', marginTop: 2 }}>
                                   {job.plan_item?.product?.code ?? ''}
                                 </div>
+                                {latestCO?.notes && (
+                                  <div style={{ marginTop: 4, fontSize: 10, color: '#D97706', fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                                    <i className="fas fa-exclamation-circle" style={{ marginTop: 2, flexShrink: 0 }} />
+                                    <span>{latestCO.notes}</span>
+                                  </div>
+                                )}
                               </td>
 
                               {/* Target / Cast */}

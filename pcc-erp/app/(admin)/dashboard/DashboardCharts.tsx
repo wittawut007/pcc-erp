@@ -213,8 +213,8 @@ export default function DashboardCharts({ dailyData, weeklyData, bedData, defect
           {/* Legend: สีตามสถานะ */}
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
             {[
-              { color: '#10B981', label: 'ถอดแบบ / QC ผ่าน' },
-              { color: '#8B5CF6', label: 'กำลังบ่ม / พร้อมถอด' },
+              { color: '#10B981', label: 'ถอดแบบ / QC ตรวจสอบแล้ว' },
+              { color: '#8B5CF6', label: 'กำลังบ่ม / พร้อมถอดแบบ' },
               { color: '#2563EB', label: 'กำลังเท' },
               { color: '#F59E0B', label: 'สั่งคอนกรีต' },
               { color: '#9CA3AF', label: 'รอเริ่ม' },
