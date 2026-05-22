@@ -423,7 +423,7 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
 
   // Start a completely new blank plan
   const handleNewPlan = () => {
-    supabaseRouter.push(`/planner?date=${planDate}`)
+    supabaseRouter.push(`/planner?date=${planDate}&new=true`)
   }
 
   const isPlanConfirmed = editingPlan?.status === 'confirmed'
@@ -480,7 +480,10 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
           <input
             type="date"
             value={planDate}
-            onChange={e => setPlanDate(e.target.value)}
+            onChange={e => {
+              setPlanDate(e.target.value)
+              supabaseRouter.push(`/planner?date=${e.target.value}`)
+            }}
             style={{ width: '100%', height: 36, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 13, outline: 'none', color: '#374151', marginBottom: 10, boxSizing: 'border-box' }}
           />
           <button

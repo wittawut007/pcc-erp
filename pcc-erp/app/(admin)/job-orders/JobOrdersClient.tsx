@@ -31,6 +31,7 @@ interface JobOrder {
     product: { id: string; code: string; name: string; category: string; unit: string }
     plan?: { id: string; plan_date: string; created_at: string; status: string }
   } | null
+  production_order?: { order_number: string; status?: string } | null
   worker: { full_name: string; employee_code: string | null } | null
   photo_ready_url: string | null
   photo_cast_url: string | null
@@ -145,11 +146,13 @@ function getThisMonthRange() {
   return { start: getLocalDateString(start), end: getLocalDateString(end) }
 }
 
-export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobOrders: JobOrder[]; workers: Worker[]; userRole?: string }) {
+export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: initialHistory = [], userRole }: { jobOrders: JobOrder[]; historyJobOrders?: JobOrder[]; workers: Worker[]; userRole?: string }) {
+  const [tab, setTab] = useState<'queue' | 'history'>('queue')
   const [filterStatus, setFilterStatus] = useState<DisplayStatus | 'all'>('all')
   const [search, setSearch] = useState('')
   const [dateRange, setDateRange] = useState<{ start: string, end: string }>({ start: '', end: '' })
   const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set())
+  const [expandedHistoryPlans, setExpandedHistoryPlans] = useState<Set<string>>(new Set())
   const [viewingPhotoUrl, setViewingPhotoUrl] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [resettingJobId, setResettingJobId] = useState<string | null>(null)
@@ -175,6 +178,10 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
     initial.map(j => ({ ...j, _displayStatus: getDisplayStatus(j) }))
   , [initial])
 
+  const historyJobs = useMemo(() =>
+    initialHistory.map(j => ({ ...j, _displayStatus: getDisplayStatus(j) }))
+  , [initialHistory])
+
   // KPI counts
   const kpiCounts = useMemo(() => {
     const counts: Record<string, number> = {}
@@ -199,17 +206,20 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
     jobs.forEach(j => {
       const plan = j.plan_item?.plan
       if (!plan) return
-      if (!map.has(plan.id)) {
-        const datePart = plan.plan_date.replace(/-/g, '')
-        map.set(plan.id, {
-          planId: plan.id,
+      // Key by production_order number (not plan.id) so different POs are separate groups
+      const datePart = plan.plan_date.replace(/-/g, '')
+      const orderNumber = j.production_order?.order_number || `PO-${datePart}-001`
+      const groupKey = orderNumber
+      if (!map.has(groupKey)) {
+        map.set(groupKey, {
+          planId: groupKey,
           planDate: plan.plan_date,
           planCreatedAt: plan.created_at,
-          orderNumber: `PO-${datePart}-001`,
+          orderNumber,
           jobs: [],
         })
       }
-      map.get(plan.id)!.jobs.push(j)
+      map.get(groupKey)!.jobs.push(j)
     })
     // Sort newest first
     return Array.from(map.values()).sort((a, b) =>
@@ -256,10 +266,79 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
     setInitialized(true)
   }
 
+  // ─── History groups ──────────────────────────────────────────────────────────
+  const historyPlanGroups = useMemo(() => {
+    const map = new Map<string, PlanGroup>()
+    historyJobs.forEach(j => {
+      const plan = j.plan_item?.plan
+      if (!plan) return
+      // Key by production_order number so different POs are separate groups
+      const datePart = plan.plan_date.replace(/-/g, '')
+      const orderNumber = j.production_order?.order_number || `PO-${datePart}-001`
+      const groupKey = orderNumber
+      if (!map.has(groupKey)) {
+        map.set(groupKey, {
+          planId: groupKey,
+          planDate: plan.plan_date,
+          planCreatedAt: plan.created_at,
+          orderNumber,
+          jobs: [],
+        })
+      }
+      map.get(groupKey)!.jobs.push(j)
+    })
+    return Array.from(map.values()).sort((a, b) =>
+      new Date(b.planDate).getTime() - new Date(a.planDate).getTime()
+    )
+  }, [historyJobs])
+
+
+  const filteredHistoryGroups = useMemo(() => {
+    return historyPlanGroups.map(g => ({
+      ...g,
+      jobs: g.jobs.filter(j => {
+        const matchSearch = !search.trim() ||
+          (j.plan_item?.product?.name ?? '').toLowerCase().includes(search.toLowerCase()) ||
+          (j.plan_item?.product?.code ?? '').toLowerCase().includes(search.toLowerCase()) ||
+          j.bed.toLowerCase().includes(search.toLowerCase()) ||
+          g.orderNumber.toLowerCase().includes(search.toLowerCase())
+        return matchSearch
+      }),
+    })).filter(g => {
+      if (g.jobs.length === 0) return false
+      if (dateRange.start && dateRange.end) {
+        const pDate = g.planDate.split('T')[0]
+        if (pDate < dateRange.start || pDate > dateRange.end) return false
+      }
+      return true
+    })
+  }, [historyPlanGroups, search, dateRange])
+
+  const toggleHistoryPlan = (planId: string) => {
+    setExpandedHistoryPlans(prev => {
+      const next = new Set(prev)
+      next.has(planId) ? next.delete(planId) : next.add(planId)
+      return next
+    })
+  }
+
+  const allHistoryPlanIds = useMemo(() => new Set(historyPlanGroups.map(g => g.planId)), [historyPlanGroups])
+  const [historyInitialized, setHistoryInitialized] = useState(false)
+  if (!historyInitialized && historyPlanGroups.length > 0) {
+    setExpandedHistoryPlans(allHistoryPlanIds)
+    setHistoryInitialized(true)
+  }
+
+  const TAB_STYLE = (active: boolean): React.CSSProperties => ({
+    padding: '10px 20px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+    background: active ? '#2563EB' : 'transparent', color: active ? '#fff' : '#6B7280',
+    border: 'none', transition: 'all 0.15s', display: 'flex', alignItems: 'center', gap: 6
+  })
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', background: '#F7F8FA', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* KPI Cards */}
+      {/* KPI Cards — always visible */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
         {KPI_STATUSES.map(key => {
           const cfg = STATUS_CFG[key]
@@ -267,14 +346,14 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
           return (
             <button
               key={key}
-              onClick={() => setFilterStatus(isActive ? 'all' : key)}
+              onClick={() => setFilterStatus(tab === 'queue' ? (isActive ? 'all' : key) : filterStatus)}
               style={{
-                padding: '16px 18px', borderRadius: 12, textAlign: 'left', cursor: 'pointer',
-                border: `2px solid ${isActive ? cfg.kpiText : cfg.kpiBorder}`,
+                padding: '16px 18px', borderRadius: 12, textAlign: 'left', cursor: tab === 'queue' ? 'pointer' : 'default',
+                border: `2px solid ${isActive && tab === 'queue' ? cfg.kpiText : cfg.kpiBorder}`,
                 background: cfg.kpiBg,
-                boxShadow: isActive ? `0 0 0 3px ${cfg.ring}` : '0 1px 3px rgba(0,0,0,0.05)',
+                boxShadow: isActive && tab === 'queue' ? `0 0 0 3px ${cfg.ring}` : '0 1px 3px rgba(0,0,0,0.05)',
                 transition: 'all 0.15s',
-                opacity: filterStatus !== 'all' && !isActive ? 0.5 : 1,
+                opacity: tab === 'queue' && filterStatus !== 'all' && !isActive ? 0.5 : 1,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -304,7 +383,10 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
             />
           </div>
           <span style={{ fontSize: 12, color: '#9CA3AF', whiteSpace: 'nowrap' }}>
-            {filteredGroups.reduce((s, g) => s + g.jobs.length, 0)} รายการ จาก {filteredGroups.length} ใบสั่งผลิต
+            {tab === 'queue'
+              ? `${filteredGroups.reduce((s, g) => s + g.jobs.length, 0)} รายการ จาก ${filteredGroups.length} ใบสั่งผลิต`
+              : `${filteredHistoryGroups.reduce((s, g) => s + g.jobs.length, 0)} รายการ จาก ${filteredHistoryGroups.length} ใบสั่งผลิต`
+            }
           </span>
         </div>
 
@@ -357,16 +439,38 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
         </div>
       </div>
 
-      {/* Plan Groups */}
-      {filteredGroups.length === 0 ? (
-        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '80px 24px', textAlign: 'center' }}>
-          <i className="fas fa-clipboard-list" style={{ fontSize: 48, color: '#E5E7EB', display: 'block', marginBottom: 16 }} />
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#9CA3AF' }}>ไม่พบรายการ</div>
-          <div style={{ fontSize: 12, color: '#D1D5DB', marginTop: 4 }}>ลองปรับตัวกรองสถานะหรือคำค้นหา</div>
+      {/* Tabs + Content */}
+      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
+        {/* Tab Bar */}
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', gap: 4, background: '#F9FAFB' }}>
+          <button style={TAB_STYLE(tab === 'queue')} onClick={() => setTab('queue')}>
+            <i className="fas fa-list-ul" />
+            คิวงานรออยู่
+            {jobs.length > 0 && <span style={{ background: '#EF4444', color: '#fff', borderRadius: 50, padding: '2px 8px', fontSize: 11, marginLeft: 4 }}>{jobs.length}</span>}
+          </button>
+          <button style={TAB_STYLE(tab === 'history')} onClick={() => setTab('history')}>
+            <i className="fas fa-history" /> ย้อนหลัง
+            {initialHistory.length > 0 && (
+              <span style={{ background: tab === 'history' ? 'rgba(255,255,255,0.3)' : '#E5E7EB', color: tab === 'history' ? '#fff' : '#6B7280', borderRadius: 50, padding: '2px 8px', fontSize: 11, marginLeft: 4 }}>
+                {initialHistory.length}
+              </span>
+            )}
+          </button>
         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {filteredGroups.map(group => {
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+
+          {/* ── QUEUE TAB ── */}
+          {tab === 'queue' && (
+            filteredGroups.length === 0 ? (
+              <div style={{ padding: '80px 24px', textAlign: 'center' }}>
+                <i className="fas fa-clipboard-list" style={{ fontSize: 48, color: '#E5E7EB', display: 'block', marginBottom: 16 }} />
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#9CA3AF' }}>ไม่พบรายการ</div>
+                <div style={{ fontSize: 12, color: '#D1D5DB', marginTop: 4 }}>ลองปรับตัวกรองสถานะหรือคำค้นหา</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {filteredGroups.map(group => {
             const isOpen = expandedPlans.has(group.planId)
             const totalTarget = group.jobs.reduce((s, j) => s + j.qty_target, 0)
             const statusCounts = KPI_STATUSES.map(s => ({
@@ -693,8 +797,232 @@ export default function JobOrdersClient({ jobOrders: initial, userRole }: { jobO
               </div>
             )
           })}
+              </div>
+            )
+          )}
+
+          {/* ── HISTORY TAB ── */}
+          {tab === 'history' && (
+            filteredHistoryGroups.length === 0 ? (
+              <div style={{ padding: '80px 24px', textAlign: 'center' }}>
+                <i className="fas fa-history" style={{ fontSize: 48, color: '#E5E7EB', display: 'block', marginBottom: 16 }} />
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#9CA3AF' }}>ไม่มีประวัติคิวงานเทคอนกรีต</div>
+                <div style={{ fontSize: 13, color: '#D1D5DB', marginTop: 4 }}>งานที่เสร็จสมบูรณ์หรือ ERP Synced จะแสดงที่นี่</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {filteredHistoryGroups.map(group => {
+                  const isOpen = expandedHistoryPlans.has(group.planId)
+                  const totalTarget = group.jobs.reduce((s, j) => s + j.qty_target, 0)
+                  const uniqueStatuses = Array.from(new Set(group.jobs.map(j => j._displayStatus)))
+                  const statusCounts = uniqueStatuses.map(s => ({
+                    status: s,
+                    count: group.jobs.filter(j => j._displayStatus === s).length,
+                  })).filter(x => x.count > 0)
+
+
+                  return (
+                    <div key={group.planId} style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+                      <button
+                        onClick={() => toggleHistoryPlan(group.planId)}
+                        style={{
+                          width: '100%', display: 'flex', alignItems: 'center', gap: 16,
+                          padding: '14px 20px', background: '#F9FAFB',
+                          borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+                          borderBottom: isOpen ? '1px solid #E5E7EB' : 'none',
+                          cursor: 'pointer', textAlign: 'left',
+                        }}
+                      >
+                        <i className={`fas ${isOpen ? 'fa-chevron-down' : 'fa-chevron-right'}`} style={{ fontSize: 12, color: '#9CA3AF', width: 14, flexShrink: 0 }} />
+                        <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 14, color: '#111827', letterSpacing: '0.03em' }}>
+                          {group.orderNumber}
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#6B7280', fontSize: 12 }}>
+                          <i className="fas fa-calendar-alt" style={{ fontSize: 11, color: '#9CA3AF' }} />
+                          วันที่แผน: <strong style={{ color: '#374151' }}>{fmtPlanDate(group.planDate)}</strong>
+                        </div>
+                        <span style={{ fontSize: 12, color: '#6B7280' }}>
+                          <strong style={{ color: '#374151' }}>{group.jobs.length}</strong> รายการ
+                          {' · '}เป้า <strong style={{ color: '#2563EB' }}>{totalTarget.toLocaleString()}</strong> ชิ้น
+                        </span>
+                        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
+                          {statusCounts.map(({ status, count }) => {
+                            const cfg = STATUS_CFG[status as DisplayStatus]
+                            return (
+                              <span
+                                key={status}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                                  padding: '2px 10px', borderRadius: 50, fontSize: 11, fontWeight: 600,
+                                  background: cfg.badgeBg, color: cfg.badgeText, border: `1px solid ${cfg.badgeBorder}`,
+                                }}
+                              >
+                                <i className={`fas ${cfg.icon}`} style={{ fontSize: 9 }} />
+                                {cfg.label}: {count}
+                              </span>
+                            )
+                          })}
+                          {/* Show erp_synced badge if production_order is synced */}
+                          {group.jobs.some(j => j.production_order?.status === 'erp_synced') && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 10px', borderRadius: 50, fontSize: 11, fontWeight: 600, background: '#F0FDF4', color: '#16A34A', border: '1px solid #86EFAC' }}>
+                              <i className="fas fa-sync-alt" style={{ fontSize: 9 }} /> ERP Synced
+                            </span>
+                          )}
+                        </div>
+                      </button>
+
+                      {isOpen && (
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                            <thead>
+                              <tr style={{ background: '#F9FAFB', borderBottom: '2px solid #E5E7EB' }}>
+                                <th style={thStyle}>โรงผลิต</th>
+                                <th style={thStyle}>สินค้า</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>เป้า / เทแล้ว</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>สถานะ</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>ภาพถ่าย</th>
+                                <th style={thStyle}>พนักงาน</th>
+                                <th style={thStyle}>วันที่/เวลา</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>ถอดแบบได้</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.jobs.map((job, idx) => {
+                                const ds = job._displayStatus
+                                const cfg = STATUS_CFG[ds]
+                                const qcConfirmed = ds !== 'pending' && ds !== 'concrete_ordered' && ds !== 'cancelled'
+                                const castShown = qcConfirmed ? job.qty_cast : 0
+                                const latestCO = Array.isArray(job.concrete_orders) && job.concrete_orders.length > 0
+                                  ? job.concrete_orders.sort((a, b) =>
+                                      new Date(b.requested_at ?? 0).getTime() - new Date(a.requested_at ?? 0).getTime()
+                                    )[0]
+                                  : null
+                                const requesterName = latestCO?.requester?.full_name ?? job.worker?.full_name ?? null
+                                const actionTime = latestCO?.requested_at ?? job.cast_at ?? job.started_at
+
+                                return (
+                                  <tr
+                                    key={job.id}
+                                    style={{
+                                      borderBottom: '1px solid #F3F4F6',
+                                      background: idx % 2 === 0 ? '#fff' : '#FAFAFA',
+                                    }}
+                                  >
+                                    <td style={{ padding: '12px 16px' }}>
+                                      <span style={{
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                        width: 36, height: 36, borderRadius: 8,
+                                        background: cfg.kpiBg, border: `1px solid ${cfg.kpiBorder}`,
+                                        fontWeight: 800, fontSize: 15, color: cfg.kpiText,
+                                      }}>
+                                        {job.bed}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '12px 16px' }}>
+                                      <div style={{ fontWeight: 700, color: '#111827', fontSize: 13 }}>{job.plan_item?.product?.name ?? '—'}</div>
+                                      <div style={{ fontSize: 10, color: '#9CA3AF', fontFamily: 'monospace', marginTop: 2 }}>{job.plan_item?.product?.code ?? ''}</div>
+                                    </td>
+                                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                      <span style={{ fontWeight: 800, fontSize: 14, color: qcConfirmed ? '#2563EB' : '#9CA3AF' }}>{castShown}</span>
+                                      <span style={{ color: '#9CA3AF', fontSize: 12 }}> / {job.qty_target}</span>
+                                      <div style={{ fontSize: 10, color: '#9CA3AF' }}>{job.plan_item?.product?.unit ?? 'ชิ้น'}</div>
+                                    </td>
+                                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                      <span style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                                        padding: '4px 12px', borderRadius: 50, whiteSpace: 'nowrap',
+                                        fontSize: 11, fontWeight: 700,
+                                        background: cfg.badgeBg, color: cfg.badgeText, border: `1px solid ${cfg.badgeBorder}`,
+                                      }}>
+                                        <i className={`fas ${cfg.icon}`} style={{ fontSize: 10 }} />
+                                        {cfg.label}
+                                        {job.production_order?.status === 'erp_synced' && (
+                                          <span style={{ marginLeft: 4, fontSize: 9, background: '#D1FAE5', color: '#065F46', padding: '1px 5px', borderRadius: 4 }}>ERP</span>
+                                        )}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                        <button
+                                          disabled={!job.photo_ready_url}
+                                          onClick={() => job.photo_ready_url && setViewingPhotoUrl(job.photo_ready_url)}
+                                          style={{
+                                            background: job.photo_ready_url ? '#EFF6FF' : '#F3F4F6',
+                                            color: job.photo_ready_url ? '#2563EB' : '#D1D5DB',
+                                            border: '1px solid', borderColor: job.photo_ready_url ? '#BFDBFE' : '#E5E7EB',
+                                            width: 28, height: 28, borderRadius: 6, cursor: job.photo_ready_url ? 'pointer' : 'not-allowed',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          }}
+                                          title="ภาพก่อนสั่งคอนกรีต"
+                                        >
+                                          <i className="fas fa-camera" style={{ fontSize: 12 }} />
+                                        </button>
+                                        <button
+                                          disabled={!job.photo_cast_url}
+                                          onClick={() => job.photo_cast_url && setViewingPhotoUrl(job.photo_cast_url)}
+                                          style={{
+                                            background: job.photo_cast_url ? '#F5F3FF' : '#F3F4F6',
+                                            color: job.photo_cast_url ? '#7C3AED' : '#D1D5DB',
+                                            border: '1px solid', borderColor: job.photo_cast_url ? '#C4B5FD' : '#E5E7EB',
+                                            width: 28, height: 28, borderRadius: 6, cursor: job.photo_cast_url ? 'pointer' : 'not-allowed',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          }}
+                                          title="ภาพเทคอนกรีตแล้ว"
+                                        >
+                                          <i className="fas fa-camera" style={{ fontSize: 12 }} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: '12px 16px' }}>
+                                      {requesterName ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                          <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: '#DBEAFE', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>
+                                            {requesterName.charAt(0)}
+                                          </div>
+                                          <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>{requesterName}</span>
+                                        </div>
+                                      ) : <span style={{ color: '#D1D5DB', fontSize: 12 }}>—</span>}
+                                    </td>
+                                    <td style={{ padding: '12px 16px' }}>
+                                      {actionTime ? (
+                                        <div style={{ fontSize: 11, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                          <i className="fas fa-clock" style={{ fontSize: 10, color: '#9CA3AF' }} />
+                                          {fmtDate(actionTime)}
+                                        </div>
+                                      ) : <span style={{ color: '#D1D5DB', fontSize: 12 }}>—</span>}
+                                    </td>
+                                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                      {(() => {
+                                        const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
+                                        if (expectedTime) return (
+                                          <div style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>
+                                            <i className="fas fa-calendar-check" style={{ marginRight: 4, fontSize: 10 }} />
+                                            {fmtDate(expectedTime)}
+                                          </div>
+                                        )
+                                        return <span style={{ color: '#D1D5DB', fontSize: 12 }}>—</span>
+                                      })()}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                          <div style={{ padding: '10px 20px', borderTop: '1px solid #F3F4F6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FAFAFA' }}>
+                            <span style={{ fontSize: 11, color: '#9CA3AF' }}>{group.jobs.length} รายการ ในใบสั่งผลิต {group.orderNumber}</span>
+                            <span style={{ fontSize: 11, color: '#9CA3AF' }}>เป้าหมายรวม: <strong style={{ color: '#2563EB' }}>{totalTarget.toLocaleString()}</strong> ชิ้น</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          )}
+
         </div>
-      )}
+      </div>
 
       {/* Image Viewer Modal */}
       {viewingPhotoUrl && (

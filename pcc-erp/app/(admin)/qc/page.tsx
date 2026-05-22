@@ -23,7 +23,8 @@ async function getQcData() {
             plan_item:production_plan_items(
               product:products(name,code,category,unit),
               plan:production_plans(id,plan_date)
-            )
+            ),
+            production_order:production_orders(order_number)
           ),
           qc_profile:profiles!qc_inspections_qc_id_fkey(full_name)
         `)

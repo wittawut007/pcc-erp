@@ -51,7 +51,7 @@ export default async function WorkerPage() {
     .from('job_orders')
     .select(`
       id, bed, status, qty_target, qty_cast, expected_demold_at, plan_item_id, order_id,
-      production_order:production_orders(order_number),
+      production_order:production_orders(order_number, status),
       plan_item:production_plan_items(
         id, plan_id,
         product:products(id, code, name, category, size, unit, concrete_per_unit, wire_per_unit, mesh_per_unit, rebar_per_unit)
@@ -59,12 +59,16 @@ export default async function WorkerPage() {
     `)
     .eq('status', 'pending')
     .in('plan_item_id', planItemIds.length > 0 ? planItemIds : ['dummy'])
+
+  const activeJobOrders = (jobOrders as any)?.filter(
+    (j: any) => j.production_order?.status !== 'erp_synced'
+  ) || []
   
   return (
     <div className="min-h-screen bg-slate-50 flex justify-center w-full">
       <div className="w-full max-w-[480px] bg-white min-h-screen flex flex-col shadow-[0_0_40px_rgba(0,0,0,0.05)] relative">
         <WorkerClient
-          jobOrders={(jobOrders as any) ?? []}
+          jobOrders={activeJobOrders}
           planMaterialsMap={planMaterialsMap}
           planItemToPlanMap={planItemToPlanMap}
         />

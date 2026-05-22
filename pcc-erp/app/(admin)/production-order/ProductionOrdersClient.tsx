@@ -14,6 +14,7 @@ interface Plan {
   created_at: string
   profile: { full_name: string; role: string } | { full_name: string; role: string }[] | null
   items: { id: string }[]
+  production_orders?: { order_number: string; status: string }[]
 }
 
 interface Props {
@@ -130,8 +131,8 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
   const filtered = useMemo(() => {
     return plans.filter(p => {
       const matchStatus = activeStatus === 'all' || getStatus(p.status) === activeStatus
-      const datePart = p.plan_date.replace(/-/g, '')
-      const orderNumber = `PO-${datePart}-001`
+      const po = Array.isArray(p.production_orders) ? p.production_orders[0] : null
+      const orderNumber = po?.order_number || `PO-${p.plan_date.replace(/-/g, '')}-001`
       const profile = getProfile(p.profile)
       const matchSearch = !search.trim() ||
         orderNumber.toLowerCase().includes(search.toLowerCase()) ||
@@ -263,8 +264,8 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
               </thead>
               <tbody>
                 {filtered.map((plan, idx) => {
-                  const datePart = plan.plan_date.replace(/-/g, '')
-                  const orderNumber = `PO-${datePart}-001`
+                  const po = Array.isArray(plan.production_orders) ? plan.production_orders[0] : null
+                  const orderNumber = po?.order_number || `PO-${plan.plan_date.replace(/-/g, '')}-001`
                   const statusKey = getStatus(plan.status)
                   const cfg = STATUS_CONFIG[statusKey]
                   const itemCount = (plan.items ?? []).length

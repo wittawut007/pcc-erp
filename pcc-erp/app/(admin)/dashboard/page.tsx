@@ -9,7 +9,7 @@ async function getSupabaseData() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!supabaseUrl || supabaseUrl === 'your_supabase_project_url' || !supabaseKey) {
-    return { todayPlan: null, jobOrders: null, recentLogs: null, lowStock: null }
+    return { todayPlans: null, jobOrders: null, recentLogs: null, lowStock: null }
   }
   try {
     const { createClient } = await import('@/lib/supabase/server')
@@ -20,8 +20,8 @@ async function getSupabaseData() {
     sixDaysAgo.setDate(now.getDate() - 5)
     const startDateStr = sixDaysAgo.toISOString().split('T')[0]
     
-    const [{ data: todayPlan }, { data: jobOrders }, { data: recentLogs }, { data: lowStock }, { data: fgStock }, { data: wipStock }, { data: qcData }, { data: demoldingRecs }, { data: concreteOrders }, { data: concreteRounds }] = await Promise.all([
-      supabase.from('production_plans').select('*,items:production_plan_items(*,product:products(*))').eq('plan_date', today).single(),
+    const [{ data: todayPlans }, { data: jobOrders }, { data: recentLogs }, { data: lowStock }, { data: fgStock }, { data: wipStock }, { data: qcData }, { data: demoldingRecs }, { data: concreteOrders }, { data: concreteRounds }] = await Promise.all([
+      supabase.from('production_plans').select('*,items:production_plan_items(*,product:products(*))').eq('plan_date', today),
       supabase.from('job_orders').select(`
         *,
         plan_item:production_plan_items!inner(
@@ -42,19 +42,31 @@ async function getSupabaseData() {
       supabase.from('concrete_orders').select('id, job_order_id, bed, qty_requested, total_qty_requested, status, requested_at, created_at, round_count').gte('created_at', today),
       supabase.from('concrete_rounds').select('concrete_order_id, round_number, qty_per_round, status, supplied_at').gte('created_at', today)
     ])
-    return { todayPlan, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today }
+    return { todayPlans, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today }
   } catch (err) {
     console.error('Dashboard Fetch Error:', err)
-    return { todayPlan: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, wipStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, today: '' }
+    return { todayPlans: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, wipStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, today: '' }
   }
 }
 
+function getThaiCategoryName(category: string): string {
+  if (!category) return 'ไม่ระบุ'
+  const cat = category.trim().toUpperCase()
+  if (cat.startsWith('A13')) return 'แผ่นพื้นตัน'
+  if (cat.startsWith('A30')) return 'ผนังรั้วสำเร็จรูป'
+  if (cat.startsWith('A35')) return 'รั้วสำเร็จรูป'
+  if (cat.startsWith('A36')) return 'เสา คาน บันได'
+  if (cat.startsWith('A41')) return 'เสาเข็ม'
+  if (cat.startsWith('A42')) return 'กำแพงกันดิน'
+  return category
+}
+
 export default async function DashboardPage() {
-  const { todayPlan, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today } = await getSupabaseData()
+  const { todayPlans, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today } = await getSupabaseData()
 
   const todaysJobOrders = (jobOrders as any[])?.filter((j: any) => j.plan_item?.plan?.plan_date === today) || []
 
-  const totalTarget = (todayPlan as any)?.total_qty ?? 0
+  const totalTarget = (todayPlans as any[])?.reduce((s: number, p: any) => s + (p.total_qty ?? 0), 0) ?? 0
   const qtyCast = todaysJobOrders.filter((j: any) => ['casting', 'curing', 'ready_demold', 'demolded'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
   const qtyCuring = todaysJobOrders.filter((j: any) => ['curing', 'ready_demold'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
   const qtyDemolded = todaysJobOrders.filter((j: any) => j.status === 'demolded').reduce((s: number, j: any) => s + (j.qc?.[0]?.demold_qty_good ?? j.qty_cast ?? 0), 0)
@@ -275,15 +287,21 @@ export default async function DashboardPage() {
 
   // Map Real Chart Data
   const categoriesMap = new Map()
-  if (todayPlan?.items) {
-    todayPlan.items.forEach((item: any) => {
-      const catName = item.product?.category || 'ไม่ระบุ'
-      if (!categoriesMap.has(catName)) categoriesMap.set(catName, { plan: 0, actual: 0 })
-      categoriesMap.get(catName).plan += (item.qty_target || 0)
+  if (Array.isArray(todayPlans)) {
+    todayPlans.forEach((plan: any) => {
+      if (plan?.items) {
+        plan.items.forEach((item: any) => {
+          const rawCat = item.product?.category || 'ไม่ระบุ'
+          const catName = getThaiCategoryName(rawCat)
+          if (!categoriesMap.has(catName)) categoriesMap.set(catName, { plan: 0, actual: 0 })
+          categoriesMap.get(catName).plan += (item.qty_target || 0)
+        })
+      }
     })
   }
   todaysJobOrders.forEach((job: any) => {
-    const catName = job.plan_item?.product?.category || 'ไม่ระบุ'
+    const rawCat = job.plan_item?.product?.category || 'ไม่ระบุ'
+    const catName = getThaiCategoryName(rawCat)
     if (!categoriesMap.has(catName)) categoriesMap.set(catName, { plan: 0, actual: 0 })
     
     // นับเฉพาะที่ถอดแบบแล้ว (Finished Goods)
@@ -313,7 +331,8 @@ export default async function DashboardPage() {
   
   const catWeeklyMap = new Map()
   ;(jobOrders as any[])?.forEach(job => {
-     const catName = job.plan_item?.product?.category || 'ไม่ระบุ'
+     const rawCat = job.plan_item?.product?.category || 'ไม่ระบุ'
+     const catName = getThaiCategoryName(rawCat)
      if (!catWeeklyMap.has(catName)) catWeeklyMap.set(catName, { dates: {} })
      const jobDate = job.plan_item?.plan?.plan_date
      
@@ -545,7 +564,7 @@ export default async function DashboardPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 7fr) minmax(0, 3fr)', gap: 16, marginBottom: 20 }}>
           {/* Left Column (Concrete Usage) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '20px 24px', flex: 1 }}>
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '20px 24px' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 14 }}>Concrete Usage — สรุปการใช้คอนกรีตวันนี้</div>
               {concreteList.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-muted)', fontSize: 13 }}>
@@ -553,16 +572,16 @@ export default async function DashboardPage() {
                   ยังไม่มีการสั่งคอนกรีตวันนี้
                 </div>
               ) : (
-                <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                  {/* KPI mini cards */}
-                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', flex: '0 0 auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                  {/* KPI mini cards (Full width top row) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, width: '100%' }}>
                     {[
                       { icon: 'fa-tint', label: 'สั่งทั้งหมด (ลบม.)', value: totalConcreteOrdered.toFixed(2), unit: 'ลบม.', color: '#0284C7', bg: '#E0F2FE', border: '#BAE6FD' },
                       { icon: 'fa-check-circle', label: 'จ่ายแล้ว (ลบม.)', value: totalConcreteSupplied.toFixed(2), unit: 'ลบม.', color: '#059669', bg: '#D1FAE5', border: '#6EE7B7' },
                       { icon: 'fa-redo', label: 'รอบทั้งหมด', value: `${suppliedRounds}/${totalRounds}`, unit: 'รอบ', color: '#7C3AED', bg: '#EDE9FE', border: '#C4B5FD' },
                       { icon: 'fa-clock', label: 'คำสั่งที่ยังค้าง', value: pendingOrders.toString(), unit: 'รายการ', color: pendingOrders > 0 ? '#D97706' : '#6B7280', bg: pendingOrders > 0 ? '#FEF3C7' : '#F9FAFB', border: pendingOrders > 0 ? '#FDE68A' : '#E5E7EB' },
                     ].map(kpi => (
-                      <div key={kpi.label} style={{ background: kpi.bg, border: `1px solid ${kpi.border}`, borderRadius: 10, padding: '14px 18px', minWidth: 110, textAlign: 'center' }}>
+                      <div key={kpi.label} style={{ background: kpi.bg, border: `1px solid ${kpi.border}`, borderRadius: 10, padding: '14px 18px', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
                         <div style={{ fontSize: 16, color: kpi.color, marginBottom: 6 }}><i className={`fas ${kpi.icon}`} /></div>
                         <div style={{ fontSize: 22, fontWeight: 800, color: kpi.color, lineHeight: 1 }}>{kpi.value}</div>
                         <div style={{ fontSize: 9, color: kpi.color, opacity: 0.8, fontWeight: 700, marginTop: 2 }}>{kpi.unit}</div>
@@ -570,36 +589,43 @@ export default async function DashboardPage() {
                       </div>
                     ))}
                   </div>
-                  {/* Per-bed breakdown */}
-                  {bedConcreteEntries.length > 0 && (
-                    <div style={{ flex: 1, minWidth: 200 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>ปริมาณคอนกรีตต่อโรงผลิต</div>
-                      {bedConcreteEntries.map(([bed, qty]) => {
-                        const pct = totalConcreteOrdered > 0 ? (qty / totalConcreteOrdered) * 100 : 0
-                        return (
-                          <div key={bed} style={{ marginBottom: 8 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{bed}</span>
-                              <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#0284C7', fontWeight: 700 }}>{qty.toFixed(2)} ลบม.</span>
-                            </div>
-                            <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
-                              <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #BAE6FD, #0284C7)', borderRadius: 3, transition: 'width 0.3s' }} />
-                            </div>
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{pct.toFixed(1)}% ของทั้งหมด</div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                  {/* Progress supplier */}
-                  <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <div style={{ width: 80, height: 80, borderRadius: '50%', background: `conic-gradient(#0284C7 0% ${totalRounds > 0 ? (suppliedRounds / totalRounds) * 100 : 0}%, #E0F2FE ${totalRounds > 0 ? (suppliedRounds / totalRounds) * 100 : 0}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-                      <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                        <span style={{ fontSize: 16, fontWeight: 800, color: '#0284C7', lineHeight: 1 }}>{totalRounds > 0 ? Math.round((suppliedRounds / totalRounds) * 100) : 0}%</span>
-                        <span style={{ fontSize: 8, color: 'var(--text-muted)', fontWeight: 600 }}>DONE</span>
+                  {/* Detailed breakdown & Progress wheel (Second row) */}
+                  <div style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Per-bed breakdown */}
+                    {bedConcreteEntries.length > 0 ? (
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>ปริมาณคอนกรีตต่อโรงผลิต</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                          {bedConcreteEntries.map(([bed, qty]) => {
+                            const pct = totalConcreteOrdered > 0 ? (qty / totalConcreteOrdered) * 100 : 0
+                            return (
+                              <div key={bed} style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{bed}</span>
+                                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#0284C7', fontWeight: 700 }}>{qty.toFixed(2)} ลบม.</span>
+                                </div>
+                                <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+                                  <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #BAE6FD, #0284C7)', borderRadius: 3, transition: 'width 0.3s' }} />
+                                </div>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{pct.toFixed(1)}% ของทั้งหมด</div>
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
+                    ) : (
+                      <div style={{ flex: 1, fontSize: 12, color: 'var(--text-muted)' }}>ไม่มีข้อมูลแยกตามโรงผลิต</div>
+                    )}
+                    {/* Progress supplier */}
+                    <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '14px 20px', minHeight: 120 }}>
+                      <div style={{ width: 80, height: 80, borderRadius: '50%', background: `conic-gradient(#0284C7 0% ${totalRounds > 0 ? (suppliedRounds / totalRounds) * 100 : 0}%, #E0F2FE ${totalRounds > 0 ? (suppliedRounds / totalRounds) * 100 : 0}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+                        <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                          <span style={{ fontSize: 16, fontWeight: 800, color: '#0284C7', lineHeight: 1 }}>{totalRounds > 0 ? Math.round((suppliedRounds / totalRounds) * 100) : 0}%</span>
+                          <span style={{ fontSize: 8, color: 'var(--text-muted)', fontWeight: 600 }}>DONE</span>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', fontWeight: 600 }}>ความคืบหน้าการจ่าย</div>
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>ความคืบหน้า<br/>การจ่าย</div>
                   </div>
                 </div>
               )}

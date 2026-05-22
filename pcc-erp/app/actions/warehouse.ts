@@ -13,6 +13,7 @@ export async function getPendingFGItems() {
     .from('job_orders')
     .select(`
       *,
+      production_order:production_orders(status),
       plan_item:production_plan_items(
         bed,
         product:products(id, name, code, category, unit)
@@ -29,7 +30,7 @@ export async function getPendingFGItems() {
     .order('demolded_at', { ascending: true })
 
   if (error) throw new Error(error.message)
-  return data
+  return (data ?? []).filter((item: any) => item.production_order?.status !== 'erp_synced')
 }
 
 /**

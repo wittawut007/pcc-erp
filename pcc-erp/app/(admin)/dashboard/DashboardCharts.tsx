@@ -172,7 +172,7 @@ export default function DashboardCharts({ dailyData, weeklyData, bedData, defect
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>แผนการผลิตรายวัน วันนี้ (แยกตามหมวดหมู่)</span>
           </div>
-          <div style={{ height: 200, width: '100%' }}>
+          <div style={{ height: 280, width: '100%' }}>
             <canvas ref={daily}></canvas>
           </div>
         </div>

@@ -7,13 +7,14 @@ import { createClient } from '@/lib/supabase/server'
 export default async function PlannerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; plan_id?: string }>
+  searchParams: Promise<{ date?: string; plan_id?: string; new?: string }>
 }) {
   const supabase = await createClient()
   const today = new Date().toISOString().split('T')[0]
   const params = await searchParams
   const selectedDate = params.date || today
   const editPlanId = params.plan_id || null
+  const isNew = params.new === 'true'
 
   const { data: products } = await supabase
     .from('products')
@@ -49,7 +50,7 @@ export default async function PlannerPage({
       .eq('id', editPlanId)
       .single()
     editingPlan = data
-  } else if (params.date) {
+  } else if (params.date && !isNew) {
     // Load most-recent plan for that date if navigated by date
     const { data } = await supabase
       .from('production_plans')

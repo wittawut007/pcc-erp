@@ -167,7 +167,8 @@ export async function getPendingConcreteOrders() {
       bed,
       requested_by_profile:profiles!concrete_orders_requested_by_fkey(full_name, employee_code),
       job_order:job_orders(
-        id, bed, qty_target,
+        id, bed, qty_target, order_id,
+        production_order:production_orders(status),
         plan_item:production_plan_items(
           product:products(name, code, concrete_per_unit)
         )
@@ -182,8 +183,13 @@ export async function getPendingConcreteOrders() {
 
   if (error) throw new Error(error.message)
 
+  // Filter out orders where production_order.status is 'erp_synced'
+  const activeOrders = (data ?? []).filter(order => {
+    return (order.job_order as any)?.production_order?.status !== 'erp_synced'
+  })
+
   // Sort rounds by round_number
-  return (data ?? []).map(order => ({
+  return activeOrders.map(order => ({
     ...order,
     rounds: (order.rounds ?? []).sort((a: { round_number: number }, b: { round_number: number }) => a.round_number - b.round_number),
   }))

@@ -104,7 +104,12 @@ export default function WorkerClient({
   const [activeConcreteOrders, setActiveConcreteOrders] = useState<{
     id: string; job_order_id: string; bed: string | null; qty_requested: number; round_count: number; requested_at: string;
     notes?: string | null;
-    job_order?: { bed: string; status: string; plan_item?: { product?: { name: string } | null } | null } | null
+    job_order?: { 
+      bed: string; 
+      status: string; 
+      production_order?: { status: string } | null;
+      plan_item?: { product?: { name: string } | null } | null 
+    } | null
     rounds: { id: string; round_number: number; qty_per_round: number; status: string; supplied_at: string | null }[]
   }[]>([])
   const [concreteLoading, setConcreteLoading] = useState(false)
@@ -262,7 +267,11 @@ export default function WorkerClient({
       const { data } = await supabase
         .from('concrete_orders')
         .select(`id, job_order_id, bed, qty_requested, round_count, requested_at, notes,
-          job_order:job_orders(id, bed, status, plan_item:production_plan_items(product:products(name))),
+          job_order:job_orders(
+            id, bed, status,
+            production_order:production_orders(status),
+            plan_item:production_plan_items(product:products(name))
+          ),
           rounds:concrete_rounds(id, round_number, qty_per_round, status, supplied_at)`)
         .in('status', ['requested', 'supplied'])
         .order('requested_at', { ascending: true })
@@ -270,7 +279,10 @@ export default function WorkerClient({
         const sorted = data.map((o: any) => ({
           ...o,
           rounds: (o.rounds ?? []).sort((a: any, b: any) => a.round_number - b.round_number),
-        })).filter((o: any) => o.rounds.some((r: any) => r.status !== 'received'))
+        })).filter((o: any) => 
+          o.rounds.some((r: any) => r.status !== 'received') &&
+          o.job_order?.production_order?.status !== 'erp_synced'
+        )
         setActiveConcreteOrders(sorted)
         const allReceived = sorted.reduce((s: number, o: any) => s + o.rounds.filter((r: any) => r.status === 'received').length, 0)
         setConcreteRoundsReceived(allReceived)

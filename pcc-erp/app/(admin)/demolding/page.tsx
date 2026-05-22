@@ -15,10 +15,15 @@ export default async function DemoldingPage() {
         product:products(id, code, name, category, unit),
         plan:production_plans(id, plan_date)
       ),
-      worker:profiles(full_name)
+      worker:profiles(full_name),
+      production_order:production_orders(order_number, status)
     `)
     .in('status', ['ready_demold', 'curing'])
     .order('expected_demold_at', { ascending: true })
+
+  const activeReadyJobs = (readyJobs ?? []).filter(
+    (j: any) => j.production_order?.status !== 'erp_synced'
+  )
 
   const { data: recentDemolding } = await supabase
     .from('demolding_records')
@@ -29,7 +34,8 @@ export default async function DemoldingPage() {
         plan_item:production_plan_items(
           product:products(name, code, unit),
           plan:production_plans(id, plan_date)
-        )
+        ),
+        production_order:production_orders(order_number)
       ),
       worker:profiles(full_name)
     `)
@@ -45,7 +51,7 @@ export default async function DemoldingPage() {
   return (
     <>
       <Header title="งานถอดแบบ / ตัดยก" subtitle="ติดตามสถานะการถอดแบบ และ ตัดยกคอนกรีต" />
-      <DemoldingClient readyJobs={readyJobs ?? []} recentDemolding={recentDemolding ?? []} workers={workers ?? []} />
+      <DemoldingClient readyJobs={activeReadyJobs} recentDemolding={recentDemolding ?? []} workers={workers ?? []} />
     </>
   )
 }

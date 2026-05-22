@@ -21,7 +21,8 @@ export default async function ProductionOrderPrintPage({ params }: PageProps) {
       items:production_plan_items(
         *,
         product:products(id, code, name, size, category, unit, concrete_per_unit, bom_code, wire_per_unit, mesh_per_unit, rebar_per_unit, length)
-      )
+      ),
+      production_orders(order_number)
     `)
     .eq('id', planId)
     .single()
@@ -55,9 +56,9 @@ export default async function ProductionOrderPrintPage({ params }: PageProps) {
     minute: '2-digit',
   })
 
-  // Build order number from plan_date
-  const datePart = plan.plan_date.replace(/-/g, '')
-  const orderNumber = `PO-${datePart}-001`
+  // Get real order number from production_orders relation, fallback if not found
+  const po = plan.production_orders && (plan.production_orders as any)[0]
+  const orderNumber = po?.order_number || `PO-${plan.plan_date.replace(/-/g, '')}-001`
 
   // Map plan items to the shape used by print client
   const items = (plan.items ?? []).map((item: any) => {

@@ -7,15 +7,23 @@ interface Job {
   status: string; cast_at: string | null; expected_demold_at: string | null
   plan_item: {
     product: { id: string; code?: string; name: string; category: string; unit: string } | null
-    plan?: { id: string; plan_date: string; production_order_code: string } | null
+    plan?: { id: string; plan_date: string } | null
   } | null
   worker: { full_name: string } | null
+  production_order?: { order_number: string } | null
 }
 
 interface DemoldRecord {
   id: string; qty_good: number; qty_defect: number; defect_reason: string | null
   defect_detail: string | null; created_at: string; photo_url: string | null
-  job_order: { bed: string; plan_item: { product: { name: string; code?: string; unit: string } | null; plan?: { id: string; plan_date: string } | null } | null } | null
+  job_order: {
+    bed: string
+    plan_item: {
+      product: { name: string; code?: string; unit: string } | null
+      plan?: { id: string; plan_date: string } | null
+    } | null
+    production_order?: { order_number: string } | null
+  } | null
   worker: { full_name: string } | null
 }
 
@@ -126,7 +134,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
     return jobs.filter(j => {
       const planDate = j.plan_item?.plan?.plan_date || new Date().toISOString()
       const datePart = planDate.split('T')[0]
-      const orderNumber = `PO-${datePart.replace(/-/g, '')}-001`.toLowerCase()
+      const orderNumber = (j.production_order?.order_number || `PO-${datePart.replace(/-/g, '')}-001`).toLowerCase()
       
       const matchSearch = !q || (
         orderNumber.includes(q) ||
@@ -152,7 +160,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
       const planId = plan?.id || 'unknown'
       const planDate = plan?.plan_date || new Date().toISOString()
       const datePart = planDate.split('T')[0].replace(/-/g, '')
-      const orderNumber = plan?.production_order_code || `PO-${datePart}-001`
+      const orderNumber = j.production_order?.order_number || `PO-${datePart}-001`
 
       if (!map.has(planId)) {
         map.set(planId, { planId, planDate, orderNumber, jobs: [] })
@@ -200,7 +208,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
       const createdDate = r.created_at.split('T')[0]
       const planDate = r.job_order?.plan_item?.plan?.plan_date || r.created_at
       const datePart = planDate.split('T')[0].replace(/-/g, '')
-      const orderNumber = r.job_order?.plan_item?.plan?.id ? `PO-${datePart}-001`.toLowerCase() : 'ไม่มีระบุใบสั่งผลิต'
+      const orderNumber = (r.job_order?.production_order?.order_number || (r.job_order?.plan_item?.plan?.id ? `PO-${datePart}-001` : 'ไม่มีระบุใบสั่งผลิต')).toLowerCase()
       
       const matchSearch = !q || (
         orderNumber.includes(q) ||
@@ -225,7 +233,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
       const planId = plan?.id || 'unknown_history'
       const planDate = plan?.plan_date || r.created_at
       const datePart = planDate.split('T')[0].replace(/-/g, '')
-      const orderNumber = plan?.id ? `PO-${datePart}-001` : 'ไม่มีระบุใบสั่งผลิต'
+      const orderNumber = r.job_order?.production_order?.order_number || (plan?.id ? `PO-${datePart}-001` : 'ไม่มีระบุใบสั่งผลิต')
 
       if (!map.has(planId)) {
         map.set(planId, { planId, planDate, orderNumber, records: [] })

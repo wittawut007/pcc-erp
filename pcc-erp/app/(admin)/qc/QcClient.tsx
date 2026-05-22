@@ -15,6 +15,7 @@ interface DemoldingRecord {
       product: { name: string; code?: string; category: string; unit: string } | null
       plan?: { id: string; plan_date: string; production_order_code?: string } | null
     } | null
+    production_order?: { order_number: string } | null
   } | null
   qc_profile: { full_name: string } | null
 }
@@ -90,7 +91,7 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
   const filtered = useMemo(() => displayRecords.filter(r => {
     const planDate = r.job_order?.plan_item?.plan?.plan_date || r.created_at
     const datePart = planDate.split('T')[0].replace(/-/g, '')
-    const orderNumber = r.job_order?.plan_item?.plan?.production_order_code || (r.job_order?.plan_item?.plan?.id ? `PO-${datePart}-001` : 'ไม่มีระบุใบสั่งผลิต')
+    const orderNumber = r.job_order?.production_order?.order_number || r.job_order?.plan_item?.plan?.production_order_code || (r.job_order?.plan_item?.plan?.id ? `PO-${datePart}-001` : 'ไม่มีระบุใบสั่งผลิต')
 
     const matchSearch = !search || 
       (r.job_order?.plan_item?.product?.name?.toLowerCase().includes(search.toLowerCase())) ||
@@ -116,7 +117,7 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
       const planId = plan?.id || 'unknown'
       const planDate = plan?.plan_date || r.created_at
       const datePart = planDate.split('T')[0].replace(/-/g, '')
-      const orderNumber = plan?.production_order_code || (plan?.id ? `PO-${datePart}-001` : 'ไม่มีระบุใบสั่งผลิต')
+      const orderNumber = r.job_order?.production_order?.order_number || plan?.production_order_code || (plan?.id ? `PO-${datePart}-001` : 'ไม่มีระบุใบสั่งผลิต')
 
       if (!map.has(planId)) {
         map.set(planId, { planId, planDate, orderNumber, records: [] })
