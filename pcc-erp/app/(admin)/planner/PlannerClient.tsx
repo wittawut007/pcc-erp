@@ -310,14 +310,18 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
 
       // Mesh
       const meshNeeded = (product.mesh_per_unit || 0) * item.qty
-      if (meshNeeded > 0 && fallbackMesh?.id) {
-        materialReqs[fallbackMesh.id] = (materialReqs[fallbackMesh.id] || 0) + meshNeeded
+      if (meshNeeded > 0) {
+        const specificMesh = rawMaterials.find(r => r.name === product.bom_code)
+        const meshId = specificMesh?.id || fallbackMesh?.id
+        if (meshId) materialReqs[meshId] = (materialReqs[meshId] || 0) + meshNeeded
       }
 
       // Rebar
       const rebarNeeded = (product.rebar_per_unit || 0) * item.qty
-      if (rebarNeeded > 0 && fallbackRebar?.id) {
-        materialReqs[fallbackRebar.id] = (materialReqs[fallbackRebar.id] || 0) + rebarNeeded
+      if (rebarNeeded > 0) {
+        const specificRebar = rawMaterials.find(r => r.name === product.bom_code)
+        const rebarId = specificRebar?.id || fallbackRebar?.id
+        if (rebarId) materialReqs[rebarId] = (materialReqs[rebarId] || 0) + rebarNeeded
       }
     })
 

@@ -8,6 +8,7 @@ export async function createUserAction(formData: FormData) {
   const fullName = formData.get('fullName') as string
   const role = formData.get('role') as string
   const employeeCode = formData.get('employeeCode') as string
+  const avatarUrl = formData.get('avatarUrl') as string | null
 
   try {
     const supabaseAdmin = createAdminClient()
@@ -33,6 +34,7 @@ export async function createUserAction(formData: FormData) {
           full_name: fullName,
           role: role,
           employee_code: employeeCode,
+          avatar_url: avatarUrl || null,
           is_active: true,
         }, {
           onConflict: 'id',  // ถ้า id ซ้ำ (trigger สร้างไว้แล้ว) ให้ update แทน
@@ -55,6 +57,7 @@ export async function updateUserAction(formData: FormData) {
   const employeeCode = formData.get('employeeCode') as string
   const password = formData.get('password') as string
   const isActive = formData.get('isActive') === 'true'
+  const avatarUrl = formData.get('avatarUrl') as string | null
 
   try {
     const supabaseAdmin = createAdminClient()
@@ -70,12 +73,15 @@ export async function updateUserAction(formData: FormData) {
     if (authError) throw authError
 
     // Update Profile
-    const { error: profileError } = await supabaseAdmin.from('profiles').update({
+    const profileData: any = {
       full_name: fullName,
       role: role,
       employee_code: employeeCode,
       is_active: isActive
-    }).eq('id', userId)
+    }
+    if (avatarUrl !== null) profileData.avatar_url = avatarUrl
+
+    const { error: profileError } = await supabaseAdmin.from('profiles').update(profileData).eq('id', userId)
 
     if (profileError) throw profileError
 

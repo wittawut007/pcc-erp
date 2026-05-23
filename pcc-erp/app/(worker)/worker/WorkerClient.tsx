@@ -83,7 +83,8 @@ export default function WorkerClient({
   const [photos, setPhotos] = useState<Record<string, { file: File, preview: string }>>({})
   const [demoldingData, setDemoldingData] = useState<Record<string, { good: number, defect: number, reason: string }>>({})
   const [saving, setSaving] = useState(false)
-  const [userProfile, setUserProfile] = useState<{full_name: string, role: string} | null>(null)
+  const [userProfile, setUserProfile] = useState<{full_name: string, role: string, avatar_url: string | null} | null>(null)
+  const [cacheBuster] = useState(() => Date.now())
 
   // Concrete Confirm Modal states
   const [showConcreteConfirmModal, setShowConcreteConfirmModal] = useState(false)
@@ -94,7 +95,7 @@ export default function WorkerClient({
   // Daily Jobs — per-item checklist, photo, expand state
   const [jobItemChecks, setJobItemChecks] = useState<Record<string, { clean: boolean; wip: boolean }>>({ })
   const [jobItemPhotos, setJobItemPhotos] = useState<Record<string, { file: File; preview: string }>>({ })
-  const [materialsByPlan, setMaterialsByPlan] = useState<Record<string, {name: string}[]>>({})
+  const [materialsByPlan, setMaterialsByPlan] = useState<Record<string, {name: string; category: string}[]>>({})
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
   const [showConcreteSummary, setShowConcreteSummary] = useState(false)
 
@@ -123,12 +124,17 @@ export default function WorkerClient({
       const planIds = JSON.parse(planIdsString)
       if (planIds.length === 0) return
       
-      const { data } = await supabase.from('plan_materials').select('plan_id, raw_material:raw_materials(name)').in('plan_id', planIds)
+      const { data } = await supabase.from('plan_materials').select('plan_id, raw_material:raw_materials(name, category)').in('plan_id', planIds)
       
-      const newMap: Record<string, {name: string}[]> = {}
+      const newMap: Record<string, {name: string; category: string}[]> = {}
       data?.forEach((d: any) => {
         if (!newMap[d.plan_id]) newMap[d.plan_id] = []
-        if (d.raw_material?.name) newMap[d.plan_id].push({ name: d.raw_material.name })
+        if (d.raw_material?.name) {
+          newMap[d.plan_id].push({ 
+            name: d.raw_material.name, 
+            category: d.raw_material.category || '' 
+          })
+        }
       })
       setMaterialsByPlan(newMap)
     }
@@ -141,8 +147,8 @@ export default function WorkerClient({
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
           try {
-            const { data } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).single()
-            if (data) setUserProfile({ full_name: data.full_name, role: data.role })
+            const { data } = await supabase.from('profiles').select('full_name, role, avatar_url').eq('id', user.id).single()
+            if (data) setUserProfile({ full_name: data.full_name, role: data.role, avatar_url: data.avatar_url ?? null })
           } catch (err) {
             console.error("Profile fetch error:", err)
           }
@@ -498,7 +504,7 @@ export default function WorkerClient({
                 flexShrink: 0,
               }}>
                 <img
-                  src="https://ui-avatars.com/api/?name=Worker&background=random"
+                  src={userProfile?.avatar_url ? `${userProfile.avatar_url}?t=${cacheBuster}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile?.full_name || 'Worker')}&background=random`}
                   alt="Profile"
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
@@ -574,23 +580,43 @@ export default function WorkerClient({
                     <input type="checkbox" style={{ marginTop: '4px', marginRight: '16px', flexShrink: 0, width: '20px', height: '20px', accentColor: '#2563EB' }} checked={phase1Checks.wip} onChange={e => setPhase1Checks(p => ({...p, wip: e.target.checked}))} />
                     <div style={{ flex: 1 }}>
                       <p style={{ fontWeight: 800, color: '#1E293B', fontSize: '15px' }}>จัดวางโครงเหล็กครบถ้วน</p>
-                      {/* Show real material info from dispensed stock */}
+                      {/* Show material info from product BOM data */}
                       {(() => {
-                        const planId = currentJob.plan_item?.plan_id || planItemToPlanMap[currentJob.plan_item_id || ''] || ''
-                        const mats = planMaterialsMap[planId] || []
-                        // Filter only wire/steel categories
-                        const steelMats = mats.filter(m =>
-                          !m.name.toLowerCase().includes('คอน') &&
-                          !m.name.toLowerCase().includes('concrete')
-                        )
-                        if (steelMats.length > 0) {
+                        const product = currentJob.plan_item?.product
+                        if (!product) return <p style={{ fontSize: '13px', color: '#94A3B8', fontWeight: 500, marginTop: '4px' }}>ตรวจสอบรหัสและจำนวนโครงเหล็กให้ตรงตามแผน</p>
+
+                        const qty = currentJob.qty_target
+                        const items: { label: string; qty: number; unit: string }[] = []
+
+                        if (product.wire_per_unit && product.wire_per_unit > 0)
+                          items.push({ label: 'ลวด PC-Wire', qty: product.wire_per_unit * qty, unit: 'กก.' })
+                        if (product.mesh_per_unit && product.mesh_per_unit > 0)
+                          items.push({ label: 'ตะแกรงเหล็กสำเร็จรูป (Mesh)', qty: product.mesh_per_unit * qty, unit: 'ชิ้น' })
+                        if (product.rebar_per_unit && product.rebar_per_unit > 0)
+                          items.push({ label: 'เหล็กเส้น (Rebar)', qty: product.rebar_per_unit * qty, unit: 'กก.' })
+
+                        if (items.length === 0) {
+                          const productName = product.name || ''
+                          if (productName.includes('ผนังรั้ว') || productName.includes('รั้ว')) {
+                            items.push({ label: 'ตะแกรงเหล็กสำเร็จรูป (Mesh)', qty: 0, unit: '' })
+                          } else if (productName.includes('แผ่นพื้น')) {
+                            items.push({ label: 'ลวด PC-Wire', qty: 0, unit: '' })
+                          }
+                        }
+
+                        if (items.length > 0) {
                           return (
-                            <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                              {steelMats.map((m, i) => (
-                                <p key={i} style={{ fontSize: '12px', color: '#2563EB', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  <i className="fas fa-check" style={{ fontSize: '9px', color: '#93C5FD' }} />
-                                  {m.name}
-                                </p>
+                            <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                              {items.map((item, i) => (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#EFF6FF', borderRadius: '8px', padding: '6px 10px' }}>
+                                  <p style={{ fontSize: '12px', color: '#1D4ED8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px', margin: 0 }}>
+                                    <i className="fas fa-link" style={{ fontSize: '9px', color: '#93C5FD' }} />
+                                    {item.label}
+                                  </p>
+                                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#1E40AF' }}>
+                                    {item.qty % 1 === 0 ? item.qty : item.qty.toFixed(2)} {item.unit}
+                                  </span>
+                                </div>
                               ))}
                             </div>
                           )
@@ -898,16 +924,46 @@ export default function WorkerClient({
                                 <div>
                                   <p style={{ fontWeight: 800, color: '#1E293B', fontSize: '14px', margin: 0 }}>จัดวางโครงเหล็กครบถ้วน</p>
                                   <p style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 500, marginTop: '2px', marginBottom: '8px' }}>ตรวจสอบรหัสและจำนวนโครงเหล็กให้ตรงตามแผน</p>
-                                  {materials.length > 0 && (
-                                    <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', marginTop: '6px' }}>
-                                      {materials.map((m, idx) => (
-                                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderBottom: idx < materials.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
-                                          <i className="fas fa-check-circle" style={{ color: '#10B981', fontSize: '10px' }}></i>
-                                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>{m.name}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
+                                  {(() => {
+                                    const product = j.plan_item?.product
+                                    if (!product) return null
+                                    
+                                    const hasWire = product.wire_per_unit && product.wire_per_unit > 0
+                                    const hasMesh = product.mesh_per_unit && product.mesh_per_unit > 0
+                                    const hasRebar = product.rebar_per_unit && product.rebar_per_unit > 0
+
+                                    const productName = product.name || ''
+                                    const isFence = productName.includes('ผนังรั้ว') || productName.includes('รั้ว')
+                                    const isFloor = productName.includes('แผ่นพื้น')
+
+                                    const filtered = materials.filter((m: any) => {
+                                      const isWire = m.category === 'ลวด' || m.name.includes('ลวด') || m.name.toLowerCase().includes('wire')
+                                      const isMesh = m.category === 'เมช' || m.name.includes('ตะแกรง') || m.name.toLowerCase().includes('mesh')
+                                      const isRebar = m.category === 'เหล็กเส้น' || m.name.includes('เหล็กเส้น') || m.name.includes('RB') || m.name.includes('DB')
+
+                                      if (hasWire && isWire) return true
+                                      if (hasMesh && isMesh) return true
+                                      if (hasRebar && isRebar) return true
+
+                                      if (isFence && isMesh) return true
+                                      if (isFloor && isWire) return true
+
+                                      return false
+                                    })
+
+                                    if (filtered.length === 0) return null
+
+                                    return (
+                                      <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', marginTop: '6px' }}>
+                                        {filtered.map((m: any, idx) => (
+                                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderBottom: idx < filtered.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
+                                            <i className="fas fa-check-circle" style={{ color: '#10B981', fontSize: '10px' }}></i>
+                                            <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>{m.name}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )
+                                  })()}
                                 </div>
                               </label>
                             </div>

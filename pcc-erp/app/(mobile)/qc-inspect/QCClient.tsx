@@ -13,11 +13,12 @@ const DEFECT_REASONS = [
   { value: 'other', label: 'อื่นๆ' },
 ]
 
-export default function QCClient({ initialData, qcName }: { initialData: any[], qcName: string }) {
+export default function QCClient({ initialData, qcName, avatarUrl }: { initialData: any[], qcName: string, avatarUrl?: string | null }) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'casting' | 'demolding' | 'history'>('casting')
   const [jobs, setJobs] = useState(initialData)
   const [now, setNow] = useState(new Date())
+  const [cacheBuster] = useState(() => Date.now())
 
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
   
@@ -224,8 +225,8 @@ export default function QCClient({ initialData, qcName }: { initialData: any[], 
               boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
               flexShrink: 0,
             }}>
-              <img
-                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(qcName)}&background=random`}
+               <img
+                src={avatarUrl ? `${avatarUrl}?t=${cacheBuster}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(qcName)}&background=random`}
                 alt="Profile"
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />

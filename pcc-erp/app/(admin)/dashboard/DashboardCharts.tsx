@@ -101,7 +101,7 @@ export default function DashboardCharts({ dailyData, weeklyData, bedData, defect
                 borderSkipped: false,
               },
               {
-                label: 'เทแล้ว (Cast)',
+                label: 'ผลิตแล้ว',
                 data: bedData.castData,
                 backgroundColor: bedData.statusColors,
                 borderRadius: 4,
@@ -204,7 +204,7 @@ export default function DashboardCharts({ dailyData, weeklyData, bedData, defect
       {(!renderGroup || renderGroup === 'analytics') && bedData && bedData.labels.length > 0 && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Bed Utilization — ประสิทธิภาพรายโรงผลิต</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>ประสิทธิภาพรายโรงผลิต</span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>6 วันย้อนหลัง</span>
           </div>
           <div style={{ height: Math.max(180, bedData.labels.length * 38), width: '100%' }}>

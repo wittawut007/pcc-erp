@@ -4,13 +4,21 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-const REMEMBER_ME_KEY = 'pcc_remember_email'
+const REMEMBER_ME_KEY = 'pcc_remember_username'
+const ERP_EMAIL_DOMAIN = '@pcc-erp.local'
+
+/** แปลง username → email สำหรับ Supabase Auth */
+function toEmail(username: string): string {
+  const u = username.trim().toLowerCase()
+  if (u.includes('@')) return u          // ใส่ email เต็มมาเองก็ได้
+  return u + ERP_EMAIL_DOMAIN
+}
 
 export default function LoginPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -18,11 +26,11 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false)
   const [workerBlocked, setWorkerBlocked] = useState(false)
 
-  // โหลด email ที่บันทึกไว้เมื่อเปิดหน้า
+  // โหลด username ที่บันทึกไว้เมื่อเปิดหน้า
   useEffect(() => {
-    const savedEmail = localStorage.getItem(REMEMBER_ME_KEY)
-    if (savedEmail) {
-      setEmail(savedEmail)
+    const savedUsername = localStorage.getItem(REMEMBER_ME_KEY)
+    if (savedUsername) {
+      setUsername(savedUsername)
       setRememberMe(true)
     }
   }, [])
@@ -33,13 +41,14 @@ export default function LoginPage() {
     setError('')
     setWorkerBlocked(false)
 
-    // บันทึก/ลบ email ตามสถานะ Remember Me
+    // บันทึก/ลบ username ตามสถานะ Remember Me
     if (rememberMe) {
-      localStorage.setItem(REMEMBER_ME_KEY, email)
+      localStorage.setItem(REMEMBER_ME_KEY, username)
     } else {
       localStorage.removeItem(REMEMBER_ME_KEY)
     }
 
+    const email = toEmail(username)
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
@@ -48,7 +57,7 @@ export default function LoginPage() {
       return
     }
 
-    // ดึง role จาก profiles table
+    // ดึง role จาก profiles table แล้ว redirect ตาม role
     let role = data?.user?.user_metadata?.role
     if (!role && data?.user?.id) {
       const { data: profile } = await supabase
@@ -59,7 +68,13 @@ export default function LoginPage() {
       role = profile?.role
     }
 
-    router.push('/dashboard')
+    if (role === 'qc') {
+      router.push('/qc-inspect')
+    } else if (role === 'worker') {
+      router.push('/worker')
+    } else {
+      router.push('/dashboard')
+    }
     router.refresh()
   }
 
@@ -137,25 +152,6 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Worker Blocked Alert */}
-          {workerBlocked && (
-            <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-xl flex gap-3">
-              <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center">
-                <i className="fas fa-qrcode text-amber-600 text-base"></i>
-              </div>
-              <div>
-                <p className="font-bold text-amber-800" style={{ fontSize: '13px', marginBottom: 4 }}>
-                  บัญชีพนักงานหน้างาน
-                </p>
-                <p className="text-amber-700" style={{ fontSize: '12px', lineHeight: 1.5 }}>
-                  บัญชีนี้เป็นบัญชีพนักงานผลิต ไม่สามารถเข้าสู่ระบบผ่านหน้านี้ได้
-                  <br />
-                  <strong>กรุณาสแกน QR Code</strong> ที่ได้รับจากผู้ดูแลระบบ เพื่อเข้าใช้งาน
-                </p>
-              </div>
-            </div>
-          )}
-
           {/* Error Alert */}
           {error && (
             <div className="mb-5 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-sm">
@@ -181,11 +177,12 @@ export default function LoginPage() {
                   <i className="fas fa-user" style={{ fontSize: '13px' }}></i>
                 </span>
                 <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your username"
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="เช่น somchai.admin"
+                  autoComplete="username"
                   required
                   style={{
                     width: '100%',
@@ -312,28 +309,28 @@ export default function LoginPage() {
                   <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
                     Dev Mode Active
                   </span>
-                  <p className="text-slate-500 text-xs mt-2.5 font-medium">เข้าสู่ระบบด่วนด้วยข้อมูลทดสอบ</p>
+                  <p className="text-slate-500 text-xs mt-2.5 font-medium">เข้าสู่ระบบด่วนสำหรับทดสอบ</p>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[
-                    { role: 'admin', label: 'Admin', color: 'bg-slate-800 text-white hover:bg-slate-700' },
-                    { role: 'planner', label: 'Planner', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
-                    { role: 'material', label: 'Material', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200' },
-                    { role: 'concrete', label: 'Concrete', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
-                    { role: 'warehouse', label: 'Warehouse', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
-                    { role: 'qc', label: 'QC', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200' },
-                    { role: 'worker', label: 'Worker', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200' },
+                    { username: 'somchai.admin',  password: 'Admin@2026', label: 'Admin',     icon: 'fa-user-shield',    color: 'bg-slate-800 text-white hover:bg-slate-700' },
+                    { username: 'wiphada.plan',   password: 'Plan@2026',  label: 'Planner',   icon: 'fa-calendar-check', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
+                    { username: 'thanakorn.mat',  password: 'Mat@2026x',  label: 'Material',  icon: 'fa-boxes-stacked',  color: 'bg-teal-100 text-teal-700 hover:bg-teal-200' },
+                    { username: 'rattana.conc',   password: 'Conc@2026',  label: 'Concrete',  icon: 'fa-industry',       color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
+                    { username: 'ekkachai.ware',  password: 'Ware@2026',  label: 'Warehouse', icon: 'fa-warehouse',      color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
+                    { username: 'nongnuch.qc',    password: 'Qc12@2026',  label: 'QC',        icon: 'fa-clipboard-check',color: 'bg-rose-100 text-rose-700 hover:bg-rose-200' },
+                    { username: 'prasit.work',    password: 'Work@2026',  label: 'Worker',    icon: 'fa-hard-hat',       color: 'bg-amber-100 text-amber-700 hover:bg-amber-200' },
                   ].map((t) => (
                     <button
-                      key={t.role}
+                      key={t.username}
                       type="button"
                       onClick={() => {
-                        setEmail(`${t.role}@example.com`)
-                        setPassword('password123')
+                        setUsername(t.username)
+                        setPassword(t.password)
                       }}
                       className={`text-[11px] font-bold py-2.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 ${t.color}`}
                     >
-                      <i className={`fas ${t.role === 'admin' ? 'fa-user-shield' : t.role === 'qc' ? 'fa-clipboard-check' : t.role === 'worker' ? 'fa-hard-hat' : 'fa-user'}`}></i>
+                      <i className={`fas ${t.icon}`}></i>
                       {t.label}
                     </button>
                   ))}

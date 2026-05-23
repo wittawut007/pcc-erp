@@ -36,8 +36,14 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
     fullName: '',
     role: 'worker',
     employeeCode: '',
-    isActive: true
+    isActive: true,
+    avatarUrl: ''
   })
+  
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [cacheBuster, setCacheBuster] = useState(() => Date.now())
 
   const rolesList = ['ทั้งหมด', 'Admin', 'Planner', 'Warehouse', 'QC', 'Worker']
 
@@ -59,13 +65,17 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
 
   const openAdd = () => {
     setEditingId(null)
-    setForm({ email: '', password: '', fullName: '', role: 'worker', employeeCode: '', isActive: true })
+    setForm({ email: '', password: '', fullName: '', role: 'worker', employeeCode: '', isActive: true, avatarUrl: '' })
+    setAvatarFile(null)
+    setAvatarPreview(null)
     setIsModalOpen(true)
   }
 
   const openEdit = (u: any) => {
     setEditingId(u.id)
-    setForm({ email: u.email || '', password: '', fullName: u.full_name || '', role: u.role || 'worker', employeeCode: u.employee_code || '', isActive: u.is_active })
+    setForm({ email: u.email || '', password: '', fullName: u.full_name || '', role: u.role || 'worker', employeeCode: u.employee_code || '', isActive: u.is_active, avatarUrl: u.avatar_url || '' })
+    setAvatarFile(null)
+    setAvatarPreview(u.avatar_url || null)
     setIsModalOpen(true)
   }
 
@@ -123,6 +133,33 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
     fd.append('employeeCode', form.employeeCode)
     if (form.password) fd.append('password', form.password)
 
+    let finalAvatarUrl = form.avatarUrl
+    if (avatarFile) {
+      const supabaseClient = createClient()
+      const ext = avatarFile.name.split('.').pop()
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`
+      
+      setUploadingAvatar(true)
+      const { data: uploadData, error: uploadError } = await supabaseClient.storage
+        .from('avatars')
+        .upload(fileName, avatarFile, { upsert: true })
+        
+      setUploadingAvatar(false)
+      
+      if (uploadError) {
+        toast.error('อัปโหลดรูปภาพไม่สำเร็จ: ' + uploadError.message)
+        setSaving(false)
+        return
+      }
+      
+      const { data: urlData } = supabaseClient.storage.from('avatars').getPublicUrl(fileName)
+      finalAvatarUrl = urlData.publicUrl
+    }
+    
+    if (finalAvatarUrl) {
+      fd.append('avatarUrl', finalAvatarUrl)
+    }
+
     try {
       if (editingId) {
         fd.append('userId', editingId)
@@ -138,6 +175,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
         toast.success('สร้างผู้ใช้งานใหม่สำเร็จ!')
       }
       setIsModalOpen(false)
+      setCacheBuster(Date.now())
       router.refresh()
     } catch (err: any) {
       toast.error(err.message || 'เกิดข้อผิดพลาด')
@@ -223,9 +261,13 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
                 <tr key={u.id} className="hover:bg-[var(--bg)] transition-colors" style={{ opacity: u.is_active ? 1 : 0.6 }}>
                   <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 34, height: 34, borderRadius: '50%', background: rStyle.bg, color: rStyle.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
-                        {u.role === 'admin' ? 'AD' : initials}
-                      </div>
+                      {u.avatar_url ? (
+                        <img src={`${u.avatar_url}?t=${cacheBuster}`} alt={u.full_name} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />
+                      ) : (
+                        <div style={{ width: 34, height: 34, borderRadius: '50%', background: rStyle.bg, color: rStyle.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+                          {u.role === 'admin' ? 'AD' : initials}
+                        </div>
+                      )}
                       <div>
                         <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.full_name || 'ไม่ระบุชื่อ'} {u.role === 'admin' && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>(Admin)</span>}</div>
                         <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{u.is_active ? 'เข้าใช้งานล่าสุด: -' : 'ถูกระงับ'}</div>
@@ -321,6 +363,35 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
               <button onClick={() => setIsModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--text-muted)' }}>✕</button>
             </div>
             
+            {/* Avatar Upload */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--surface)', border: '1px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                {avatarPreview ? (
+                  <img src={avatarPreview.startsWith('data:') ? avatarPreview : `${avatarPreview}?t=${cacheBuster}`} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <i className="fas fa-camera text-slate-300 text-xl"></i>
+                )}
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>รูปโปรไฟล์</label>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>ไฟล์ JPG, PNG ขนาดไม่เกิน 2MB</div>
+                <input 
+                  type="file" 
+                  accept="image/jpeg,image/png,image/webp" 
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) {
+                      setAvatarFile(file)
+                      const reader = new FileReader()
+                      reader.onloadend = () => setAvatarPreview(reader.result as string)
+                      reader.readAsDataURL(file)
+                    }
+                  }}
+                  style={{ fontSize: 11 }}
+                />
+              </div>
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div style={{ gridColumn: 'span 2' }}>
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>ชื่อ-นามสกุล *</label>

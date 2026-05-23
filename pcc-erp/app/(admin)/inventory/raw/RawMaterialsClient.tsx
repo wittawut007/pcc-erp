@@ -13,6 +13,7 @@ interface RawMaterial {
   qty_on_hand: number
   min_stock: number
   weight_per_meter: number | null
+  is_active?: boolean
   updated_at: string
 }
 
@@ -22,9 +23,11 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
   const supabase = createClient()
   const [materials, setMaterials] = useState<RawMaterial[]>(initial)
   const [filterCat, setFilterCat] = useState('ทั้งหมด')
+  const [filterActive, setFilterActive] = useState('all') // 'all', 'active', 'inactive'
   const [search, setSearch] = useState('')
   const [adjustModal, setAdjustModal] = useState<RawMaterial | null>(null)
   const [addModal, setAddModal] = useState(false)
+  const [editMaterial, setEditMaterial] = useState<RawMaterial | null>(null)
   const [adjustQty, setAdjustQty] = useState(0)
   const [adjustMinStock, setAdjustMinStock] = useState(0)
   const [adjustMode, setAdjustMode] = useState<'add' | 'sub' | 'set'>('add')
@@ -38,12 +41,14 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
     const matchSearch = !search
       || m.name.toLowerCase().includes(q)
       || (m.material_code ?? '').toLowerCase().includes(q)
-    return matchCat && matchSearch
+    const matchActive = filterActive === 'all' ? true : filterActive === 'active' ? (m.is_active !== false) : (m.is_active === false)
+    return matchCat && matchSearch && matchActive
   })
 
-  const normalStock = materials.filter(m => m.qty_on_hand > m.min_stock)
-  const lowStock = materials.filter(m => m.qty_on_hand <= m.min_stock && m.qty_on_hand > m.min_stock * 0.5)
-  const criticalStock = materials.filter(m => m.qty_on_hand <= m.min_stock * 0.5)
+  const activeMaterials = materials.filter(m => m.is_active !== false)
+  const normalStock = activeMaterials.filter(m => m.qty_on_hand > m.min_stock)
+  const lowStock = activeMaterials.filter(m => m.qty_on_hand <= m.min_stock && m.qty_on_hand > m.min_stock * 0.5)
+  const criticalStock = activeMaterials.filter(m => m.qty_on_hand <= m.min_stock * 0.5)
 
   const handleAdjust = async () => {
     if (!adjustModal) return
@@ -73,7 +78,21 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
     finally { setSaving(false) }
   }
 
-  const handleAddNew = async () => {
+  const openEdit = (m: RawMaterial) => {
+    setEditMaterial(m)
+    setNewForm({
+      material_code: m.material_code || '',
+      name: m.name,
+      category: m.category,
+      unit: m.unit,
+      qty_on_hand: m.qty_on_hand,
+      min_stock: m.min_stock,
+      weight_per_meter: m.weight_per_meter != null ? String(m.weight_per_meter) : ''
+    })
+    setAddModal(true)
+  }
+
+  const handleSave = async () => {
     if (!newForm.name || !newForm.unit) { toast.error('กรุณากรอกชื่อและหน่วย'); return }
     setSaving(true)
     try {
@@ -82,18 +101,80 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
         name: newForm.name,
         category: newForm.category,
         unit: newForm.unit,
-        qty_on_hand: newForm.qty_on_hand,
         min_stock: newForm.min_stock,
         weight_per_meter: newForm.weight_per_meter ? parseFloat(newForm.weight_per_meter) : null,
       }
-      const { data, error } = await supabase.from('raw_materials').insert(payload).select().single()
-      if (error) throw error
-      setMaterials(prev => [...prev, data])
-      toast.success('เพิ่มวัตถุดิบใหม่สำเร็จ!')
+      
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (editMaterial) {
+        const { data, error } = await supabase
+          .from('raw_materials')
+          .update(payload)
+          .eq('id', editMaterial.id)
+          .select()
+          .single()
+        if (error) throw error
+
+        if (user) await supabase.from('activity_logs').insert({
+          user_id: user.id,
+          action_type: 'แก้ไขวัตถุดิบ',
+          entity_type: 'raw_material',
+          entity_id: editMaterial.id,
+          detail: `แก้ไขวัตถุดิบ: ${editMaterial.name} → ${newForm.name} [โค้ด: ${editMaterial.material_code ?? '-'} → ${newForm.material_code ?? '-'}]`
+        })
+
+        setMaterials(prev => prev.map(m => m.id === editMaterial.id ? { ...m, ...data } : m))
+        toast.success('แก้ไขข้อมูลวัตถุดิบสำเร็จ!')
+      } else {
+        const fullPayload = {
+          ...payload,
+          qty_on_hand: newForm.qty_on_hand,
+        }
+        const { data, error } = await supabase.from('raw_materials').insert(fullPayload).select().single()
+        if (error) throw error
+
+        if (user) await supabase.from('activity_logs').insert({
+          user_id: user.id,
+          action_type: 'เพิ่มวัตถุดิบใหม่',
+          entity_type: 'raw_material',
+          entity_id: data.id,
+          detail: `เพิ่มวัตถุดิบใหม่: ${newForm.name} [โค้ด: ${newForm.material_code ?? '-'}, สต็อกเริ่มต้น: ${newForm.qty_on_hand}]`
+        })
+
+        setMaterials(prev => [...prev, data])
+        toast.success('เพิ่มวัตถุดิบใหม่สำเร็จ!')
+      }
       setAddModal(false)
+      setEditMaterial(null)
       setNewForm({ material_code: '', name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0, weight_per_meter: '' })
     } catch (e: any) { toast.error('เกิดข้อผิดพลาด: ' + e.message) }
     finally { setSaving(false) }
+  }
+
+  const handleToggleActive = async (m: RawMaterial) => {
+    setSaving(true)
+    try {
+      const newStatus = m.is_active === false ? true : false
+      const { error } = await supabase.from('raw_materials').update({ is_active: newStatus }).eq('id', m.id)
+      if (error) throw error
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) await supabase.from('activity_logs').insert({
+        user_id: user.id,
+        action_type: newStatus ? 'เปิดใช้งานวัตถุดิบ' : 'ปิดใช้งานวัตถุดิบ',
+        entity_type: 'raw_material',
+        entity_id: m.id,
+        detail: `${newStatus ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}วัตถุดิบ: ${m.name} [โค้ด: ${m.material_code ?? '-'}]`
+      })
+
+      setMaterials(prev => prev.map(x => x.id === m.id ? { ...x, is_active: newStatus } : x))
+      toast.success(newStatus ? 'เปิดใช้งานวัตถุดิบแล้ว' : 'ปิดใช้งานวัตถุดิบแล้ว')
+    } catch (e: any) {
+      toast.error('เกิดข้อผิดพลาด: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleDelete = async (id: string, name: string) => {
@@ -167,7 +248,13 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
           style={{ padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, background: 'var(--surface)', outline: 'none' }}>
           {CATEGORIES.map(c => <option key={c}>{c}</option>)}
         </select>
-        <button onClick={() => setAddModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+        <select value={filterActive} onChange={e => setFilterActive(e.target.value)}
+          style={{ padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, background: 'var(--surface)', outline: 'none', minWidth: 140 }}>
+          <option value="all">สถานะทั้งหมด</option>
+          <option value="active">เปิดใช้งาน (Active)</option>
+          <option value="inactive">ปิดใช้งาน (Inactive)</option>
+        </select>
+        <button onClick={() => { setEditMaterial(null); setNewForm({ material_code: '', name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0, weight_per_meter: '' }); setAddModal(true); }} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
           <i className="fas fa-plus"></i> เพิ่มวัตถุดิบ
         </button>
       </div>
@@ -196,44 +283,69 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
                   const isLow = m.qty_on_hand <= m.min_stock
                   const isCritical = m.qty_on_hand <= m.min_stock * 0.5
                   return (
-                    <tr key={m.id} className="hover:bg-[var(--bg)] transition-colors">
+                    <tr key={m.id} className="hover:bg-[var(--bg)] transition-colors" style={{ position: 'relative', opacity: m.is_active === false ? 0.6 : 1 }}>
+                      {m.is_active === false && <td style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: 'var(--red)' }}></td>}
+                      
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                        <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--bg)', padding: '2px 6px', borderRadius: 4 }}>{m.material_code ?? '—'}</span>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: m.is_active === false ? 'var(--text-muted)' : 'var(--accent)', background: 'var(--bg)', padding: '2px 6px', borderRadius: 4 }}>{m.material_code ?? '—'}</span>
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                        <div style={{ fontWeight: 600 }}>{m.name}</div>
+                        <div style={{ fontWeight: 600, color: m.is_active === false ? 'var(--text-muted)' : 'var(--text-primary)' }}>{m.name}</div>
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 11 }}>{m.category}</td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>
                         {m.weight_per_meter != null ? `${m.weight_per_meter} kg/m` : '—'}
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: isCritical ? 'var(--red)' : isLow ? '#B45309' : 'var(--text-primary)' }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: m.is_active === false ? 'var(--text-muted)' : isCritical ? 'var(--red)' : isLow ? '#B45309' : 'var(--text-primary)' }}>
                           {m.qty_on_hand.toLocaleString()} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>{m.unit}</span>
                         </div>
-                        <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginTop: 5, width: 80 }}>
-                          <div style={{ height: '100%', background: isCritical ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--green)', width: `${Math.min(100, pct)}%`, borderRadius: 2 }}></div>
-                        </div>
+                        {m.is_active !== false && (
+                          <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginTop: 5, width: 80 }}>
+                            <div style={{ height: '100%', background: isCritical ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--green)', width: `${Math.min(100, pct)}%`, borderRadius: 2 }}></div>
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>{m.min_stock} {m.unit}</td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                        <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 700,
-                          background: isCritical ? 'var(--red-light)' : isLow ? 'var(--amber-light)' : 'var(--green-light)',
-                          color: isCritical ? 'var(--red)' : isLow ? '#B45309' : '#059669' }}>
-                          {isCritical ? '🔴 วิกฤต' : isLow ? '⚠ ใกล้หมด' : '✓ ปกติ'}
-                        </span>
+                        {m.is_active === false ? (
+                          <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 700, background: 'var(--red-light)', color: 'var(--red)' }}>
+                            ✕ ปิดใช้งาน
+                          </span>
+                        ) : (
+                          <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                            background: isCritical ? 'var(--red-light)' : isLow ? 'var(--amber-light)' : 'var(--green-light)',
+                            color: isCritical ? 'var(--red)' : isLow ? '#B45309' : '#059669' }}>
+                            {isCritical ? '🔴 วิกฤต' : isLow ? '⚠ ใกล้หมด' : '✓ ปกติ'}
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                          <button onClick={() => { setAdjustModal(m); setAdjustQty(0); setAdjustMinStock(m.min_stock); setAdjustMode('add'); setAdjustNote('') }}
-                            style={{ padding: '6px 12px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                            <i className="fas fa-edit" style={{ marginRight: 4 }}></i>ปรับสต็อก
-                          </button>
-                          <button onClick={() => handleDelete(m.id, m.name)} disabled={saving}
-                            style={{ padding: '6px 10px', background: '#FEE2E2', color: '#DC2626', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                            <i className="fas fa-trash"></i>
-                          </button>
-                        </div>
+                        {m.is_active !== false ? (
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
+                            <button onClick={() => openEdit(m)} style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--bg)', color: 'var(--text-secondary)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} title="แก้ไขข้อมูล">
+                              <i className="fas fa-edit" style={{ fontSize: 11 }}></i>
+                            </button>
+                            <button onClick={() => { setAdjustModal(m); setAdjustQty(0); setAdjustMinStock(m.min_stock); setAdjustMode('add'); setAdjustNote('') }}
+                              style={{ padding: '6px 12px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} title="ปรับสต็อก">
+                              <i className="fas fa-sliders-h" style={{ fontSize: 11 }}></i>ปรับสต็อก
+                            </button>
+                            <button onClick={() => handleToggleActive(m)} style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--amber-light)', color: 'var(--amber)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} title="ปิดใช้งาน">
+                              <i className="fas fa-power-off" style={{ fontSize: 11 }}></i>
+                            </button>
+                            <button onClick={() => handleDelete(m.id, m.name)} disabled={saving}
+                              style={{ width: 28, height: 28, borderRadius: 6, background: '#FEE2E2', color: '#DC2626', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} title="ลบ">
+                              <i className="fas fa-trash" style={{ fontSize: 11 }}></i>
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
+                            <button onClick={() => handleToggleActive(m)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'var(--bg)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 10, fontWeight: 600, cursor: 'pointer' }} title="เปิดใช้งาน">
+                              <i className="fas fa-rotate-right" style={{ fontSize: 9 }}></i>
+                              เปิดใช้งาน
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )
@@ -305,13 +417,13 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
         </div>
       )}
 
-      {/* Add Material Modal */}
+      {/* Add/Edit Material Modal */}
       {addModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'white', borderRadius: 14, padding: 28, width: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-              <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>เพิ่มวัตถุดิบใหม่</h2>
-              <button onClick={() => setAddModal(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}>✕</button>
+              <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{editMaterial ? 'แก้ไขข้อมูลวัตถุดิบ' : 'เพิ่มวัตถุดิบใหม่'}</h2>
+              <button onClick={() => { setAddModal(false); setEditMaterial(null); }} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}>✕</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {/* รหัสวัตถุดิบ */}
@@ -328,13 +440,13 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
                   onChange={e => setNewForm(p => ({ ...p, weight_per_meter: e.target.value }))}
                   style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
               </div>
-              {[
+              {([
                 { label: 'ชื่อวัตถุดิบ *', key: 'name', colSpan: 2, type: 'text', placeholder: 'เช่น ลวด PC-Wire 4 มม.' },
                 { label: 'หน่วย *', key: 'unit', type: 'text', placeholder: 'กก. / เมตร / ตร.ม.' },
-                { label: 'สต็อกเริ่มต้น', key: 'qty_on_hand', type: 'number', placeholder: '0' },
+                !editMaterial && { label: 'สต็อกเริ่มต้น', key: 'qty_on_hand', type: 'number', placeholder: '0' },
                 { label: 'สต็อกขั้นต่ำ (alert)', key: 'min_stock', type: 'number', placeholder: '10' },
-              ].map(f => (
-                <div key={f.key} style={{ gridColumn: (f as any).colSpan === 2 ? 'span 2' : undefined }}>
+              ].filter(Boolean) as any[]).map(f => (
+                <div key={f.key} style={{ gridColumn: f.colSpan === 2 ? 'span 2' : undefined }}>
                   <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>{f.label}</label>
                   <input type={f.type} placeholder={f.placeholder} value={(newForm as any)[f.key]}
                     onChange={e => setNewForm(p => ({ ...p, [f.key]: e.target.value }))}
@@ -350,9 +462,9 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-              <button onClick={() => setAddModal(false)} style={{ flex: 1, padding: '11px', border: '1px solid var(--border)', borderRadius: 8, background: 'white', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
-              <button onClick={handleAddNew} disabled={saving} style={{ flex: 2, padding: '11px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                {saving ? 'กำลังบันทึก...' : <><i className="fas fa-plus" style={{ marginRight: 6 }}></i>เพิ่มวัตถุดิบ</>}
+              <button onClick={() => { setAddModal(false); setEditMaterial(null); }} style={{ flex: 1, padding: '11px', border: '1px solid var(--border)', borderRadius: 8, background: 'white', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
+              <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: '11px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                {saving ? 'กำลังบันทึก...' : editMaterial ? <><i className="fas fa-save" style={{ marginRight: 6 }}></i>บันทึกการแก้ไข</> : <><i className="fas fa-plus" style={{ marginRight: 6 }}></i>เพิ่มวัตถุดิบ</>}
               </button>
             </div>
           </div>

@@ -250,8 +250,8 @@ export default function MaterialDocumentPrintClient({
                     <tr style={{ background: '#F9FAFB' }}>
                       <th style={{ border: '1px solid #E5E7EB', padding: '10px 14px', fontWeight: 700, color: '#6B7280', fontSize: 12, textAlign: 'left' }}>รายการย่อย (Material)</th>
                       <th style={{ border: '1px solid #E5E7EB', padding: '10px 14px', fontWeight: 700, color: '#6B7280', fontSize: 12, textAlign: 'right', width: '22%' }}>จำนวนที่ต้องใช้</th>
-                      <th style={{ border: '1px solid #E5E7EB', padding: '10px 14px', fontWeight: 700, color: '#6B7280', fontSize: 12, textAlign: 'right', width: '20%' }}>น้ำหนักตามแผน</th>
-                      <th style={{ border: '1px solid #E5E7EB', padding: '10px 14px', fontWeight: 700, color: '#6B7280', fontSize: 12, textAlign: 'right', width: '20%' }}>น้ำหนักที่เบิกจ่าย</th>
+                      <th style={{ border: '1px solid #E5E7EB', padding: '10px 14px', fontWeight: 700, color: '#6B7280', fontSize: 12, textAlign: 'right', width: '20%' }}>จำนวนตามแผน</th>
+                      <th style={{ border: '1px solid #E5E7EB', padding: '10px 14px', fontWeight: 700, color: '#6B7280', fontSize: 12, textAlign: 'right', width: '20%' }}>จำนวนที่เบิกจ่าย</th>
                     </tr>
                   </thead>
                   <tbody>

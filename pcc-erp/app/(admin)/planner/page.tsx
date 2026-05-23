@@ -12,7 +12,7 @@ export default async function PlannerPage({
   const supabase = await createClient()
   const today = new Date().toISOString().split('T')[0]
   const params = await searchParams
-  const selectedDate = params.date || today
+  let selectedDate = params.date || today
   const editPlanId = params.plan_id || null
   const isNew = params.new === 'true'
 
@@ -25,6 +25,7 @@ export default async function PlannerPage({
   const { data: rawMaterials } = await supabase
     .from('raw_materials')
     .select('id, material_code, name, qty_on_hand, unit, min_stock, weight_per_meter, category')
+    .eq('is_active', true)
     .order('category')
 
   const { data: wipInventory } = await supabase
@@ -50,6 +51,9 @@ export default async function PlannerPage({
       .eq('id', editPlanId)
       .single()
     editingPlan = data
+    if (editingPlan) {
+      selectedDate = editingPlan.plan_date
+    }
   } else if (params.date && !isNew) {
     // Load most-recent plan for that date if navigated by date
     const { data } = await supabase
@@ -80,6 +84,7 @@ export default async function PlannerPage({
         subtitle="จัดการตั้งค่าเป้าหมายการผลิตและตรวจสอบ (BOM) โครงเหล็ก"
       />
       <PlannerClient
+        key={editingPlan?.id || selectedDate}
         products={products ?? []}
         editingPlan={editingPlan ?? null}
         recentPlans={recentPlans ?? []}

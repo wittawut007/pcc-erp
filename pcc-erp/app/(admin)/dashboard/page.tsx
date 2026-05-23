@@ -34,7 +34,7 @@ async function getSupabaseData() {
       .gte('plan_item.plan.plan_date', startDateStr)
       .order('created_at', { ascending: false }),
       supabase.from('activity_logs').select('*,profile:profiles(full_name,role)').order('created_at', { ascending: false }).limit(10),
-      supabase.from('raw_materials').select('*'),
+      supabase.from('raw_materials').select('*').eq('is_active', true),
       supabase.from('fg_inventory').select('qty'),
       supabase.from('wip_inventory').select('qty'),
       supabase.from('qc_inspections').select('demold_qty_defect, defect_reason, created_at').gte('created_at', startDateStr),
@@ -374,7 +374,7 @@ export default async function DashboardPage() {
   const bedMap = new Map<string, { cast: number; target: number; dominantStatus: string }>()
   ;(jobOrders as any[])?.forEach((job: any) => {
     if (job.production_order?.status === 'erp_synced') return
-    const bedKey = `Bed ${job.bed}`
+    const bedKey = `โรงผลิต ${job.bed}`
     if (!bedMap.has(bedKey)) bedMap.set(bedKey, { cast: 0, target: 0, dominantStatus: 'pending' })
     const entry = bedMap.get(bedKey)!
     entry.cast += job.qty_cast || 0
@@ -442,7 +442,7 @@ export default async function DashboardPage() {
   const bedConcreteMap = new Map<string, number>()
   concreteList.forEach((o: any) => {
     if (o.bed) {
-      const k = `Bed ${o.bed}`
+      const k = `โรงผลิต ${o.bed}`
       bedConcreteMap.set(k, (bedConcreteMap.get(k) || 0) + (o.total_qty_requested || o.qty_requested || 0))
     }
   })
@@ -565,7 +565,7 @@ export default async function DashboardPage() {
           {/* Left Column (Concrete Usage) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '20px 24px' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 14 }}>Concrete Usage — สรุปการใช้คอนกรีตวันนี้</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 14 }}>สรุปการใช้คอนกรีตวันนี้</div>
               {concreteList.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-muted)', fontSize: 13 }}>
                   <i className="fas fa-hard-hat" style={{ fontSize: 24, marginBottom: 8, display: 'block', opacity: 0.3 }} />

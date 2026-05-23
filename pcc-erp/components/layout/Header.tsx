@@ -16,6 +16,7 @@ export default async function Header({ title, subtitle, rightContent }: HeaderPr
 
   let profile: Profile | null = null
   let userEmail: string | null = null
+  const cacheBuster = Date.now()
 
   if (isConfigured) {
     try {
@@ -75,7 +76,7 @@ export default async function Header({ title, subtitle, rightContent }: HeaderPr
         <div className="flex items-center gap-3 cursor-pointer">
           <div className="w-[36px] h-[36px] rounded-full overflow-hidden shrink-0 border-2 border-erp-border">
             <img
-              src={profile?.avatar_url || 'https://i.pravatar.cc/150?img=11'}
+              src={profile?.avatar_url ? `${profile.avatar_url}?t=${cacheBuster}` : 'https://i.pravatar.cc/150?img=11'}
               alt="Profile"
               className="w-full h-full object-cover"
             />
