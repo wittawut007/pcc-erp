@@ -3,7 +3,7 @@ import './globals.css'
 import { Toaster } from 'react-hot-toast'
 
 export const metadata: Metadata = {
-  title: 'PCC POSTENTION ERP',
+  title: 'PCC POST-TENSION ERP',
   description: 'ระบบบริหารจัดการการผลิต Precast Concrete',
 }
 

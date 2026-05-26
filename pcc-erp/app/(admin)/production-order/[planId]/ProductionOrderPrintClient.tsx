@@ -34,6 +34,24 @@ interface ProductionOrderPrintClientProps {
   status: string
 }
 
+function getThaiCategoryDisplay(category: string): string {
+  const cleanCategory = category.trim()
+  const prefix = cleanCategory.split(' ')[0]
+  const CAT_STYLES = [
+    { prefix: 'A13', short: 'แผ่นพื้น' },
+    { prefix: 'A30', short: 'ผนังรั้วสำเร็จรูป' },
+    { prefix: 'A35', short: 'รั้วสำเร็จรูป' },
+    { prefix: 'A36', short: 'เสา คาน บันได' },
+    { prefix: 'A41', short: 'เสาเข็ม' },
+    { prefix: 'A42', short: 'กำแพงกันดิน' },
+  ]
+  const matched = CAT_STYLES.find(c => c.prefix.toLowerCase() === prefix.toLowerCase())
+  if (matched) {
+    return `${matched.short} (${matched.prefix})`
+  }
+  return category
+}
+
 export default function ProductionOrderPrintClient({
   orderNumber,
   date,
@@ -48,22 +66,22 @@ export default function ProductionOrderPrintClient({
   const printRef = useRef<HTMLDivElement>(null)
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('')
   const [isExporting, setIsExporting] = useState<'pdf' | 'png' | null>(null)
-  const [tunnelUrl, setTunnelUrl] = useState<string>('http://192.168.1.142:3000')
-  const [qrUrl, setQrUrl] = useState<string>(`https://pcc-erp.app/orders/${orderNumber}`)
+  const [qrUrl, setQrUrl] = useState<string>('')
 
   const totalQty = items.reduce((s, i) => s + i.qty, 0)
   const totalConcrete = items.reduce((s, i) => s + i.concrete, 0)
 
   useEffect(() => {
     // Generate URL on client-side only to prevent SSR Hydration Mismatch
-    const baseUrl = tunnelUrl.trim() !== '' ? tunnelUrl.trim() : window.location.origin
-    const currentUrl = `${baseUrl.replace(/\/$/, '')}/worker`
+    if (typeof window === 'undefined') return
+    const baseUrl = window.location.origin
+    const currentUrl = `${baseUrl.replace(/\/$/, '')}/worker-entry?token=${workerToken}`
     setQrUrl(currentUrl)
 
     QRCode.toDataURL(currentUrl, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
       .then((url) => setQrCodeDataUrl(url))
       .catch(console.error)
-  }, [tunnelUrl])
+  }, [workerToken])
 
   const handleDownloadPDF = async () => {
     const element = printRef.current
@@ -208,7 +226,7 @@ export default function ProductionOrderPrintClient({
               <div>
                 <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1.1 }}>
                   <span style={{ color: '#2563EB' }}>PCC </span>
-                  <span style={{ color: '#111827' }}>POSTENTION</span>
+                  <span style={{ color: '#111827' }}>POST-TENSION</span>
                 </div>
                 <div style={{ fontSize: 9, fontWeight: 600, color: '#6B7280', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 2 }}>
                   ERP Production System
@@ -263,7 +281,7 @@ export default function ProductionOrderPrintClient({
               <tr style={{ background: '#F9FAFB' }}>
                 <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'center', width: 36 }}>NO.</th>
                 <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'left' }}>รายการสินค้า</th>
-                <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'center' }}>รหัส BOM</th>
+                <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'left' }}>วัตถุดิบ</th>
                 <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'center' }}>โรงผลิต</th>
                 <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'center' }}>จำนวน</th>
                 <th style={{ border: '1px solid #E5E7EB', padding: '8px 10px', fontWeight: 700, color: '#6B7280', fontSize: 11, textAlign: 'center' }}>หน่วย</th>
@@ -282,7 +300,7 @@ export default function ProductionOrderPrintClient({
                 <React.Fragment key={category}>
                   <tr style={{ background: '#F1F5F9' }}>
                     <td colSpan={7} style={{ border: '1px solid #E5E7EB', padding: '10px 16px', fontWeight: 800, color: '#334155', fontSize: 13 }}>
-                      หมวดหมู่: {category}
+                      หมวดหมู่: {getThaiCategoryDisplay(category)}
                     </td>
                   </tr>
                   {catItems.map((item, idx) => (
@@ -295,7 +313,7 @@ export default function ProductionOrderPrintClient({
                           {item.productName}{item.size && item.size !== '-' ? ` (${item.size})` : ''}
                         </div>
                       </td>
-                      <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontFamily: 'monospace', fontSize: 11, color: '#6B7280', verticalAlign: 'top' }}>
+                      <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'left', fontSize: 11, color: '#6B7280', verticalAlign: 'top' }}>
                         {item.bomCode || '-'}
                       </td>
                       <td style={{ border: '1px solid #E5E7EB', padding: '10px', textAlign: 'center', fontSize: 13, verticalAlign: 'top' }}>
@@ -378,7 +396,7 @@ export default function ProductionOrderPrintClient({
             paddingTop: 10,
           }}>
             <div>
-              <div style={{ fontSize: 9, color: '#9CA3AF' }}>เอกสารนี้สร้างโดยระบบ PCC POSTENTION ERP อัตโนมัติ</div>
+              <div style={{ fontSize: 9, color: '#9CA3AF' }}>เอกสารนี้สร้างโดยระบบ PCC POST-TENSION ERP อัตโนมัติ</div>
               <div style={{ fontSize: 9, color: '#9CA3AF', marginTop: 3 }}>สร้างเมื่อ: {date} เวลา {time} น. | Ref: SYS-AUTO-GEN</div>
             </div>
             <div style={{ textAlign: 'center', marginRight: 20 }}>

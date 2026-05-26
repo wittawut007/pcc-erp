@@ -18,14 +18,12 @@ const ACTION_COLORS: Record<string, { bg: string; color: string; icon: string }>
   'ปรับสต็อก FG':        { bg: 'var(--accent-light)', color: 'var(--accent)',  icon: 'fa-boxes' },
   'จัดส่งสินค้า (FG Out)': { bg: '#FFF0F5', color: '#C2185B', icon: 'fa-truck' },
   'เทคอนกรีต':           { bg: 'var(--indigo-light)', color: 'var(--indigo)', icon: 'fa-industry' },
-  'บันทึกยอด WIP':       { bg: '#FFF7ED',             color: '#EA580C',        icon: 'fa-layer-group' },
   'เบิกวัตถุดิบ':         { bg: 'var(--amber-light)',  color: '#B45309',        icon: 'fa-box-open' },
 }
 const DEFAULT_ACTION = { bg: 'var(--bg)', color: 'var(--text-muted)', icon: 'fa-circle-dot' }
 
 const MOCK_LOGS: ActivityLog[] = [
   { id: '1', user_id: null, action_type: 'ถอดแบบ & QC', entity_type: 'demolding_record', entity_id: null, detail: 'แผ่นพื้น PL50 4@4 | ดี 48 / เสีย 2 แผ่น', created_at: new Date().toISOString(), profile: { full_name: 'สมชาย ใจดี', role: 'worker', employee_code: 'EMP-001' } },
-  { id: '2', user_id: null, action_type: 'บันทึกยอด WIP', entity_type: 'wip_inventory', entity_id: null, detail: 'โครงเสาเข็ม (+50 ชุด)', created_at: new Date(Date.now() - 3600000).toISOString(), profile: { full_name: 'วิชัย รักดี', role: 'worker', employee_code: 'EMP-002' } },
   { id: '3', user_id: null, action_type: 'เบิกวัตถุดิบ', entity_type: 'raw_materials', entity_id: null, detail: 'เหล็ก DB12 (40 เส้น)', created_at: new Date(Date.now() - 7200000).toISOString(), profile: { full_name: 'สมหญิง คลังเป๊ะ', role: 'planner', employee_code: 'EMP-003' } },
   { id: '4', user_id: null, action_type: 'ปรับสต็อก FG', entity_type: 'fg_inventory', entity_id: null, detail: 'เสาเข็ม .15x.15 2.00 ม.: 0 → 50 ต้น', created_at: new Date(Date.now() - 86400000).toISOString(), profile: { full_name: 'ผู้ดูแลระบบ', role: 'admin', employee_code: null } },
   { id: '5', user_id: null, action_type: 'จัดส่งสินค้า (FG Out)', entity_type: 'fg_inventory', entity_id: null, detail: 'แผ่นพื้น PL50: -120 แผ่น | DO-2025-001', created_at: new Date(Date.now() - 172800000).toISOString(), profile: { full_name: 'ผู้ดูแลระบบ', role: 'admin', employee_code: null } },

@@ -1,18 +1,16 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
 export default function MobileLogoutButton() {
-  const router = useRouter()
   const supabase = createClient()
 
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut()
-      router.push('/login')
-      router.refresh()
+      // Hard redirect — avoids Next.js router "Failed to fetch" race after signOut
+      window.location.href = '/login'
     } catch (e: any) {
       toast.error('เกิดข้อผิดพลาดในการออกจากระบบ')
     }

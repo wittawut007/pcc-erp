@@ -65,7 +65,8 @@ function UnauthorizedContent() {
   const handleLogout = async () => {
     setLoading(true)
     await supabase.auth.signOut()
-    router.push('/login')
+    // Hard redirect — avoids Next.js router "Failed to fetch" race after signOut
+    window.location.href = '/login'
   }
 
   const handleBack = () => {
@@ -121,7 +122,7 @@ function UnauthorizedContent() {
               }}
             />
           </div>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B', letterSpacing: '0.05em' }}>PCC POSTENTION ERP</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B', letterSpacing: '0.05em' }}>PCC POST-TENSION ERP</span>
         </div>
 
         {/* Title */}

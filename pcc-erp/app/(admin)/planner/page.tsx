@@ -28,10 +28,6 @@ export default async function PlannerPage({
     .eq('is_active', true)
     .order('category')
 
-  const { data: wipInventory } = await supabase
-    .from('wip_inventory')
-    .select('product_id, qty_on_hand')
-
   // Fetch recent plans (last 30 days) for the sidebar list
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -89,7 +85,6 @@ export default async function PlannerPage({
         editingPlan={editingPlan ?? null}
         recentPlans={recentPlans ?? []}
         rawMaterials={rawMaterials ?? []}
-        wipInventory={wipInventory ?? []}
         today={today}
         selectedDate={selectedDate}
         workerToken={workerToken}

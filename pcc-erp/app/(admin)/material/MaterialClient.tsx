@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { dispenseMaterial, removePlanMaterial } from '@/app/actions/material'
 import toast from 'react-hot-toast'
+import DispenseConfirmModal from './DispenseConfirmModal'
 
 interface RawMaterial {
   id: string
@@ -44,8 +45,8 @@ interface Props {
 }
 
 const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }> = {
-  pending:   { label: 'รอจ่าย',   bg: '#FFF7ED', color: '#EA580C' },
-  partial:   { label: 'จ่ายบางส่วน', bg: '#EFF6FF', color: '#2563EB' },
+  pending:   { label: 'รอจ่าย',        bg: '#FFF7ED', color: '#EA580C' },
+  partial:   { label: 'จ่ายบางส่วน',   bg: '#EFF6FF', color: '#2563EB' },
   dispensed: { label: 'จ่ายแล้วครบถ้วน', bg: '#F0FDF4', color: '#16A34A' },
 }
 
@@ -53,78 +54,68 @@ import MaterialDocumentModal from '@/components/shared/MaterialDocumentModal'
 
 export default function MaterialClient({ initialData, role, userFullName }: Props) {
   const [items, setItems] = useState<Requisition[]>(initialData)
-  const [qtyMap, setQtyMap] = useState<Record<string, string>>({})
-  const [receiverMap, setReceiverMap] = useState<Record<string, string>>({})
   const [isPending, startTransition] = useTransition()
   const [activeId, setActiveId] = useState<string | null>(null)
-  
+
+  // Per-plan shared receiver map (so typing for one item pre-fills siblings in the same plan)
+  const [receiverMap, setReceiverMap] = useState<Record<string, string>>({})
+
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'partial' | 'dispensed'>('all')
   const [activeTab, setActiveTab] = useState<'today' | 'history'>('today')
   const [printModalPlanId, setPrintModalPlanId] = useState<string | null>(null)
 
-  const handleReceiverChange = (itemId: string, planId: string, value: string) => {
-    setReceiverMap(prev => {
-      const updated = { ...prev, [itemId]: value };
-      const siblingItems = items.filter(
-        i => i.plan_id === planId && i.id !== itemId && i.status !== 'dispensed'
-      );
-      siblingItems.forEach(sibling => {
-        const currentSiblingVal = prev[sibling.id] || '';
-        const currentItemVal = prev[itemId] || '';
-        if (currentSiblingVal === '' || currentSiblingVal === currentItemVal) {
-          updated[sibling.id] = value;
-        }
-      });
-      return updated;
-    });
+  // Dispense confirm modal
+  const [confirmItem, setConfirmItem] = useState<Requisition | null>(null)
+
+  const openConfirmModal = (item: Requisition) => {
+    setConfirmItem(item)
   }
 
+  const handleDispenseConfirm = async (itemId: string, qty: number, receiverName: string) => {
+    const item = items.find(i => i.id === itemId)
+    if (!item) return
 
-  const handleDispense = (item: Requisition) => {
-    const qty = parseFloat(qtyMap[item.id] ?? '0')
-    if (!qty || qty <= 0) {
-      toast.error('กรุณาระบุจำนวนที่ต้องการจ่าย')
-      return
-    }
-
-    const receiverName = receiverMap[item.id] || ''
-    if (!receiverName.trim()) {
-      toast.error('กรุณาระบุชื่อผู้มารับวัตถุดิบ')
-      return
-    }
-
-    // ใช้ weight_per_meter จากฐานข้อมูลโดยตรง แทนการ parse regex
     const isWire = item.raw_material?.category === 'ลวด' || item.raw_material?.category === 'Wire'
     const wireFactor = item.raw_material?.weight_per_meter ?? 0.0989
     const requiredTarget = isWire ? item.qty_required * wireFactor : item.qty_required
 
-    setActiveId(item.id)
-    startTransition(async () => {
-      try {
-        await dispenseMaterial(item.id, qty, receiverName)
-        toast.success(`จ่าย ${qty} ${item.raw_material?.unit ?? ''} เรียบร้อย`)
-        setQtyMap(prev => ({ ...prev, [item.id]: '' }))
-        // Optimistically update
-        setItems(prev =>
-          prev.map(r => {
-            if (r.id === item.id) {
-              const newQtyDispensed = r.qty_dispensed + qty;
-              return {
-                ...r,
-                qty_dispensed: newQtyDispensed,
-                status: newQtyDispensed >= (requiredTarget - 0.01) ? 'dispensed' : 'partial',
-                receiver_name: receiverName,
-                dispensed_by_profile: { full_name: userFullName || 'เจ้าหน้าที่คลังวัตถุดิบ' }
+    // Update shared receiver map for the plan
+    setReceiverMap(prev => {
+      const updated = { ...prev, [itemId]: receiverName }
+      items.filter(i => i.plan_id === item.plan_id && i.id !== itemId && i.status !== 'dispensed')
+        .forEach(sibling => { updated[sibling.id] = receiverName })
+      return updated
+    })
+
+    setActiveId(itemId)
+    await new Promise<void>((resolve) => {
+      startTransition(async () => {
+        try {
+          await dispenseMaterial(itemId, qty, receiverName)
+          toast.success(`จ่าย ${qty.toLocaleString(undefined, { maximumFractionDigits: 3 })} ${item.raw_material?.unit ?? ''} เรียบร้อย`)
+          setItems(prev =>
+            prev.map(r => {
+              if (r.id === itemId) {
+                const newQtyDispensed = r.qty_dispensed + qty
+                return {
+                  ...r,
+                  qty_dispensed: newQtyDispensed,
+                  status: newQtyDispensed >= (requiredTarget - 0.01) ? 'dispensed' : 'partial',
+                  receiver_name: receiverName,
+                  dispensed_by_profile: { full_name: userFullName || 'เจ้าหน้าที่คลังวัตถุดิบ' },
+                }
               }
-            }
-            return r;
-          })
-        )
-      } catch (e) {
-        toast.error((e as Error).message)
-      } finally {
-        setActiveId(null)
-      }
+              return r
+            })
+          )
+          setConfirmItem(null)
+        } catch (e) {
+          toast.error((e as Error).message)
+        } finally {
+          setActiveId(null)
+          resolve()
+        }
+      })
     })
   }
 
@@ -149,10 +140,7 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
 
   if (items.length === 0) {
     return (
-      <div style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        padding: '80px 0', gap: 12,
-      }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 0', gap: 12 }}>
         <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <i className="fas fa-check-circle" style={{ fontSize: 28, color: '#16A34A' }} />
         </div>
@@ -173,14 +161,13 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
     return acc
   }, {})
 
-  // Precompute plan completion status (a plan is complete if ALL its items are dispensed)
+  // Precompute plan completion status
   const planCompletionStatus: Record<string, boolean> = {}
   items.forEach(i => {
     if (planCompletionStatus[i.plan_id] === undefined) planCompletionStatus[i.plan_id] = true
     if (i.status !== 'dispensed') planCompletionStatus[i.plan_id] = false
   })
 
-  // Sort groups by plan_date descending, and filter by activeTab
   const sortedGroups = Object.entries(grouped)
     .filter(([planId]) => {
       const isCompleted = planCompletionStatus[planId]
@@ -192,31 +179,26 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
       return dateB.localeCompare(dateA)
     })
 
-  // Prepare data for the print modal if open
+  // Data for print modal
   const activePlanGroup = printModalPlanId ? grouped[printModalPlanId] : null
-  const activePlanItems = activePlanGroup ? items.filter(i => i.plan_id === printModalPlanId) : [] // always use all items for the document
-  let totalMesh = 0;
-  let totalRebar = 0;
-  const wireGroups: Record<string, number> = {};
-  
+  const activePlanItems = activePlanGroup ? items.filter(i => i.plan_id === printModalPlanId) : []
+  let totalMesh = 0
+  let totalRebar = 0
+  const wireGroups: Record<string, number> = {}
+
   if (activePlanItems.length > 0) {
     activePlanItems.forEach(i => {
       const isWire = i.raw_material?.category === 'ลวด' || i.raw_material?.category === 'Wire'
       const isMesh = i.raw_material?.category === 'เมช' || i.raw_material?.category === 'Mesh'
       const isRebar = i.raw_material?.category === 'เหล็กเส้น'
-      
-      const wireFactor = i.raw_material?.weight_per_meter ?? 0.0989
-      const requiredWeight = isWire ? i.qty_required * wireFactor : i.qty_required
-      
-      if (isMesh) totalMesh += i.qty_required; // use required, not weight if it's sqm
-      if (isRebar) totalRebar += i.qty_required;
+      if (isMesh) totalMesh += i.qty_required
+      if (isRebar) totalRebar += i.qty_required
       if (isWire) {
         const name = i.raw_material?.name || 'ลวดอัดแรง (PC Wire)'
-        wireGroups[name] = (wireGroups[name] || 0) + i.qty_required // using length
+        wireGroups[name] = (wireGroups[name] || 0) + i.qty_required
       }
-    });
+    })
   }
-  const wireEntries = Object.entries(wireGroups);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -253,27 +235,24 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
       {/* Summary Banner */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
         {[
-          { id: 'all',       label: 'รายการทั้งหมด',     value: items.length,                                  icon: 'fa-list', color: '#2563EB', bg: '#EFF4FF' },
-          { id: 'pending',   label: 'รอจ่าย',            value: items.filter(i => i.status === 'pending').length,  icon: 'fa-clock', color: '#EA580C', bg: '#FFF7ED' },
-          { id: 'partial',   label: 'จ่ายบางส่วน',       value: items.filter(i => i.status === 'partial').length,  icon: 'fa-exclamation-circle', color: '#D97706', bg: '#FFFBEB' },
-          { id: 'dispensed', label: 'จ่ายครบแล้ว',       value: items.filter(i => i.status === 'dispensed').length, icon: 'fa-check-circle', color: '#16A34A', bg: '#F0FDF4' },
+          { id: 'all',       label: 'รายการทั้งหมด',  value: items.length,                                    icon: 'fa-list',               color: '#2563EB', bg: '#EFF4FF' },
+          { id: 'pending',   label: 'รอจ่าย',         value: items.filter(i => i.status === 'pending').length,  icon: 'fa-clock',              color: '#EA580C', bg: '#FFF7ED' },
+          { id: 'partial',   label: 'จ่ายบางส่วน',    value: items.filter(i => i.status === 'partial').length,  icon: 'fa-exclamation-circle', color: '#D97706', bg: '#FFFBEB' },
+          { id: 'dispensed', label: 'จ่ายครบแล้ว',    value: items.filter(i => i.status === 'dispensed').length, icon: 'fa-check-circle',      color: '#16A34A', bg: '#F0FDF4' },
         ].map(kpi => (
-          <div 
-            key={kpi.label} 
-            onClick={() => setActiveFilter(kpi.id as any)}
-            style={{ 
-              background: activeFilter === kpi.id ? kpi.bg : 'var(--surface)', 
-              border: activeFilter === kpi.id ? `1px solid ${kpi.color}` : '1px solid var(--border)', 
-              borderRadius: 'var(--radius)', 
-              padding: '16px 20px', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 14,
-              cursor: 'pointer',
+          <div
+            key={kpi.label}
+            onClick={() => setActiveFilter(kpi.id as 'all' | 'pending' | 'partial' | 'dispensed')}
+            style={{
+              background: activeFilter === kpi.id ? kpi.bg : 'var(--surface)',
+              border: activeFilter === kpi.id ? `1px solid ${kpi.color}` : '1px solid var(--border)',
+              borderRadius: 'var(--radius)', padding: '16px 20px',
+              display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer',
               transition: 'all 0.2s',
               boxShadow: activeFilter === kpi.id ? `0 4px 12px ${kpi.color}15` : 'none',
-              transform: activeFilter === kpi.id ? 'translateY(-2px)' : 'none'
-            }}>
+              transform: activeFilter === kpi.id ? 'translateY(-2px)' : 'none',
+            }}
+          >
             <div style={{ width: 44, height: 44, borderRadius: 10, background: activeFilter === kpi.id ? kpi.color : kpi.bg, color: activeFilter === kpi.id ? '#fff' : kpi.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0, transition: 'all 0.2s' }}>
               <i className={`fas ${kpi.icon}`} />
             </div>
@@ -297,11 +276,10 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
         const planDate = group.plan?.plan_date
           ? new Date(group.plan.plan_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
           : planId.slice(0, 8)
-          
+
         const orderNumbers = group.plan?.production_orders?.map(o => o.order_number).filter(Boolean) || []
         const displayOrderNumber = orderNumbers.length > 0 ? orderNumbers.join(', ') : `#${planId.slice(0, 8).toUpperCase()}`
-          
-        // Check if all items in this plan are fully dispensed
+
         const allItemsInPlan = items.filter(i => i.plan_id === planId)
         const isPlanFullyDispensed = allItemsInPlan.every(i => i.status === 'dispensed')
 
@@ -313,181 +291,159 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
                 แผนการผลิต: {planDate}
               </span>
-              
               <div style={{ padding: '2px 8px', background: '#DBEAFE', color: '#1D4ED8', borderRadius: 4, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <i className="fas fa-hashtag" /> {displayOrderNumber}
               </div>
-
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                ({group.items.length} รายการ)
-              </span>
-              
-              <button 
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({group.items.length} รายการ)</span>
+              <button
                 onClick={() => setPrintModalPlanId(planId)}
                 style={{
-                  marginLeft: 'auto',
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '6px 14px', borderRadius: 6,
-                  fontSize: 12, fontWeight: 600,
+                  marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600,
                   background: isPlanFullyDispensed ? 'rgba(37,99,235,0.1)' : '#111827',
                   color: isPlanFullyDispensed ? '#2563EB' : '#fff',
                   border: isPlanFullyDispensed ? '1px solid rgba(37,99,235,0.2)' : 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}>
-                <i className={isPlanFullyDispensed ? "fas fa-file-invoice" : "fas fa-print"} />
+                  cursor: 'pointer', transition: 'all 0.2s',
+                }}
+              >
+                <i className={isPlanFullyDispensed ? 'fas fa-file-invoice' : 'fas fa-print'} />
                 {isPlanFullyDispensed ? 'เรียกดูเอกสารย้อนหลัง' : 'ออกเอกสารเบิกจ่าย'}
               </button>
             </div>
 
-            {/* Material Items */}
+            {/* Material Items Table */}
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
-              <thead>
-                <tr>
-                  {['วัตถุดิบ', 'ความยาว (ถ้ามี)', 'ต้องใช้ (น้ำหนัก)', 'จ่ายแล้ว', 'สต็อกคงเหลือ', 'สถานะ', 'ผู้มารับวัตถุดิบ', 'จ่ายเพิ่ม', 'ยืนยัน'].map((th, i) => (
-                    <th key={th + i} style={{
-                      fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase',
-                      letterSpacing: '0.05em', padding: '10px 16px', textAlign: 'left',
-                      borderBottom: '1px solid var(--border)',
-                    }}>{th}</th>
-                  ))}
-                  {role === 'admin' && (
-                    <th style={{
-                      fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase',
-                      letterSpacing: '0.05em', padding: '10px 16px', textAlign: 'center',
-                      borderBottom: '1px solid var(--border)',
-                    }}>ลบ</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {group.items.map(item => {
-                  const isWire = item.raw_material?.category === 'ลวด' || item.raw_material?.category === 'Wire'
-                  const stockUnit = item.raw_material?.unit ?? ''
-                  const wireFactor = item.raw_material?.weight_per_meter ?? 0.0989
-                  const requiredWeight = isWire ? item.qty_required * wireFactor : item.qty_required
-                  const remainingWeight = requiredWeight - item.qty_dispensed
-                  const stockOk = (item.raw_material?.qty_on_hand ?? 0) >= remainingWeight
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+                <thead>
+                  <tr>
+                    {['วัตถุดิบ', 'ความยาว (ถ้ามี)', 'ต้องใช้ (น้ำหนัก)', 'จ่ายแล้ว', 'สต็อกคงเหลือ', 'สถานะ', 'ผู้มารับ', 'ดำเนินการ'].map((th, i) => (
+                      <th key={th + i} style={{
+                        fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase',
+                        letterSpacing: '0.05em', padding: '10px 16px', textAlign: 'left',
+                        borderBottom: '1px solid var(--border)',
+                      }}>{th}</th>
+                    ))}
+                    {role === 'admin' && (
+                      <th style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '10px 16px', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>ลบ</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.items.map(item => {
+                    const isWire = item.raw_material?.category === 'ลวด' || item.raw_material?.category === 'Wire'
+                    const stockUnit = item.raw_material?.unit ?? ''
+                    const wireFactor = item.raw_material?.weight_per_meter ?? 0.0989
+                    const requiredWeight = isWire ? item.qty_required * wireFactor : item.qty_required
+                    const remainingWeight = requiredWeight - item.qty_dispensed
+                    const stockOk = (item.raw_material?.qty_on_hand ?? 0) >= remainingWeight
 
-                  const badge = STATUS_BADGE[item.status] ?? STATUS_BADGE.pending
-                  const isLoading = activeId === item.id && isPending
+                    const badge = STATUS_BADGE[item.status] ?? STATUS_BADGE.pending
+                    const isLoading = activeId === item.id && isPending
 
-                  return (
-                    <tr key={item.id}>
-                      <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>
-                          {item.raw_material?.material_code && (
-                            <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--accent)', background: 'var(--bg)', padding: '1px 5px', borderRadius: 3, marginRight: 6 }}>
-                              {item.raw_material.material_code}
-                            </span>
-                          )}
-                          {item.raw_material?.name ?? '—'}
-                        </div>
-                        {item.notes && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{item.notes}</div>}
-                      </td>
-                      <td style={{ padding: '12px 16px', fontSize: 13, borderBottom: '1px solid var(--border)', fontFamily: 'monospace' }}>
-                        {isWire ? `${item.qty_required.toLocaleString(undefined, { maximumFractionDigits: 2 })} เมตร` : '—'}
-                      </td>
-                      <td style={{ padding: '12px 16px', fontSize: 13, borderBottom: '1px solid var(--border)', fontFamily: 'monospace' }}>
-                        {requiredWeight.toLocaleString(undefined, { maximumFractionDigits: 2 })} {stockUnit}
-                      </td>
-                      <td style={{ padding: '12px 16px', fontSize: 13, borderBottom: '1px solid var(--border)', fontFamily: 'monospace', color: item.qty_dispensed > 0 ? '#16A34A' : 'var(--text-muted)' }}>
-                        {item.qty_dispensed.toLocaleString(undefined, { maximumFractionDigits: 2 })} {stockUnit}
-                      </td>
-                      <td style={{ padding: '12px 16px', fontSize: 13, borderBottom: '1px solid var(--border)', fontFamily: 'monospace', color: stockOk ? 'var(--text-primary)' : '#EF4444' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                          {!stockOk && <i className="fas fa-exclamation-triangle" style={{ fontSize: 11 }} title="สต็อกอาจไม่เพียงพอ (อิงจากอัตราส่วนน้ำหนักสำหรับลวด)" />}
-                          {(item.raw_material?.qty_on_hand ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} {stockUnit}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-                        <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color }}>
-                          {badge.label}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-                        {item.status === 'dispensed' ? (
-                          <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>
-                            {item.receiver_name || '—'}
+                    return (
+                      <tr key={item.id} style={{ background: isLoading ? '#F9FAFB' : 'transparent', transition: 'background 0.2s' }}>
+                        {/* Material name */}
+                        <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>
+                            {item.raw_material?.material_code && (
+                              <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--accent)', background: 'var(--bg)', padding: '1px 5px', borderRadius: 3, marginRight: 6 }}>
+                                {item.raw_material.material_code}
+                              </span>
+                            )}
+                            {item.raw_material?.name ?? '—'}
+                          </div>
+                          {item.notes && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{item.notes}</div>}
+                        </td>
+                        {/* Length (wire) */}
+                        <td style={{ padding: '12px 16px', fontSize: 13, borderBottom: '1px solid var(--border)', fontFamily: 'monospace' }}>
+                          {isWire ? `${item.qty_required.toLocaleString(undefined, { maximumFractionDigits: 2 })} เมตร` : '—'}
+                        </td>
+                        {/* Required weight */}
+                        <td style={{ padding: '12px 16px', fontSize: 13, borderBottom: '1px solid var(--border)', fontFamily: 'monospace' }}>
+                          {requiredWeight.toLocaleString(undefined, { maximumFractionDigits: 2 })} {stockUnit}
+                        </td>
+                        {/* Dispensed */}
+                        <td style={{ padding: '12px 16px', fontSize: 13, borderBottom: '1px solid var(--border)', fontFamily: 'monospace', color: item.qty_dispensed > 0 ? '#16A34A' : 'var(--text-muted)' }}>
+                          {item.qty_dispensed.toLocaleString(undefined, { maximumFractionDigits: 2 })} {stockUnit}
+                        </td>
+                        {/* Stock */}
+                        <td style={{ padding: '12px 16px', fontSize: 13, borderBottom: '1px solid var(--border)', fontFamily: 'monospace', color: stockOk ? 'var(--text-primary)' : '#EF4444' }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            {!stockOk && <i className="fas fa-exclamation-triangle" style={{ fontSize: 11 }} title="สต็อกอาจไม่เพียงพอ" />}
+                            {(item.raw_material?.qty_on_hand ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} {stockUnit}
                           </span>
-                        ) : (
-                          <input
-                            type="text"
-                            placeholder="ระบุชื่อผู้มารับ"
-                            value={receiverMap[item.id] ?? ''}
-                            onChange={e => handleReceiverChange(item.id, item.plan_id, e.target.value)}
-                            style={{
-                              width: 140, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)',
-                              fontSize: 13, outline: 'none', transition: 'border-color 0.2s',
-                            }}
-                            disabled={isLoading}
-                          />
-                        )}
-                      </td>
-                      <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-                        <input
-                          type="number"
-                          placeholder={`จำนวน (${stockUnit})`}
-                          value={qtyMap[item.id] ?? ''}
-                          onChange={e => setQtyMap(prev => ({ ...prev, [item.id]: e.target.value }))}
-                          style={{
-                            width: 130, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)',
-                            fontSize: 13, fontFamily: 'monospace', outline: 'none',
-                          }}
-                          min={0}
-                          max={remainingWeight}
-                        />
-                      </td>
-                      <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-                        <button
-                          onClick={() => handleDispense(item)}
-                          disabled={isLoading || item.status === 'dispensed'}
-                          style={{
-                            padding: '7px 16px', borderRadius: 6, fontSize: 13, fontWeight: 600,
-                            background: item.status === 'dispensed' ? '#F3F4F6' : '#2563EB',
-                            color: item.status === 'dispensed' ? '#9CA3AF' : '#fff',
-                            border: 'none', cursor: item.status === 'dispensed' ? 'not-allowed' : 'pointer',
-                            display: 'flex', alignItems: 'center', gap: 6,
-                          }}
-                        >
-                          {isLoading ? <i className="fas fa-spinner fa-spin" /> : <i className="fas fa-check" />}
-                          {item.status === 'dispensed' ? 'จ่ายแล้วครบถ้วน' : 'ยืนยันจ่าย'}
-                        </button>
-                      </td>
-                      {role === 'admin' && (
-                        <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
+                        </td>
+                        {/* Status */}
+                        <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+                          <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color }}>
+                            {badge.label}
+                          </span>
+                        </td>
+                        {/* Receiver name (read-only, shown after dispatch) */}
+                        <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+                          <span style={{ fontSize: 12, color: item.receiver_name ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: item.receiver_name ? 'normal' : 'italic' }}>
+                            {item.receiver_name || (item.status !== 'dispensed' ? '—' : '—')}
+                          </span>
+                        </td>
+                        {/* Action button */}
+                        <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
                           <button
-                            onClick={() => handleDelete(item)}
-                            disabled={isLoading}
+                            onClick={() => openConfirmModal(item)}
+                            disabled={isLoading || item.status === 'dispensed'}
                             style={{
-                              padding: '6px', borderRadius: 6, fontSize: 13,
-                              background: 'transparent',
-                              color: '#EF4444', border: '1px solid #EF4444',
-                              cursor: isLoading ? 'not-allowed' : 'pointer',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              opacity: isLoading ? 0.5 : 1
+                              padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                              background: item.status === 'dispensed' ? '#F3F4F6' : 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+                              color: item.status === 'dispensed' ? '#9CA3AF' : '#fff',
+                              border: 'none', cursor: item.status === 'dispensed' ? 'not-allowed' : 'pointer',
+                              display: 'flex', alignItems: 'center', gap: 6,
+                              boxShadow: item.status !== 'dispensed' ? '0 3px 10px rgba(37,99,235,0.28)' : 'none',
+                              transition: 'all 0.18s',
+                              opacity: isLoading ? 0.6 : 1,
                             }}
-                            title="ลบรายการ (Admin)"
                           >
-                            <i className="fas fa-trash-alt" />
+                            {isLoading
+                              ? <><i className="fas fa-spinner fa-spin" /> กำลังบันทึก...</>
+                              : item.status === 'dispensed'
+                                ? <><i className="fas fa-check-double" /> จ่ายครบแล้ว</>
+                                : <><i className="fas fa-share-square" /> เบิกจ่าย</>
+                            }
                           </button>
                         </td>
-                      )}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                        {role === 'admin' && (
+                          <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
+                            <button
+                              onClick={() => handleDelete(item)}
+                              disabled={isLoading}
+                              style={{ padding: '6px', borderRadius: 6, fontSize: 13, background: 'transparent', color: '#EF4444', border: '1px solid #EF4444', cursor: isLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: isLoading ? 0.5 : 1 }}
+                              title="ลบรายการ (Admin)"
+                            >
+                              <i className="fas fa-trash-alt" />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         )
       })}
-      
+
+      {/* Dispense Confirm Modal */}
+      <DispenseConfirmModal
+        item={confirmItem}
+        onClose={() => setConfirmItem(null)}
+        onConfirm={handleDispenseConfirm}
+        isLoading={confirmItem !== null && activeId === confirmItem.id && isPending}
+        initialReceiver={confirmItem ? (receiverMap[confirmItem.id] ?? '') : ''}
+      />
+
+      {/* Print Document Modal */}
       {activePlanGroup && activePlanGroup.plan && (() => {
         const orderNumbers = activePlanGroup.plan.production_orders?.map(o => o.order_number).filter(Boolean) || []
         const modalOrderNumber = orderNumbers.length > 0 ? orderNumbers.join(', ') : activePlanGroup.plan.id.slice(0, 8).toUpperCase()
-        
         return (
           <MaterialDocumentModal
             isOpen={printModalPlanId !== null}
@@ -495,7 +451,7 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
             orderNumber={modalOrderNumber}
             date={new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}
             time={new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-            userFullName={userFullName || "เจ้าหน้าที่เบิกจ่าย"}
+            userFullName={userFullName || 'เจ้าหน้าที่เบิกจ่าย'}
             totalConcrete={activePlanGroup.plan.total_concrete ?? 0}
             planItems={activePlanItems}
           />

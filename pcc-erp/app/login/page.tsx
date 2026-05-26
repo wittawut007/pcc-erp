@@ -109,7 +109,7 @@ export default function LoginPage() {
             />
           </div>
           <h1 className="text-slate-900 tracking-tight uppercase font-bold" style={{ fontSize: '46px', marginBottom: '16px' }}>
-            PCC <span className="text-blue-600">POSTENTION</span>
+            PCC <span className="text-blue-600">POST-TENSION</span>
           </h1>
           <p className="text-slate-400 uppercase" style={{ fontSize: '13px', fontWeight: 700, letterSpacing: '0.3em' }}>
             ERP Production System

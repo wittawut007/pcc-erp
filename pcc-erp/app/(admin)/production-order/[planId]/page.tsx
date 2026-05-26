@@ -31,6 +31,25 @@ export default async function ProductionOrderPrintPage({ params }: PageProps) {
     notFound()
   }
 
+  // Fetch BOM items for the products in this plan to support fallback BOM codes
+  const productIds = (plan.items ?? []).map((item: any) => item.product_id).filter(Boolean)
+  let productBoms: any[] = []
+  if (productIds.length > 0) {
+    const { data: boms } = await supabase
+      .from('product_bom_items')
+      .select(`
+        product_id,
+        sort_order,
+        raw_materials (
+          material_code,
+          name
+        )
+      `)
+      .in('product_id', productIds)
+      .order('sort_order', { ascending: true })
+    productBoms = boms ?? []
+  }
+
   // Fetch a generic worker token for QR code
   const { data: workerProfile } = await supabase
     .from('profiles')
@@ -64,6 +83,22 @@ export default async function ProductionOrderPrintPage({ params }: PageProps) {
   const items = (plan.items ?? []).map((item: any) => {
     const p = item.product || {}
     const wireVal = p.wire_per_unit || p.length || 0;
+    
+    // Resolve BOM code with fallback from product_bom_items
+    let bomCode = p.bom_code
+    if (!bomCode && productBoms.length > 0) {
+      const bomsForProduct = productBoms.filter((b: any) => b.product_id === item.product_id)
+      if (bomsForProduct.length > 0) {
+        const names = bomsForProduct
+          .map((b: any) => b.raw_materials?.name || b.raw_materials?.material_code)
+          .filter(Boolean)
+        const uniqueNames = Array.from(new Set(names))
+        if (uniqueNames.length > 0) {
+          bomCode = uniqueNames.join(', ')
+        }
+      }
+    }
+
     return {
       id: item.id,
       productId: item.product_id,
@@ -75,7 +110,7 @@ export default async function ProductionOrderPrintPage({ params }: PageProps) {
       bed: item.bed,
       qty: item.qty_target,
       concrete: (p.concrete_per_unit ?? 0) * item.qty_target,
-      bomCode: p.bom_code,
+      bomCode: bomCode || null,
       wire: wireVal * item.qty_target,
       mesh: (p.mesh_per_unit ?? 0) * item.qty_target,
       rebar: (p.rebar_per_unit ?? 0) * item.qty_target,

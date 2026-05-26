@@ -110,7 +110,7 @@ export default function ProductionOrderModal({
                 </svg>
               </div>
               <div>
-                <h1 className="text-xl font-bold tracking-tight leading-none text-blue-600">PCC <span className="text-gray-900">POSTENTION</span></h1>
+                <h1 className="text-xl font-bold tracking-tight leading-none text-blue-600">PCC <span className="text-gray-900">POST-TENSION</span></h1>
                 <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mt-1">ERP Production System</p>
               </div>
             </div>
@@ -206,7 +206,7 @@ export default function ProductionOrderModal({
           {/* Footer inside A4 context */}
           <div className="absolute bottom-[16mm] left-[20mm] right-[20mm] flex justify-between items-end border-t border-gray-200 pt-3">
             <div>
-              <p className="text-[9px] text-gray-400">เอกสารนี้สร้างโดยระบบ PCC POSTENTION ERP อัตโนมัติ</p>
+              <p className="text-[9px] text-gray-400">เอกสารนี้สร้างโดยระบบ PCC POST-TENSION ERP อัตโนมัติ</p>
               <p className="text-[9px] text-gray-400 mt-1">สร้างเมื่อ: {date} เวลา {time} น. | Ref: SYS-AUTO-GEN</p>
             </div>
             <div className="text-right">

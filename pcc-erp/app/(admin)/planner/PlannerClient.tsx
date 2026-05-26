@@ -33,11 +33,6 @@ interface RawMaterial {
   category: string
 }
 
-interface WipItem {
-  product_id: string
-  qty_on_hand: number
-}
-
 interface PlanItem {
   id?: string
   productId: string
@@ -59,7 +54,6 @@ interface Props {
   editingPlan: any          // plan being viewed/edited (null = new plan)
   recentPlans: any[]        // list of recent plans for the sidebar
   rawMaterials: RawMaterial[]
-  wipInventory?: WipItem[]
   today: string
   selectedDate: string
   workerToken?: string
@@ -76,13 +70,14 @@ const CATEGORIES = [
   'A42 กำแพงกันดิน',
 ]
 
-export default function PlannerClient({ products, editingPlan, recentPlans, rawMaterials, wipInventory = [], today, selectedDate, workerToken = '' }: Props) {
+export default function PlannerClient({ products, editingPlan, recentPlans, rawMaterials, today, selectedDate, workerToken = '' }: Props) {
   const supabase = createClient()
   const [isPending, startTransition] = useTransition()
   const supabaseRouter = useRouter()
 
   // Date picker state — starts from selectedDate from URL
   const [planDate, setPlanDate] = useState(selectedDate)
+  const [showAllPlans, setShowAllPlans] = useState(false)
 
   // Select Cascades
   const [selCat, setSelCat] = useState('')
@@ -291,7 +286,18 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
 
     const materialReqs: Record<string, number> = {}
 
-    // ค้นหา fallback โดยใช้ category และ name
+    // Fetch real BOM items for products in the plan
+    const productIds = planItems.map(item => item.productId).filter(Boolean)
+    let productBomItems: any[] = []
+    if (productIds.length > 0) {
+      const { data: bomData } = await supabase
+        .from('product_bom_items')
+        .select('product_id, raw_material_id, qty_per_unit')
+        .in('product_id', productIds)
+      productBomItems = bomData || []
+    }
+
+    // ค้นหา fallback โดยใช้ category และ name (สำหรับกรณีที่สินค้าไม่มี BOM ใน product_bom_items)
     const fallbackWire = rawMaterials.find(r => r.category === 'ลวด' || r.name.toLowerCase().includes('ลวด') || r.name.toLowerCase().includes('pc wire'))
     const fallbackMesh = rawMaterials.find(r => r.category === 'เมช' || r.name.includes('เมช') || r.category === 'Mesh')
     const fallbackRebar = rawMaterials.find(r => r.category === 'เหล็กเส้น' || r.name.includes('เหล็กเส้น'))
@@ -300,28 +306,42 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
       const product = products.find(p => p.id === item.productId)
       if (!product) return
 
-      // Wire
-      const wireNeeded = (product.wire_per_unit || product.length || 0) * item.qty
-      if (wireNeeded > 0) {
-        const specificWire = rawMaterials.find(r => r.name === product.bom_code)
-        const wireId = specificWire?.id || fallbackWire?.id
-        if (wireId) materialReqs[wireId] = (materialReqs[wireId] || 0) + wireNeeded
-      }
+      // ตรวจสอบว่าสินค้ามีรายละเอียด BOM ใน product_bom_items หรือไม่
+      const boms = productBomItems.filter(b => b.product_id === item.productId)
+      if (boms.length > 0) {
+        // ใช้ข้อมูลดิบจากระบบ BOM ล่าสุดที่จับคู่กับ วัตถุดิบ ตรงๆ
+        boms.forEach(bom => {
+          const rmId = bom.raw_material_id
+          const needed = (Number(bom.qty_per_unit) || 0) * item.qty
+          if (needed > 0 && rmId) {
+            materialReqs[rmId] = (materialReqs[rmId] || 0) + needed
+          }
+        })
+      } else {
+        // Fallback: ใช้การคำนวณแบบเดิมกรณีข้อมูล BOM ยังไม่มีในตาราง product_bom_items
+        // Wire
+        const wireNeeded = (product.wire_per_unit || product.length || 0) * item.qty
+        if (wireNeeded > 0) {
+          const specificWire = rawMaterials.find(r => r.name === product.bom_code)
+          const wireId = specificWire?.id || fallbackWire?.id
+          if (wireId) materialReqs[wireId] = (materialReqs[wireId] || 0) + wireNeeded
+        }
 
-      // Mesh
-      const meshNeeded = (product.mesh_per_unit || 0) * item.qty
-      if (meshNeeded > 0) {
-        const specificMesh = rawMaterials.find(r => r.name === product.bom_code)
-        const meshId = specificMesh?.id || fallbackMesh?.id
-        if (meshId) materialReqs[meshId] = (materialReqs[meshId] || 0) + meshNeeded
-      }
+        // Mesh
+        const meshNeeded = (product.mesh_per_unit || 0) * item.qty
+        if (meshNeeded > 0) {
+          const specificMesh = rawMaterials.find(r => r.name === product.bom_code)
+          const meshId = specificMesh?.id || fallbackMesh?.id
+          if (meshId) materialReqs[meshId] = (materialReqs[meshId] || 0) + meshNeeded
+        }
 
-      // Rebar
-      const rebarNeeded = (product.rebar_per_unit || 0) * item.qty
-      if (rebarNeeded > 0) {
-        const specificRebar = rawMaterials.find(r => r.name === product.bom_code)
-        const rebarId = specificRebar?.id || fallbackRebar?.id
-        if (rebarId) materialReqs[rebarId] = (materialReqs[rebarId] || 0) + rebarNeeded
+        // Rebar
+        const rebarNeeded = (product.rebar_per_unit || 0) * item.qty
+        if (rebarNeeded > 0) {
+          const specificRebar = rawMaterials.find(r => r.name === product.bom_code)
+          const rebarId = specificRebar?.id || fallbackRebar?.id
+          if (rebarId) materialReqs[rebarId] = (materialReqs[rebarId] || 0) + rebarNeeded
+        }
       }
     })
 
@@ -432,31 +452,6 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
 
   const isPlanConfirmed = editingPlan?.status === 'confirmed'
 
-  // Calculate dynamic WIP requirements
-  const wipRequirements = planItems.reduce((acc, item) => {
-    const product = products.find(p => p.id === item.productId)
-    if (product && product.wip_code) {
-      if (!acc[product.wip_code]) {
-        const wipProduct = products.find(p => p.code === product.wip_code)
-        acc[product.wip_code] = {
-          wip_code: product.wip_code,
-          name: wipProduct ? `${wipProduct.name} ${wipProduct.size !== '-' ? wipProduct.size : ''}` : `โครง ${product.name}`,
-          needed: 0,
-          onHand: 0,
-        }
-        if (wipProduct) {
-          const inv = wipInventory.find(w => w.product_id === wipProduct.id)
-          acc[product.wip_code].onHand = inv ? inv.qty_on_hand : 0
-        }
-      }
-      acc[product.wip_code].needed += item.qty
-    }
-    return acc
-  }, {} as Record<string, { wip_code: string, name: string, needed: number, onHand: number }>)
-
-  const wipList = Object.values(wipRequirements)
-  const isWipShortage = wipList.some(w => w.onHand < w.needed)
-
   // Group recentPlans by date for the sidebar
   const plansByDate = useMemo(() => {
     const map = new Map<string, any[]>()
@@ -476,72 +471,8 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
     <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '24px 32px', background: '#F7F8FA', display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div style={{ display: 'flex', flexDirection: 'row', gap: 20, alignItems: 'flex-start' }}>
 
-      {/* FAR LEFT — Recent Plans Sidebar */}
-      <div style={{ width: 240, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {/* Date Picker + New Plan */}
-        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>วันที่แผน</div>
-          <input
-            type="date"
-            value={planDate}
-            onChange={e => {
-              setPlanDate(e.target.value)
-              supabaseRouter.push(`/planner?date=${e.target.value}`)
-            }}
-            style={{ width: '100%', height: 36, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 13, outline: 'none', color: '#374151', marginBottom: 10, boxSizing: 'border-box' }}
-          />
-          <button
-            onClick={handleNewPlan}
-            style={{ width: '100%', height: 38, background: '#2563EB', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-          >
-            <i className="fas fa-plus" />
-            สร้างแผนใหม่
-          </button>
-        </div>
-
-        {/* Recent Plans List */}
-        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', maxHeight: 600, overflowY: 'auto' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>แผนล่าสุด (30 วัน)</div>
-          {plansByDate.length === 0 && <div style={{ fontSize: 12, color: '#D1D5DB', textAlign: 'center', padding: '16px 0' }}>ยังไม่มีแผน</div>}
-          {plansByDate.map(([date, plans]) => (
-            <div key={date} style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', marginBottom: 6, textTransform: 'uppercase' }}>{formatThDate(date)}</div>
-              {plans.map((p: any) => {
-                const po = Array.isArray(p.production_orders) ? p.production_orders[0] : null
-                const isActive = editingPlan?.id === p.id
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => supabaseRouter.push(`/planner?plan_id=${p.id}`)}
-                    style={{
-                      width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, marginBottom: 4,
-                      background: isActive ? '#EFF6FF' : '#F9FAFB',
-                      border: `1.5px solid ${isActive ? '#2563EB' : '#E5E7EB'}`,
-                      cursor: 'pointer', transition: 'all 0.15s',
-                    }}
-                  >
-                    <div style={{ fontSize: 12, fontWeight: 700, color: isActive ? '#2563EB' : '#374151' }}>
-                      {po?.order_number ?? `แผนร่าง`}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>
-                      {p.total_qty?.toLocaleString() ?? 0} ชิ้น &middot;{' '}
-                      <span style={{
-                        color: p.status === 'confirmed' ? '#059669' : '#D97706',
-                        fontWeight: 600,
-                      }}>
-                        {p.status === 'confirmed' ? 'ยืนยันแล้ว' : 'ร่าง'}
-                      </span>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* LEFT — Product Selector & Plan Table */}
-      <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
         
         {/* ADD PRODUCT FORM */}
         <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -689,7 +620,73 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
              </table>
           </div>
         </div>
-      </div>
+
+          {/* NEXT STEPS (DARK THEME) */}
+          <div style={{ background: '#1C1F26', borderRadius: 12, padding: '20px 24px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'row', gap: 28, color: '#fff', position: 'relative', overflow: 'hidden', alignItems: 'center' }}>
+             
+             {/* Watermark Background */}
+             <div style={{ position: 'absolute', bottom: -10, right: -10, fontSize: 130, fontWeight: 900, color: 'rgba(255,255,255,0.03)', pointerEvents: 'none', lineHeight: 1, userSelect: 'none' }}>
+               PCC
+             </div>
+
+             {/* Left Block — Title & Desc */}
+             <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', gap: 6, position: 'relative', zIndex: 1 }}>
+                <h3 className="font-bold text-base">ขั้นตอนต่อไป</h3>
+                <p className="text-xs text-gray-400 leading-relaxed">
+                   เมื่อตรวจสอบแผนและวัตถุดิบเรียบร้อยแล้ว กดยืนยันเพื่อนำแผนขึ้นระบบ และออกใบสั่งผลิตให้หน้างาน
+                </p>
+             </div>
+
+             {/* Middle Block — Checklist */}
+             <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', gap: 8, position: 'relative', zIndex: 1 }}>
+                <div className="flex items-start gap-2.5">
+                   <i className="fas fa-check text-emerald-400 mt-0.5 text-xs"></i>
+                   <span className="text-[12px] text-gray-300">ระบบจะจองสต๊อก (Reserve) ทันที</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                   <i className="fas fa-check text-emerald-400 mt-0.5 text-xs"></i>
+                   <span className="text-[12px] text-gray-300">สร้าง Job Order {planItems.length} รายการ</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                   <i className="fas fa-check text-emerald-400 mt-0.5 text-xs"></i>
+                   <span className="text-[12px] text-gray-300">สร้าง QR Code สำหรับสแกนหน้าโรงผลิต</span>
+                </div>
+             </div>
+
+             {/* Right Block — Actions */}
+             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 200, position: 'relative', zIndex: 1 }}>
+                <button
+                  onClick={handleSaveDraft}
+                  disabled={saving || planItems.length === 0}
+                  className="w-full bg-transparent hover:bg-white/8 border border-gray-600 text-gray-200 font-semibold rounded-xl text-[13px] disabled:opacity-40 transition-all flex justify-center items-center gap-2"
+                  style={{ minHeight: 40, padding: '8px 16px' }}
+                >
+                   {saving
+                     ? <i className="fas fa-spinner fa-spin text-xs"></i>
+                     : <i className="fas fa-save text-xs"></i>
+                   }
+                   <span>บันทึกแบบร่าง</span>
+                </button>
+                <button
+                  onClick={handleConfirmPlan}
+                  disabled={confirming || planItems.length === 0}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-[14px] disabled:opacity-40 transition-all flex justify-center items-center gap-2 relative"
+                  style={{ minHeight: 44, padding: '10px 16px' }}
+                >
+                   {confirming
+                     ? <i className="fas fa-spinner fa-spin text-sm"></i>
+                     : (
+                       <>
+                         <i className="fas fa-check-circle text-sm"></i>
+                         <span>บันทึก/สร้างใบสั่งผลิต</span>
+                         <i className="fas fa-arrow-right absolute right-4 text-blue-200"></i>
+                       </>
+                     )
+                   }
+                </button>
+             </div>
+          </div>
+        </div>
 
       {/* RIGHT — BOM & Action */}
       <div style={{ width: 320, minWidth: 300, maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -727,96 +724,95 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
                     <div style={{ fontSize: 20, fontWeight: 800, color: '#2563EB', lineHeight: 1 }}>{totalRebar.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF' }}>เมตร</span></div>
                   </div>
                </div>
-
-               {/* WIP structure */}
-               <div>
-                  <div className="flex justify-between font-bold text-sm mb-2 opacity-90">
-                     <span className="text-gray-800">โครงเหล็กพร้อมผลิต (WIP)</span>
-                     {wipList.length === 0 ? (
-                       <span className="text-[10px] text-gray-400">ไม่มีรายการ WIP</span>
-                     ) : isWipShortage ? (
-                       <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">ของไม่พอ</span>
-                     ) : (
-                       <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">สต๊อกพอดี</span>
-                     )}
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-1 mb-3">
-                     <div className={wipList.length === 0 ? "bg-gray-300 h-1 rounded-full" : isWipShortage ? "bg-red-500 h-1 rounded-full" : "bg-emerald-500 h-1 rounded-full"} style={{ width: '100%' }}></div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 text-[11px] text-gray-500">
-                     {wipList.length === 0 && <span className="text-gray-400 italic">เลือกสินค้าเพื่อคำนวณโครงเหล็ก</span>}
-                     {wipList.map(wip => (
-                       <div key={wip.wip_code} className="flex justify-between border-b border-dashed border-gray-200 pb-1">
-                          <span className={wip.onHand < wip.needed ? 'text-red-500 font-semibold' : ''}>{wip.name}</span>
-                          <span className={wip.onHand < wip.needed ? 'text-red-500 font-semibold' : ''}>ต้องการ {wip.needed.toLocaleString()} / มี {wip.onHand.toLocaleString()} ชุด</span>
-                       </div>
-                     ))}
-                  </div>
-               </div>
-
-
             </div>
          </div>
 
-         {/* NEXT STEPS (DARK THEME) */}
-         <div style={{ background: '#1C1F26', borderRadius: 12, padding: 24, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', color: '#fff', position: 'relative', overflow: 'hidden', flex: 1 }}>
-            
-            {/* Watermark Background */}
-            <div style={{ position: 'absolute', bottom: -10, right: -10, fontSize: 130, fontWeight: 900, color: 'rgba(255,255,255,0.03)', pointerEvents: 'none', lineHeight: 1, userSelect: 'none' }}>
-              PCC
-            </div>
+          {/* Date Picker + New Plan */}
+          <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>วันที่แผน</div>
+            <input
+              type="date"
+              value={planDate}
+              onChange={e => {
+                setPlanDate(e.target.value)
+                supabaseRouter.push(`/planner?date=${e.target.value}`)
+              }}
+              style={{ width: '100%', height: 36, border: '1px solid #E5E7EB', borderRadius: 8, padding: '0 10px', fontSize: 13, outline: 'none', color: '#374151', marginBottom: 10, boxSizing: 'border-box' }}
+            />
+            <button
+              onClick={handleNewPlan}
+              style={{ width: '100%', height: 38, background: '#2563EB', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            >
+              <i className="fas fa-plus" />
+              สร้างแผนใหม่
+            </button>
+          </div>
 
-            <h3 className="font-bold text-lg mb-3 relative z-10">ขั้นตอนต่อไป</h3>
-            <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-               เมื่อตรวจสอบแผนและวัตถุดิบเรียบร้อยแล้ว กดยืนยันเพื่อนำแผนขึ้นระบบ และออกใบสั่งผลิดให้หน้างาน
-            </p>
-            <div className="flex flex-col gap-3 mb-8">
-               <div className="flex items-start gap-3">
-                  <i className="fas fa-check text-emerald-400 mt-1"></i>
-                  <span className="text-[13px] text-gray-300">ระบบจะจองสต๊อก (Reserve) ทันที</span>
-               </div>
-               <div className="flex items-start gap-3">
-                  <i className="fas fa-check text-emerald-400 mt-1"></i>
-                  <span className="text-[13px] text-gray-300">สร้าง Job Order {planItems.length} รายการ</span>
-               </div>
-               <div className="flex items-start gap-3">
-                  <i className="fas fa-check text-emerald-400 mt-1"></i>
-                  <span className="text-[13px] text-gray-300">สร้าง QR Code สำหรับสแกนหน้าโรงผลิต</span>
-               </div>
-            </div>
+          {/* Recent Plans List */}
+          <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', maxHeight: 400, overflowY: 'auto' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>แผนล่าสุด (30 วัน)</div>
+            {plansByDate.length === 0 && <div style={{ fontSize: 12, color: '#D1D5DB', textAlign: 'center', padding: '16px 0' }}>ยังไม่มีแผน</div>}
+            {(showAllPlans ? plansByDate : plansByDate.slice(0, 1)).map(([date, plans]) => (
+              <div key={date} style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', marginBottom: 6, textTransform: 'uppercase' }}>{formatThDate(date)}</div>
+                {plans.map((p: any) => {
+                  const po = Array.isArray(p.production_orders) ? p.production_orders[0] : null
+                  const isActive = editingPlan?.id === p.id
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => supabaseRouter.push(`/planner?plan_id=${p.id}`)}
+                      style={{
+                        width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, marginBottom: 4,
+                        background: isActive ? '#EFF6FF' : '#F9FAFB',
+                        border: `1.5px solid ${isActive ? '#2563EB' : '#E5E7EB'}`,
+                        cursor: 'pointer', transition: 'all 0.15s',
+                      }}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 700, color: isActive ? '#2563EB' : '#374151' }}>
+                        {po?.order_number ?? `แผนร่าง`}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>
+                        {p.total_qty?.toLocaleString() ?? 0} ชิ้น &middot;{' '}
+                        <span style={{
+                          color: p.status === 'confirmed' ? '#059669' : '#D97706',
+                          fontWeight: 600,
+                        }}>
+                          {p.status === 'confirmed' ? 'ยืนยันแล้ว' : 'ร่าง'}
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
 
-            <div className="flex flex-col gap-3 mt-auto">
-               <button
-                 onClick={handleSaveDraft}
-                 disabled={saving || planItems.length === 0}
-                 className="w-full bg-transparent hover:bg-white/8 border border-gray-600 text-gray-200 font-semibold rounded-xl text-[14px] disabled:opacity-40 transition-all flex justify-center items-center gap-2.5"
-                 style={{ minHeight: 48, padding: '12px 20px' }}
-               >
-                  {saving
-                    ? <i className="fas fa-spinner fa-spin text-sm"></i>
-                    : <i className="fas fa-save text-sm"></i>
-                  }
-                  <span>บันทึกแบบร่าง</span>
-               </button>
-               <button
-                 onClick={handleConfirmPlan}
-                 disabled={confirming || planItems.length === 0}
-                 className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-[15px] disabled:opacity-40 transition-all flex justify-center items-center gap-2.5 relative"
-                 style={{ minHeight: 52, padding: '14px 20px' }}
-               >
-                  {confirming
-                    ? <i className="fas fa-spinner fa-spin text-base"></i>
-                    : (
-                      <>
-                        <i className="fas fa-check-circle text-base"></i>
-                        <span>บันทึก/สร้างใบสั่งผลิต</span>
-                        <i className="fas fa-arrow-right absolute right-5 text-blue-200"></i>
-                      </>
-                    )
-                  }
-               </button>
-            </div>
-         </div>
+            {plansByDate.length > 1 && (
+              <button
+                onClick={() => setShowAllPlans(!showAllPlans)}
+                style={{
+                  width: '100%',
+                  background: 'none',
+                  border: 'none',
+                  color: '#2563EB',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  padding: '8px 0 0 0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  borderTop: '1px solid #F3F4F6',
+                  marginTop: 6
+                }}
+              >
+                <span>{showAllPlans ? 'แสดงน้อยลง' : `แสดงอีก ${plansByDate.length - 1} วัน`}</span>
+                <i className={`fas ${showAllPlans ? 'fa-chevron-up' : 'fa-chevron-down'}`} style={{ fontSize: 10 }}></i>
+              </button>
+            )}
+          </div>
       </div>
       </div>
     </div>

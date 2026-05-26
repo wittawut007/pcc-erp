@@ -300,7 +300,7 @@ export default function DataCatalogClient() {
         </main>
 
         <footer className="mt-8 pt-8 border-t border-erp-border text-center text-erp-text-muted text-[11px] md:text-xs space-y-2 pb-8">
-          <p>© 2026 PCC Postention ERP - System Documentation Engine</p>
+          <p>© 2026 PCC POST-TENSION ERP - System Documentation Engine</p>
           <div className="flex items-center justify-center gap-4">
             <span className="flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-erp-green" /> Ver: DB-MOD-V2.0</span>
             <span className="flex items-center gap-1.5"><Clock className="w-4 h-4 text-erp-amber" /> อัปเดตล่าสุด: 21 เมษายน 2026</span>

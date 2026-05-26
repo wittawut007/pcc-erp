@@ -20,7 +20,7 @@ async function getSupabaseData() {
     sixDaysAgo.setDate(now.getDate() - 5)
     const startDateStr = sixDaysAgo.toISOString().split('T')[0]
     
-    const [{ data: todayPlans }, { data: jobOrders }, { data: recentLogs }, { data: lowStock }, { data: fgStock }, { data: wipStock }, { data: qcData }, { data: demoldingRecs }, { data: concreteOrders }, { data: concreteRounds }] = await Promise.all([
+    const [{ data: todayPlans }, { data: jobOrders }, { data: recentLogs }, { data: lowStock }, { data: fgStock }, { data: qcData }, { data: demoldingRecs }, { data: concreteOrders }, { data: concreteRounds }] = await Promise.all([
       supabase.from('production_plans').select('*,items:production_plan_items(*,product:products(*))').eq('plan_date', today),
       supabase.from('job_orders').select(`
         *,
@@ -36,16 +36,15 @@ async function getSupabaseData() {
       supabase.from('activity_logs').select('*,profile:profiles(full_name,role)').order('created_at', { ascending: false }).limit(10),
       supabase.from('raw_materials').select('*').eq('is_active', true),
       supabase.from('fg_inventory').select('qty'),
-      supabase.from('wip_inventory').select('qty'),
       supabase.from('qc_inspections').select('demold_qty_defect, defect_reason, created_at').gte('created_at', startDateStr),
       supabase.from('demolding_records').select('job_order_id, qty_good, qty_defect, defect_reason, created_at, worker:profiles!demolding_records_worker_id_fkey(full_name)').gte('created_at', startDateStr),
       supabase.from('concrete_orders').select('id, job_order_id, bed, qty_requested, total_qty_requested, status, requested_at, created_at, round_count').gte('created_at', today),
       supabase.from('concrete_rounds').select('concrete_order_id, round_number, qty_per_round, status, supplied_at').gte('created_at', today)
     ])
-    return { todayPlans, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today }
+    return { todayPlans, jobOrders, recentLogs, lowStock, fgStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today }
   } catch (err) {
     console.error('Dashboard Fetch Error:', err)
-    return { todayPlans: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, wipStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, today: '' }
+    return { todayPlans: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, today: '' }
   }
 }
 
@@ -62,7 +61,7 @@ function getThaiCategoryName(category: string): string {
 }
 
 export default async function DashboardPage() {
-  const { todayPlans, jobOrders, recentLogs, lowStock, fgStock, wipStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today } = await getSupabaseData()
+  const { todayPlans, jobOrders, recentLogs, lowStock, fgStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today } = await getSupabaseData()
 
   const todaysJobOrders = (jobOrders as any[])?.filter((j: any) => j.plan_item?.plan?.plan_date === today) || []
 
@@ -175,7 +174,6 @@ export default async function DashboardPage() {
 
   const mockLogs = [
     { time: '11:25', name: 'สมชาย ใจดี', dept: 'โรงผลิต 1', action: 'เทคอนกรีตเสร็จสิ้น', detail: 'เสาเข็ม .15x.15 2.00 ม.', status: 'สำเร็จ', green: true },
-    { time: '11:10', name: 'วิชัย รักดี', dept: 'คลังเตรียมเหล็ก', action: 'บันทึกยอด WIP', detail: 'โครงเสาเข็ม (+50 ชุด)', status: 'สำเร็จ', green: true },
     { time: '10:45', name: 'สมหญิง คลังเป๊ะ', dept: 'คลังวัตถุดิบ', action: 'เบิกวัตถุดิบ', detail: 'เหล็ก DB12 (40 เส้น)', status: 'สำเร็จ', green: true },
     { time: '09:30', name: 'มานะ ถอดเก่ง', dept: 'โรงผลิต 2', action: 'ถอดแบบ / จบงาน', detail: 'แผ่นพื้น 2 แผ่น — บิ่น', status: 'ของเสีย', green: false },
     { time: '08:15', name: 'สมชาย ใจดี', dept: 'โรงผลิต 1', action: 'เริ่มงาน (สแกน QR)', detail: 'Job: #JO-2610-042', status: 'เริ่มระบบ', green: true },
@@ -263,7 +261,6 @@ export default async function DashboardPage() {
 
   // Inventory Real Data
   const totalFg = (fgStock as any[])?.reduce((s, i) => s + (i.qty || 0), 0) ?? 0
-  const totalWip = (wipStock as any[])?.reduce((s, i) => s + (i.qty || 0), 0) ?? 0
 
   // Defect Analysis Real Data
   const defectStats = { crack: 0, chip: 0, honeycomb: 0, other: 0, total: 0 }
@@ -641,7 +638,6 @@ export default async function DashboardPage() {
               </div>
               {[
                 { icon: 'fa-layer-group', bg: '#FFF7ED', color: '#EA580C', value: allMaterials.length.toString(), unit: 'รายการ', label: `วัตถุดิบในคลัง (ปกติ ${allMaterials.length - lowStockItems.length} / ทั้งหมด ${allMaterials.length})`, alert: false },
-                { icon: 'fa-th-large', bg: 'var(--indigo-light)', color: 'var(--indigo)', value: totalWip.toLocaleString(), unit: 'ชุด', label: 'โครงเหล็กพร้อมผลิต (WIP)', alert: false },
                 { icon: 'fa-cubes', bg: 'var(--green-light)', color: 'var(--green)', value: totalFg.toLocaleString(), unit: 'ชิ้น', label: 'สินค้าพร้อมขาย (FG)', alert: false },
                 { icon: 'fa-exclamation-triangle', bg: 'white', color: 'var(--red)', value: lowStockItems.length.toString(), unit: 'รายการ', label: 'สต็อกใกล้หมด', alert: lowStockItems.length > 0 },
               ].map((item, i) => (
@@ -649,7 +645,7 @@ export default async function DashboardPage() {
                   display: 'flex', alignItems: 'center', gap: 10,
                   background: item.alert ? '#FEF2F2' : 'var(--bg)',
                   border: item.alert ? '1px solid #FEE2E2' : 'none',
-                  borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: i < 3 ? 8 : 0,
+                  borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: i < 2 ? 8 : 0,
                 }}>
                   <div style={{ width: 32, height: 32, borderRadius: 7, background: item.bg, color: item.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>
                     <i className={`fas ${item.icon}`}></i>

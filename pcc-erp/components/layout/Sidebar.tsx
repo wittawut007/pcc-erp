@@ -55,7 +55,6 @@ const allNavItems: NavSection[] = [
     label: 'INVENTORY',
     links: [
       { href: '/inventory/raw', icon: 'fa-layer-group', label: 'คลังวัตถุดิบ',    roles: ['admin', 'material', 'warehouse'] },
-      { href: '/inventory/wip', icon: 'fa-th-large',    label: 'โครงเหล็ก (WIP)', roles: ['admin', 'warehouse'] },
       { href: '/inventory/fg',  icon: 'fa-cubes',       label: 'สินค้าพร้อมขาย',  roles: ['admin', 'warehouse'] },
     ],
   },
@@ -128,7 +127,7 @@ export default function Sidebar({ role }: SidebarProps) {
             flexShrink: 0,
             overflow: 'hidden',
           }}
-          title={isCollapsed ? 'PCC POSTENTION' : undefined}
+          title={isCollapsed ? 'PCC POST-TENSION' : undefined}
         >
           <img 
             src="/logo.png" 
@@ -152,7 +151,7 @@ export default function Sidebar({ role }: SidebarProps) {
               lineHeight: 1.2,
             }}
           >
-            PCC <span style={{ color: '#2563EB' }}>POSTENTION</span>
+            PCC <span style={{ color: '#2563EB' }}>POST-TENSION</span>
           </span>
         )}
       </div>

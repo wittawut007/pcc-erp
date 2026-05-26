@@ -183,7 +183,7 @@ export default function MaterialDocumentPrintClient({
               <div>
                 <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1.1 }}>
                   <span style={{ color: '#2563EB' }}>PCC </span>
-                  <span style={{ color: '#111827' }}>POSTENTION</span>
+                  <span style={{ color: '#111827' }}>POST-TENSION</span>
                 </div>
                 <div style={{ fontSize: 9, fontWeight: 600, color: '#6B7280', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 2 }}>
                   ERP Production System
