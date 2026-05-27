@@ -43,7 +43,10 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
-  const [cacheBuster, setCacheBuster] = useState(() => Date.now())
+  const [cacheBuster, setCacheBuster] = useState('0')
+  useEffect(() => {
+    setCacheBuster(Date.now().toString())
+  }, [])
 
   const rolesList = ['ทั้งหมด', 'Admin', 'Planner', 'Warehouse', 'QC', 'Worker']
 
@@ -175,7 +178,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
         toast.success('สร้างผู้ใช้งานใหม่สำเร็จ!')
       }
       setIsModalOpen(false)
-      setCacheBuster(Date.now())
+      setCacheBuster(Date.now().toString())
       router.refresh()
     } catch (err: any) {
       toast.error(err.message || 'เกิดข้อผิดพลาด')

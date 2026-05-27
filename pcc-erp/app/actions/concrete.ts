@@ -58,6 +58,8 @@ export async function requestConcrete(
     .update({
       status: 'concrete_ordered',
       concrete_requested_at: now,
+      cast_at: null,
+      worker_id: user.id,
     })
     .eq('id', jobOrderId)
 
@@ -149,6 +151,47 @@ export async function receiveConcreteRound(roundId: string) {
     .eq('id', roundId)
 
   if (updateErr) throw new Error(updateErr.message)
+
+  // Check if all rounds for this concrete order have been received
+  const { data: allRounds } = await supabase
+    .from('concrete_rounds')
+    .select('status')
+    .eq('concrete_order_id', round.concrete_order_id)
+
+  const allReceived = allRounds?.every(r => r.status === 'received') ?? false
+
+  if (allReceived) {
+    const nowStr = new Date().toISOString()
+    
+    // Update concrete_orders status to 'received'
+    await supabase
+      .from('concrete_orders')
+      .update({ status: 'received' })
+      .eq('id', round.concrete_order_id)
+
+    // Fetch the order details to find associated jobs (by job_order_id or bed)
+    const { data: order } = await supabase
+      .from('concrete_orders')
+      .select('bed, job_order_id')
+      .eq('id', round.concrete_order_id)
+      .single()
+
+    if (order) {
+      if (order.job_order_id) {
+        await supabase
+          .from('job_orders')
+          .update({ cast_at: nowStr, worker_id: user.id })
+          .eq('id', order.job_order_id)
+      }
+      if (order.bed) {
+        await supabase
+          .from('job_orders')
+          .update({ cast_at: nowStr, worker_id: user.id })
+          .eq('bed', order.bed)
+          .eq('status', 'concrete_ordered')
+      }
+    }
+  }
 
   revalidatePath('/worker')
   revalidatePath('/concrete')
@@ -324,4 +367,55 @@ export async function resetJobOrder(jobId: string, bed: string) {
   revalidatePath('/job-orders')
   revalidatePath('/concrete')
   revalidatePath('/worker')
+}
+
+/**
+ * ปรับเปลี่ยนปริมาณคอนกรีตของรอบสุดท้าย (รอบ pending) 
+ * และทำการคำนวณยอดรวม total_qty_requested ในคำสั่งซื้อใหม่
+ */
+export async function adjustLastRoundQty(lastRoundId: string, newQty: number) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+
+  if (newQty <= 0) throw new Error('ปริมาณคอนกรีตต้องมากกว่า 0 คิว')
+
+  // 1. ตรวจสอบข้อมูลรอบคอนกรีตที่จะปรับปรุง
+  const { data: round, error: fetchErr } = await supabase
+    .from('concrete_rounds')
+    .select('id, status, concrete_order_id, round_number')
+    .eq('id', lastRoundId)
+    .single()
+
+  if (fetchErr || !round) throw new Error('ไม่พบข้อมูลรอบคอนกรีต')
+  if (round.status !== 'pending') throw new Error('ไม่สามารถปรับยอดรอบนี้ได้เนื่องจากอยู่ระหว่างจัดส่งหรือส่งแล้ว')
+
+  // 2. อัปเดตปริมาณคอนกรีตในรอบสุดท้าย (concrete_rounds)
+  const { error: updateRoundErr } = await supabase
+    .from('concrete_rounds')
+    .update({ qty_per_round: Number(newQty.toFixed(2)) })
+    .eq('id', lastRoundId)
+
+  if (updateRoundErr) throw new Error('ไม่สามารถอัปเดตยอดรอบปูนได้: ' + updateRoundErr.message)
+
+  // 3. ดึงรายการรอบปูนทั้งหมดของ order นี้มาบวกยอดรวมใหม่
+  const { data: allRounds, error: roundsErr } = await supabase
+    .from('concrete_rounds')
+    .select('qty_per_round')
+    .eq('concrete_order_id', round.concrete_order_id)
+
+  if (roundsErr || !allRounds) throw new Error('ไม่สามารถคำนวณยอดรวมรอบปูนใหม่ได้')
+
+  const newTotalQty = allRounds.reduce((sum, r) => sum + r.qty_per_round, 0)
+
+  // 4. อัปเดตยอดรวมในตาราง concrete_orders
+  const { error: updateOrderErr } = await supabase
+    .from('concrete_orders')
+    .update({ total_qty_requested: Number(newTotalQty.toFixed(2)) })
+    .eq('id', round.concrete_order_id)
+
+  if (updateOrderErr) throw new Error('ไม่สามารถอัปเดตยอดรวมคำสั่งซื้อได้: ' + updateOrderErr.message)
+
+  revalidatePath('/worker')
+  revalidatePath('/concrete')
 }

@@ -321,6 +321,38 @@ export type Database = {
           },
         ]
       }
+      job_order_defects: {
+        Row: {
+          created_at: string
+          defect_reason: Database["public"]["Enums"]["defect_reason"]
+          id: string
+          job_order_id: string
+          qty: number
+        }
+        Insert: {
+          created_at?: string
+          defect_reason: Database["public"]["Enums"]["defect_reason"]
+          id?: string
+          job_order_id: string
+          qty?: number
+        }
+        Update: {
+          created_at?: string
+          defect_reason?: Database["public"]["Enums"]["defect_reason"]
+          id?: string
+          job_order_id?: string
+          qty?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_order_defects_job_order_id_fkey"
+            columns: ["job_order_id"]
+            isOneToOne: false
+            referencedRelation: "job_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_orders: {
         Row: {
           bed: Database["public"]["Enums"]["bed_name"]

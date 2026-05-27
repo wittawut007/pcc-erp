@@ -12,7 +12,7 @@ export default async function DemoldingPage() {
     .select(`
       *,
       plan_item:production_plan_items(
-        product:products(id, code, name, category, unit),
+        product:products(id, code, name, category, unit, concrete_per_unit),
         plan:production_plans(id, plan_date)
       ),
       worker:profiles(full_name),
@@ -32,7 +32,7 @@ export default async function DemoldingPage() {
       job_order:job_orders(
         bed,
         plan_item:production_plan_items(
-          product:products(name, code, unit),
+          product:products(name, code, unit, concrete_per_unit),
           plan:production_plans(id, plan_date)
         ),
         production_order:production_orders(order_number)

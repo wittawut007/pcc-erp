@@ -60,9 +60,19 @@ export async function startCuring(jobOrderId: string, photoUrl: string) {
   if (!user) throw new Error('Unauthorized')
 
   const now = new Date().toISOString()
+
+  // Fetch the current job to check if cast_at is already set
+  const { data: job } = await supabase
+    .from('job_orders')
+    .select('cast_at')
+    .eq('id', jobOrderId)
+    .single()
+
+  const curingStartAt = job?.cast_at || now
+
   const { error } = await supabase.from('job_orders').update({
     status: 'curing',
-    cast_at: now,
+    cast_at: curingStartAt,
     photo_cast_url: photoUrl
   }).eq('id', jobOrderId)
 
@@ -90,13 +100,15 @@ export async function recordDemoldInspection(
   demoldQtyDefect: number,
   defectReason?: string,
   defectDetail?: string,
-  photoUrl?: string
+  photoUrl?: string,
+  defectBreakdown?: { reason: string; qty: number }[]
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
 
   const now = new Date().toISOString()
+  const primaryReason = defectReason || (defectBreakdown && defectBreakdown[0]?.reason) || null
 
   // Upsert qc_inspection
   const { data: existing } = await supabase
@@ -112,7 +124,7 @@ export async function recordDemoldInspection(
         qc_id: user.id,
         demold_qty_good: demoldQtyGood,
         demold_qty_defect: demoldQtyDefect,
-        defect_reason: defectReason ?? null,
+        defect_reason: primaryReason,
         defect_detail: defectDetail ?? null,
         photo_url: photoUrl ?? null,
         demold_inspected_at: now,
@@ -127,7 +139,7 @@ export async function recordDemoldInspection(
         qc_id: user.id,
         demold_qty_good: demoldQtyGood,
         demold_qty_defect: demoldQtyDefect,
-        defect_reason: defectReason ?? null,
+        defect_reason: primaryReason,
         defect_detail: defectDetail ?? null,
         photo_url: photoUrl ?? null,
         demold_inspected_at: now,
@@ -155,11 +167,27 @@ export async function recordDemoldInspection(
     worker_id: user.id, // Using QC user ID here
     qty_good: demoldQtyGood,
     qty_defect: demoldQtyDefect,
-    defect_reason: defectReason ?? null,
+    defect_reason: primaryReason,
     photo_url: photoUrl ?? null
   }).select().single()
 
   if (recError) throw new Error(recError.message)
+
+  // 2.5 Save detailed defect breakdown list to job_order_defects
+  await supabase.from('job_order_defects').delete().eq('job_order_id', jobOrderId)
+  if (defectBreakdown && defectBreakdown.length > 0) {
+    const inserts = defectBreakdown
+      .filter(item => item.qty > 0 && item.reason)
+      .map(item => ({
+        job_order_id: jobOrderId,
+        defect_reason: item.reason as any,
+        qty: item.qty
+      }))
+    if (inserts.length > 0) {
+      const { error: err } = await supabase.from('job_order_defects').insert(inserts)
+      if (err) throw new Error(err.message)
+    }
+  }
 
   // 3. Update fg_inventory — plan_item is an array from Supabase join
   const planItem = Array.isArray(job?.plan_item) ? job.plan_item[0] : job?.plan_item
@@ -202,7 +230,8 @@ export async function getQCJobOrders() {
         product:products(id, name, code, category, unit, size)
       ),
       worker:profiles!job_orders_worker_id_fkey(full_name),
-      qc_inspection:qc_inspections(*)
+      qc_inspection:qc_inspections(*),
+      defect_breakdowns:job_order_defects(*)
     `)
     .in('status', ['concrete_ordered', 'casting', 'curing', 'ready_demold', 'demolded'])
     .order('created_at', { ascending: true })

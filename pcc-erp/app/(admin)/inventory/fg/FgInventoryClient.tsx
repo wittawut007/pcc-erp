@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { saveErpReference } from '@/app/actions/fg'
+import { saveErpReference, createManualFgOrder } from '@/app/actions/fg'
 
 interface ProductionOrder {
   id: string
@@ -14,12 +14,174 @@ interface ProductionOrder {
   job_orders: any[]
 }
 
-export default function FgInventoryClient({ productionOrders: initialOrders }: { productionOrders: ProductionOrder[] }) {
+interface Product {
+  id: string
+  code: string
+  name: string
+  category: string
+  size: string
+  unit: string
+}
+
+const CATEGORIES = [
+  'A13 แผ่นพื้นตัน',
+  'A30 ผนังรั้วสำเร็จรูป',
+  'A35 รั้วสำเร็จรูป',
+  'A36 เสา คาน บันได',
+  'A41 เสาเข็ม',
+  'A42 กำแพงกันดิน',
+]
+
+export default function FgInventoryClient({ 
+  productionOrders: initialOrders,
+  products
+}: { 
+  productionOrders: ProductionOrder[]
+  products: Product[]
+}) {
   const [orders, setOrders] = useState<ProductionOrder[]>(initialOrders)
   const [search, setSearch] = useState('')
   const [manageModal, setManageModal] = useState<ProductionOrder | null>(null)
   const [erpRef, setErpRef] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // New state variables for manual addition modal
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [selCat, setSelCat] = useState('')
+  const [selName, setSelName] = useState('')
+  const [selSize, setSelSize] = useState('')
+  const [selCode, setSelCode] = useState('')
+  const [qty, setQty] = useState(1)
+  const [selectedBed, setSelectedBed] = useState('1')
+  const [notes, setNotes] = useState('')
+  const [addingOrder, setAddingOrder] = useState(false)
+  const [addedItems, setAddedItems] = useState<{
+    productId: string
+    productCode: string
+    productName: string
+    productSize: string
+    bed: string
+    qty: number
+  }[]>([])
+
+  // Cascades
+  const cats = CATEGORIES
+  
+  const names = useMemo(() => {
+    const prefix = selCat ? selCat.split(' ')[0] : '';
+    return Array.from(new Set(products.filter(p => !prefix || p.category.startsWith(prefix)).map(p => p.name)))
+  }, [products, selCat])
+  
+  const sizes = useMemo(() => {
+    const prefix = selCat ? selCat.split(' ')[0] : '';
+    const sizeList = Array.from(new Set(products.filter(p => (!prefix || p.category.startsWith(prefix)) && (!selName || p.name === selName)).map(p => p.size || '-')))
+    return sizeList.sort()
+  }, [products, selCat, selName])
+  
+  const codes = useMemo(() => {
+    const prefix = selCat ? selCat.split(' ')[0] : '';
+    return products.filter(p => 
+      (!prefix || p.category.startsWith(prefix)) && 
+      (!selName || p.name === selName) && 
+      (!selSize || (p.size || '-') === selSize)
+    )
+  }, [products, selCat, selName, selSize])
+
+  // Auto-select unique options to save time
+  useEffect(() => {
+    if (selCat) {
+      if (!selName && names.length === 1) {
+        setSelName(names[0]);
+      }
+      if (selName && !selSize && sizes.length === 1) {
+        setSelSize(sizes[0]);
+      }
+      if (selSize && !selCode && codes.length === 1) {
+        setSelCode(codes[0].code);
+      }
+    }
+  }, [selCat, selName, selSize, names, sizes, codes, selCode])
+
+  const selectedProduct = products.find(p => p.code === selCode)
+
+  const actOnCat = (val: string) => { setSelCat(val); setSelName(''); setSelSize(''); setSelCode(''); }
+  const actOnName = (val: string) => { setSelName(val); setSelSize(''); setSelCode(''); }
+  const actOnSize = (val: string) => { setSelSize(val); setSelCode(''); }
+
+  const handleAddItem = () => {
+    if (!selectedProduct) {
+      toast.error('กรุณาเลือกสินค้าก่อนเพิ่ม')
+      return
+    }
+    if (qty <= 0) {
+      toast.error('กรุณาระบุจำนวนมากกว่า 0')
+      return
+    }
+    // Check if the same product on the same bed already exists in the list, if so combine quantities
+    const existingIdx = addedItems.findIndex(
+      item => item.productId === selectedProduct.id && item.bed === selectedBed
+    )
+    if (existingIdx > -1) {
+      setAddedItems(prev => prev.map((item, idx) => idx === existingIdx ? { ...item, qty: item.qty + qty } : item))
+    } else {
+      setAddedItems(prev => [
+        ...prev,
+        {
+          productId: selectedProduct.id,
+          productCode: selectedProduct.code,
+          productName: selectedProduct.name,
+          productSize: selectedProduct.size || '-',
+          bed: selectedBed,
+          qty: qty
+        }
+      ])
+    }
+    toast.success(`เพิ่ม ${selectedProduct.name} ลงในรายการสำเร็จ`)
+    setQty(1)
+  }
+
+  const handleRemoveItem = (index: number) => {
+    setAddedItems(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const handleSaveManualFg = async () => {
+    if (addedItems.length === 0) {
+      toast.error('กรุณาเพิ่มรายการสินค้าอย่างน้อย 1 รายการ')
+      return
+    }
+
+    setAddingOrder(true)
+    try {
+      const payloadItems = addedItems.map(item => ({
+        productId: item.productId,
+        qty: item.qty,
+        bed: item.bed
+      }))
+
+      const newOrder = await createManualFgOrder(payloadItems, notes)
+      if (!newOrder) {
+        throw new Error('ไม่สามารถดึงข้อมูลใบสั่งผลิตที่สร้างขึ้นใหม่ได้')
+      }
+      toast.success(`เพิ่มสินค้าสำเร็จ! เลขที่ใบสั่งสินค้า: ${newOrder.order_number}`)
+      
+      // Update local state
+      setOrders(prev => [newOrder as ProductionOrder, ...prev])
+      
+      // Reset form & close modal
+      setSelCat('')
+      setSelName('')
+      setSelSize('')
+      setSelCode('')
+      setQty(1)
+      setNotes('')
+      setAddedItems([])
+      setShowAddModal(false)
+    } catch (e: any) {
+      toast.error('เกิดข้อผิดพลาด: ' + e.message)
+    } finally {
+      setAddingOrder(false)
+    }
+  }
 
   // Filter orders (only showing ones that have at least some jobs, perhaps demolded)
   // For now, we show all, but we might filter out empty ones
@@ -92,6 +254,10 @@ export default function FgInventoryClient({ productionOrders: initialOrders }: {
           <input type="text" placeholder="ค้นหาเลขที่ใบสั่งผลิต..." value={search} onChange={e => setSearch(e.target.value)}
             style={{ width: '100%', paddingLeft: 32, paddingRight: 12, paddingTop: 9, paddingBottom: 9, border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, background: 'var(--surface)', outline: 'none' }} />
         </div>
+        <button onClick={() => setShowAddModal(true)}
+          style={{ padding: '9px 16px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <i className="fas fa-plus"></i> ปรับขนาดสินค้าเสีย / เพิ่มสินค้าสำเร็จรูปเอง
+        </button>
       </div>
 
       {/* Table */}
@@ -251,6 +417,267 @@ export default function FgInventoryClient({ productionOrders: initialOrders }: {
               <button onClick={handleSaveErp} disabled={saving} style={{ padding: '10px 24px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
                 {saving ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-save"></i>}
                 {saving ? 'กำลังบันทึก...' : 'ยืนยันบันทึกเข้าระบบ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Manual FG Product Entry Modal */}
+      {showAddModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 0, width: '100%', maxWidth: 650, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            
+            {/* Header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg)' }}>
+              <div>
+                <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: 'var(--text)' }}>
+                  ปรับขนาดสินค้าเสีย / เพิ่มสินค้าสำเร็จรูปเอง
+                </h2>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '4px 0 0' }}>
+                  เพิ่มสินค้าเข้าคลัง FG โดยตรง (ไม่ผ่านขั้นตอนปกติ เช่น การตัดย่อขนาด หรือเปลี่ยนแบบ)
+                </p>
+              </div>
+              <button onClick={() => setShowAddModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)' }}>✕</button>
+            </div>
+
+            {/* Content Body */}
+            <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              
+              {/* Grid 2 Columns for Category and Name */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>หมวดหมู่สินค้า</label>
+                  <select 
+                    value={selCat} 
+                    onChange={e => actOnCat(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, background: 'white', outline: 'none', boxSizing: 'border-box' }}
+                  >
+                    <option value="">-- เลือกหมวดหมู่ --</option>
+                    {cats.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>ชื่อสินค้า</label>
+                  <select 
+                    value={selName} 
+                    onChange={e => actOnName(e.target.value)}
+                    disabled={!selCat}
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, background: 'white', outline: 'none', boxSizing: 'border-box', opacity: !selCat ? 0.6 : 1 }}
+                  >
+                    <option value="">-- เลือกชื่อสินค้า --</option>
+                    {names.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Grid 2 Columns for Size and Code */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>ขนาดสินค้า (Dimension)</label>
+                  <select 
+                    value={selSize} 
+                    onChange={e => actOnSize(e.target.value)}
+                    disabled={!selName}
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, background: 'white', outline: 'none', boxSizing: 'border-box', opacity: !selName ? 0.6 : 1 }}
+                  >
+                    <option value="">-- เลือกขนาด --</option>
+                    {sizes.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>รหัสสินค้า (Item Code)</label>
+                  <select 
+                    value={selCode} 
+                    onChange={e => setSelCode(e.target.value)}
+                    disabled={!selSize}
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, background: 'white', outline: 'none', boxSizing: 'border-box', opacity: !selSize ? 0.6 : 1 }}
+                  >
+                    <option value="">-- เลือกรหัสสินค้า --</option>
+                    {codes.map(c => (
+                      <option key={c.code} value={c.code}>
+                        {c.code} ({c.name})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Product Info Display (If selected) */}
+              {selectedProduct && (
+                <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', padding: '12px 16px', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ fontWeight: 700, color: '#1E40AF', marginBottom: 2 }}>สินค้าที่เลือก: {selectedProduct.name}</div>
+                  <div style={{ color: '#1E3A8A' }}>
+                    รหัส: <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{selectedProduct.code}</span> | ขนาด: {selectedProduct.size || '-'} | หน่วย: {selectedProduct.unit || 'ชิ้น'}
+                  </div>
+                </div>
+              )}
+
+              {/* Grid 2 Columns for Bed and Quantity */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>โรงผลิต</label>
+                  <select 
+                    value={selectedBed} 
+                    onChange={e => setSelectedBed(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, background: 'white', outline: 'none', boxSizing: 'border-box' }}
+                  >
+                    <option value="1">โรงผลิต 1</option>
+                    <option value="2">โรงผลิต 2</option>
+                    <option value="3">โรงผลิต 3</option>
+                    <option value="4">โรงผลิต 4</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>จำนวน (ชิ้น)</label>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      value={qty || ''} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === '') {
+                          setQty(0);
+                        } else {
+                          const parsed = parseInt(val);
+                          if (!isNaN(parsed)) {
+                            setQty(parsed);
+                          }
+                        }
+                      }}
+                      onBlur={() => {
+                        if (qty <= 0) {
+                          setQty(1);
+                        }
+                      }}
+                      style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, background: 'white', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddItem}
+                    disabled={!selectedProduct}
+                    style={{
+                      height: 41,
+                      padding: '0 16px',
+                      background: selectedProduct ? 'var(--green)' : '#E2E8F0',
+                      color: selectedProduct ? 'white' : 'var(--text-muted)',
+                      border: 'none',
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: selectedProduct ? 'pointer' : 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                  >
+                    <i className="fas fa-plus"></i> เพิ่มรายการ
+                  </button>
+                </div>
+              </div>
+
+              {/* Added Items Queue Table */}
+              <div style={{ marginTop: 8 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>
+                  รายการสินค้าที่จะนำเข้าคลัง ({addedItems.length} รายการ)
+                </label>
+                {addedItems.length === 0 ? (
+                  <div style={{ padding: '16px', border: '1px dashed var(--border)', borderRadius: 8, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
+                    ยังไม่มีรายการสินค้า — กรุณาเลือกรายละเอียดสินค้าด้านบนแล้วกด "เพิ่มรายการ"
+                  </div>
+                ) : (
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', maxHeight: 200, overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead style={{ background: 'var(--bg)' }}>
+                        <tr>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>สินค้า</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>โรงผลิต</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>จำนวน</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', width: 50 }}>ลบ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {addedItems.map((item, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '8px 12px' }}>
+                              <div style={{ fontWeight: 600 }}>{item.productName}</div>
+                              <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                                {item.productCode} | {item.productSize}
+                              </div>
+                            </td>
+                            <td style={{ padding: '8px 12px', textAlign: 'center' }}>โรงผลิต {item.bed}</td>
+                            <td style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, color: 'var(--accent)' }}>{item.qty} ชิ้น</td>
+                            <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                              <button 
+                                type="button"
+                                onClick={() => handleRemoveItem(idx)}
+                                style={{ width: 24, height: 24, borderRadius: 6, background: '#FEF2F2', color: '#EF4444', border: '1px solid #FECACA', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                              >
+                                <i className="fas fa-trash-alt" style={{ fontSize: 9 }}></i>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Textarea for Notes */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>หมายเหตุ / สาเหตุการปรับปรุง</label>
+                <textarea 
+                  placeholder="เช่น: ปรับขนาดจากแผ่นพื้นที่ชำรุดของแผน PO-20260512-001 หรือเปลี่ยนสเปก..." 
+                  value={notes} 
+                  onChange={e => setNotes(e.target.value)}
+                  rows={3}
+                  style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, background: 'white', outline: 'none', boxSizing: 'border-box', resize: 'vertical' }}
+                />
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 12, justifyContent: 'flex-end', background: 'var(--bg)' }}>
+              <button 
+                onClick={() => {
+                  // Reset form & close
+                  setSelCat('')
+                  setSelName('')
+                  setSelSize('')
+                  setSelCode('')
+                  setQty(1)
+                  setNotes('')
+                  setAddedItems([])
+                  setShowAddModal(false)
+                }} 
+                style={{ padding: '10px 20px', border: '1px solid var(--border)', borderRadius: 8, background: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                ยกเลิก
+              </button>
+              <button 
+                onClick={handleSaveManualFg} 
+                disabled={addingOrder || addedItems.length === 0} 
+                style={{ 
+                  padding: '10px 24px', 
+                  border: 'none', 
+                  borderRadius: 8, 
+                  background: 'var(--accent)', 
+                  color: 'white', 
+                  fontSize: 13, 
+                  fontWeight: 700, 
+                  cursor: (addedItems.length === 0 || addingOrder) ? 'not-allowed' : 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 8,
+                  opacity: (addedItems.length === 0 || addingOrder) ? 0.6 : 1
+                }}
+              >
+                {addingOrder ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-save"></i>}
+                {addingOrder ? 'กำลังบันทึก...' : 'บันทึกเข้าคลัง'}
               </button>
             </div>
           </div>

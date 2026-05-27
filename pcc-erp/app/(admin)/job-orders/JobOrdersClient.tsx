@@ -570,7 +570,7 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
                           const requesterName = latestCO?.requester?.full_name ?? job.worker?.full_name ?? null
 
                           // วันที่/เวลา: ใช้เวลาสั่งคอนกรีต
-                          const actionTime = latestCO?.requested_at ?? job.cast_at ?? job.started_at
+                          const actionTime = latestCO?.requested_at ?? job.concrete_requested_at ?? job.cast_at ?? job.started_at
 
                           return (
                             <tr
@@ -697,7 +697,7 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
                                   } else {
                                     const qcInspector = Array.isArray(job.qc_inspection) ? job.qc_inspection[0]?.inspector?.full_name : null
                                     employeeName = qcInspector ?? requesterName ?? job.worker?.full_name ?? '—'
-                                    roleText = 'QC'
+                                    roleText = qcInspector ? 'QC' : 'Worker'
                                   }
 
                                   if (employeeName === 'ยังไม่ระบุชื่อ' || employeeName === '—') {
@@ -898,7 +898,7 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
                                     )[0]
                                   : null
                                 const requesterName = latestCO?.requester?.full_name ?? job.worker?.full_name ?? null
-                                const actionTime = latestCO?.requested_at ?? job.cast_at ?? job.started_at
+                                const actionTime = latestCO?.requested_at ?? job.concrete_requested_at ?? job.cast_at ?? job.started_at
 
                                 return (
                                   <tr

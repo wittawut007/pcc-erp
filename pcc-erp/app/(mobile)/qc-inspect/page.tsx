@@ -18,8 +18,8 @@ export default async function QCPage() {
       if (profile?.full_name) qcName = profile.full_name
       if (profile?.avatar_url) avatarUrl = profile.avatar_url
     }
-  } catch {
-    // Supabase not configured
+  } catch (err: any) {
+    console.error('Error in QCPage:', err)
   }
 
   return <QCClient initialData={jobOrders} qcName={qcName} avatarUrl={avatarUrl} />

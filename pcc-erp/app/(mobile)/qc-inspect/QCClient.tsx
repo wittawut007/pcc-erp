@@ -18,13 +18,16 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
   const [activeTab, setActiveTab] = useState<'casting' | 'demolding' | 'history'>('casting')
   const [jobs, setJobs] = useState(initialData)
   const [now, setNow] = useState(new Date())
-  const [cacheBuster] = useState(() => Date.now())
+
 
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
   
   // Forms State
   const [photos, setPhotos] = useState<Record<string, { file: File, preview: string }>>({})
-  const [demoldingData, setDemoldingData] = useState<Record<string, { good: number, defect: number, reason: string }>>({})
+  const [demoldingData, setDemoldingData] = useState<Record<string, {
+    good: number;
+    defects: { reason: 'crack' | 'chip' | 'honeycomb' | 'other' | ''; qty: number }[];
+  }>>({})
   const [saving, setSaving] = useState(false)
 
   // Timer for curing countdown
@@ -89,33 +92,107 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
     }
   }
 
-  const handleDemoldingAdjust = (jobId: string, field: 'good' | 'defect', change: number, target: number) => {
+  const handleDemoldingAdjust = (jobId: string, field: 'good', change: number, target: number) => {
     setDemoldingData(prev => {
-      const current = prev[jobId] || { good: 0, defect: 0, reason: '' }
-      let newGood = current.good
-      let newDefect = current.defect
+      const current = prev[jobId] || { good: 0, defects: [] }
+      const totalDefects = (current.defects || []).reduce((s, d) => s + d.qty, 0)
+      const maxGood = target - totalDefects
 
-      if (change > 0 && current.good + current.defect >= target) {
+      let newGood = current.good
+      if (change > 0 && current.good + totalDefects >= target) {
         return prev;
       }
 
-      if (field === 'good') newGood = Math.max(0, newGood + change)
-      else newDefect = Math.max(0, newDefect + change)
+      newGood = Math.max(0, Math.min(maxGood, newGood + change))
+      return { ...prev, [jobId]: { ...current, good: newGood } }
+    })
+  }
 
-      return { ...prev, [jobId]: { ...current, good: newGood, defect: newDefect } }
+  const handleDemoldingDirectSet = (jobId: string, val: number, target: number) => {
+    setDemoldingData(prev => {
+      const current = prev[jobId] || { good: 0, defects: [] }
+      const totalDefects = (current.defects || []).reduce((s, d) => s + d.qty, 0)
+      const maxGood = target - totalDefects
+      const newGood = Math.max(0, Math.min(maxGood, val))
+      return { ...prev, [jobId]: { ...current, good: newGood } }
+    })
+  }
+
+  const handleAddDefectReason = (jobId: string) => {
+    setDemoldingData(prev => {
+      const current = prev[jobId] || { good: 0, defects: [] }
+      const newDefects = [...(current.defects || [])]
+      const totalDefects = newDefects.reduce((s, d) => s + d.qty, 0)
+      
+      const job = jobs.find(j => j.id === jobId)
+      const target = job?.qty_target || 0
+      
+      if (current.good + totalDefects >= target) {
+        toast.error('จำนวนสินค้าถึงเป้าหมายแล้ว')
+        return prev
+      }
+
+      newDefects.push({ reason: '', qty: 1 })
+      return { ...prev, [jobId]: { ...current, defects: newDefects } }
+    })
+  }
+
+  const handleUpdateDefectReason = (jobId: string, index: number, reason: 'crack' | 'chip' | 'honeycomb' | 'other' | '') => {
+    setDemoldingData(prev => {
+      const current = prev[jobId] || { good: 0, defects: [] }
+      const newDefects = [...(current.defects || [])]
+      if (newDefects[index]) {
+        newDefects[index] = { ...newDefects[index], reason }
+      }
+      return { ...prev, [jobId]: { ...current, defects: newDefects } }
+    })
+  }
+
+  const handleUpdateDefectQty = (jobId: string, index: number, change: number, target: number) => {
+    setDemoldingData(prev => {
+      const current = prev[jobId] || { good: 0, defects: [] }
+      const newDefects = [...(current.defects || [])]
+      const item = newDefects[index]
+      if (!item) return prev
+
+      const totalDefectsBefore = newDefects.reduce((s, d) => s + d.qty, 0)
+      const currentItemQty = item.qty
+      const newQty = Math.max(1, currentItemQty + change)
+      const qtyDiff = newQty - currentItemQty
+
+      if (qtyDiff > 0 && current.good + totalDefectsBefore + qtyDiff > target) {
+        toast.error('จำนวนสินค้าเกินเป้าหมาย')
+        return prev
+      }
+
+      newDefects[index] = { ...item, qty: newQty }
+      return { ...prev, [jobId]: { ...current, defects: newDefects } }
+    })
+  }
+
+  const handleRemoveDefectReason = (jobId: string, index: number) => {
+    setDemoldingData(prev => {
+      const current = prev[jobId] || { good: 0, defects: [] }
+      const newDefects = (current.defects || []).filter((_, i) => i !== index)
+      return { ...prev, [jobId]: { ...current, defects: newDefects } }
     })
   }
 
   const handleDemoldSubmit = async (jobId: string, target: number) => {
-    const data = demoldingData[jobId] || { good: 0, defect: 0, reason: '' }
-    if (data.good + data.defect === 0) {
+    const data = demoldingData[jobId] || { good: 0, defects: [] }
+    const totalDefects = (data.defects || []).reduce((s, d) => s + d.qty, 0)
+    
+    if (data.good + totalDefects === 0) {
       toast.error('กรุณาระบุยอดงานดีหรืองานเสีย')
       return
     }
-    if (data.defect > 0 && !data.reason) {
-      toast.error('กรุณาระบุสาเหตุของเสีย')
+    
+    const hasEmptyReason = (data.defects || []).some(d => !d.reason)
+    if (totalDefects > 0 && hasEmptyReason) {
+      toast.error('กรุณาระบุสาเหตุของเสียให้ครบถ้วน')
       return
     }
+
     const photo = photos[`demold-${jobId}`]
     if (!photo) {
       toast.error('กรุณาถ่ายภาพยืนยันการถอดแบบ')
@@ -125,11 +202,27 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
     setSaving(true)
     try {
       const photoUrl = await uploadPhoto(photo.file, 'demolding')
-      await recordDemoldInspection(jobId, data.good, data.defect, data.reason || undefined, undefined, photoUrl)
+      
+      const breakdown = (data.defects || []).map(d => ({
+        reason: d.reason as string,
+        qty: d.qty
+      }))
+
+      await recordDemoldInspection(
+        jobId, 
+        data.good, 
+        totalDefects, 
+        breakdown[0]?.reason || undefined, 
+        undefined, 
+        photoUrl, 
+        breakdown
+      )
+      
       setExpandedJobId(null)
       setJobs(prev => prev.filter(j => j.id !== jobId))
       setPhotos(p => { const newP = {...p}; delete newP[`demold-${jobId}`]; return newP; })
       setDemoldingData(p => { const newP = {...p}; delete newP[jobId]; return newP; })
+      toast.success('บันทึกผลการตรวจสอบสำเร็จ')
     } catch (e: any) {
       toast.error(e.message)
     } finally {
@@ -226,7 +319,7 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
               flexShrink: 0,
             }}>
                <img
-                src={avatarUrl ? `${avatarUrl}?t=${cacheBuster}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(qcName)}&background=random`}
+                 src={avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(qcName)}&background=2563EB&color=fff`}
                 alt="Profile"
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
@@ -323,7 +416,7 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
                           border: 'none', cursor: photos[`casting-${job.id}`] ? 'pointer' : 'not-allowed',
                           boxShadow: photos[`casting-${job.id}`] ? '0 10px 20px -5px rgba(59,130,246,0.4)' : 'none',
                         }}>
-                        {saving ? <i className="fas fa-spinner fa-spin" style={{ fontSize: '20px' }}></i> : <><i className="fas fa-play" style={{ fontSize: '14px' }}></i> เริ่มบ่ม 20 ชม.</>}
+                        {saving ? <i className="fas fa-spinner fa-spin" style={{ fontSize: '20px' }}></i> : <><i className="fas fa-play" style={{ fontSize: '14px' }}></i> ยืนยันการบ่มคอนกรีต</>}
                       </button>
                     </div>
                   )}
@@ -356,9 +449,10 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
             ) : (
               demoldingJobs.map(job => {
                 const timer = job.cast_at ? getCuringTimeLeft(job.cast_at) : { ready: true, text: 'พร้อมถอดแบบ' };
-                const entry = demoldingData[job.id] || { good: 0, defect: 0, reason: '' };
+                const entry = demoldingData[job.id] || { good: 0, defects: [] };
                 const isExpanded = expandedJobId === job.id;
-                const isMaxedOut = entry.good + entry.defect >= job.qty_target;
+                const totalDefect = (entry.defects || []).reduce((s, d) => s + d.qty, 0);
+                const isMaxedOut = entry.good + totalDefect >= job.qty_target;
 
                 return (
                   <div key={job.id} 
@@ -407,29 +501,118 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
                           </label>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#ffffff', borderRadius: '12px', padding: '8px', border: '1px solid #A7F3D0' }}>
                             <button type="button" onClick={() => handleDemoldingAdjust(job.id, 'good', -1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#F0FDF4', borderRadius: '10px', color: '#059669', fontSize: '20px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-minus"></i></button>
-                            <input type="number" readOnly value={entry.good} style={{ width: '80px', backgroundColor: 'transparent', textAlign: 'center', fontSize: '36px', fontWeight: 900, color: '#065F46', outline: 'none', border: 'none' }} />
+                            <input 
+                              type="number" 
+                              value={entry.good} 
+                              onChange={(e) => handleDemoldingDirectSet(job.id, parseInt(e.target.value) || 0, job.qty_target)}
+                              style={{ width: '80px', backgroundColor: 'transparent', textAlign: 'center', fontSize: '36px', fontWeight: 900, color: '#065F46', outline: 'none', border: 'none' }} 
+                            />
                             <button type="button" disabled={isMaxedOut} onClick={() => handleDemoldingAdjust(job.id, 'good', 1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#F0FDF4', borderRadius: '10px', color: isMaxedOut ? '#A7F3D0' : '#059669', fontSize: '20px', border: 'none', cursor: isMaxedOut ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
+                          </div>
+                          
+                          {/* Fast Counter Buttons */}
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                            <button 
+                              type="button" 
+                              disabled={isMaxedOut} 
+                              onClick={() => handleDemoldingAdjust(job.id, 'good', 25, job.qty_target)} 
+                              style={{ 
+                                flex: 1, padding: '10px', borderRadius: '10px', background: '#DCFCE7', color: '#15803d', 
+                                border: '1px solid #bbf7d0', fontWeight: 'bold', fontSize: '13px', cursor: isMaxedOut ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.15s' 
+                              }}
+                            >
+                              +25
+                            </button>
+                            <button 
+                              type="button" 
+                              disabled={isMaxedOut} 
+                              onClick={() => handleDemoldingAdjust(job.id, 'good', 50, job.qty_target)} 
+                              style={{ 
+                                flex: 1, padding: '10px', borderRadius: '10px', background: '#DCFCE7', color: '#15803d', 
+                                border: '1px solid #bbf7d0', fontWeight: 'bold', fontSize: '13px', cursor: isMaxedOut ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.15s' 
+                              }}
+                            >
+                              +50
+                            </button>
                           </div>
                         </div>
 
-                        {/* Defect Counter */}
+                        {/* Defect Counter & List */}
                         <div style={{ backgroundColor: '#FEF2F2', borderRadius: '16px', padding: '16px', border: '1px solid rgba(239, 68, 68, 0.2)', marginBottom: '20px' }}>
-                          <label style={{ fontWeight: 900, color: '#DC2626', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
-                            <i className="fas fa-heart-broken" style={{ fontSize: '16px' }}></i> ยอดของเสีย (DEFECT)
-                          </label>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#ffffff', borderRadius: '12px', padding: '8px', border: '1px solid #FECACA', marginBottom: entry.defect > 0 ? '16px' : '0' }}>
-                            <button type="button" onClick={() => handleDemoldingAdjust(job.id, 'defect', -1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#FEF2F2', borderRadius: '10px', color: '#EF4444', fontSize: '20px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-minus"></i></button>
-                            <input type="number" readOnly value={entry.defect} style={{ width: '80px', backgroundColor: 'transparent', textAlign: 'center', fontSize: '36px', fontWeight: 900, color: '#B91C1C', outline: 'none', border: 'none' }} />
-                            <button type="button" disabled={isMaxedOut} onClick={() => handleDemoldingAdjust(job.id, 'defect', 1, job.qty_target)} style={{ width: '48px', height: '48px', backgroundColor: '#FEF2F2', borderRadius: '10px', color: isMaxedOut ? '#FECACA' : '#EF4444', fontSize: '20px', border: 'none', cursor: isMaxedOut ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="fas fa-plus"></i></button>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                            <label style={{ fontWeight: 900, color: '#DC2626', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              <i className="fas fa-heart-broken" style={{ fontSize: '16px' }}></i> ยอดของเสียรวม: {totalDefect} ชิ้น
+                            </label>
+                            <button 
+                              type="button"
+                              disabled={isMaxedOut}
+                              onClick={() => handleAddDefectReason(job.id)}
+                              style={{ 
+                                padding: '6px 12px', borderRadius: '8px', background: '#DC2626', color: '#fff', 
+                                border: 'none', fontWeight: 'bold', fontSize: '11px', cursor: isMaxedOut ? 'not-allowed' : 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '4px'
+                              }}
+                            >
+                              <i className="fas fa-plus"></i> เพิ่มสาเหตุ
+                            </button>
                           </div>
-                          {entry.defect > 0 && (
-                            <div>
-                              <label style={{ display: 'block', fontSize: '11px', fontWeight: 900, color: '#991B1B', marginBottom: '6px' }}>ระบุสาเหตุความเสียหาย <span style={{ color: '#EF4444' }}>*</span></label>
-                              <select value={entry.reason} onChange={e => setDemoldingData(p => ({...p, [job.id]: {...p[job.id], reason: e.target.value}}))} 
-                                style={{ width: '100%', backgroundColor: '#ffffff', border: '1px solid #FECACA', color: '#0F172A', borderRadius: '12px', padding: '12px', outline: 'none', fontSize: '14px', fontWeight: 700 }}>
-                                <option value="" disabled>-- เลือกสาเหตุ --</option>
-                                {DEFECT_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                              </select>
+
+                          {/* Defect List */}
+                          {(entry.defects || []).length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '16px', color: '#9CA3AF', background: '#ffffff', borderRadius: '12px', border: '1px dashed #FECACA', fontSize: '12px' }}>
+                              ยังไม่มีรายการสินค้าเสีย (คลิก "+ เพิ่มสาเหตุ" เพื่อบันทึก)
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                              {(entry.defects || []).map((def, idx) => {
+                                const isRowMaxed = entry.good + (entry.defects || []).reduce((s, d) => s + d.qty, 0) >= job.qty_target;
+                                return (
+                                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#ffffff', borderRadius: '12px', padding: '8px', border: '1px solid #FECACA' }}>
+                                    {/* Reason Selector */}
+                                    <select 
+                                      value={def.reason} 
+                                      onChange={e => handleUpdateDefectReason(job.id, idx, e.target.value as any)}
+                                      style={{ flex: 1, backgroundColor: 'transparent', border: 'none', color: '#0F172A', fontSize: '13px', fontWeight: 700, outline: 'none' }}
+                                    >
+                                      <option value="" disabled>-- เลือกสาเหตุ --</option>
+                                      {DEFECT_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                                    </select>
+
+                                    {/* Qty Adjustment */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#FEF2F2', borderRadius: '8px', padding: '2px 4px' }}>
+                                      <button 
+                                        type="button" 
+                                        onClick={() => handleUpdateDefectQty(job.id, idx, -1, job.qty_target)} 
+                                        style={{ width: '28px', height: '28px', borderRadius: '6px', border: 'none', background: '#fff', color: '#EF4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}
+                                      >
+                                        -
+                                      </button>
+                                      <span style={{ minWidth: '24px', textAlign: 'center', fontWeight: 'bold', fontSize: '14px', color: '#B91C1C' }}>
+                                        {def.qty}
+                                      </span>
+                                      <button 
+                                        type="button" 
+                                        disabled={isRowMaxed}
+                                        onClick={() => handleUpdateDefectQty(job.id, idx, 1, job.qty_target)} 
+                                        style={{ width: '28px', height: '28px', borderRadius: '6px', border: 'none', background: '#fff', color: isRowMaxed ? '#FECACA' : '#EF4444', cursor: isRowMaxed ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+
+                                    {/* Delete Button */}
+                                    <button 
+                                      type="button" 
+                                      onClick={() => handleRemoveDefectReason(job.id, idx)}
+                                      style={{ width: '32px', height: '32px', borderRadius: '8px', border: 'none', backgroundColor: '#FEE2E2', color: '#EF4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                    >
+                                      <i className="fas fa-trash"></i>
+                                    </button>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -457,13 +640,13 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
                           </div>
                         </div>
 
-                        <button disabled={saving || !photos[`demold-${job.id}`] || (entry.good + entry.defect === 0)} onClick={() => handleDemoldSubmit(job.id, job.qty_target)} 
+                        <button disabled={saving || !photos[`demold-${job.id}`] || (entry.good + totalDefect === 0)} onClick={() => handleDemoldSubmit(job.id, job.qty_target)} 
                           style={{ 
                             width: '100%', padding: '16px', borderRadius: '16px', fontWeight: 900, fontSize: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px',
-                            backgroundColor: photos[`demold-${job.id}`] && (entry.good + entry.defect > 0) ? '#10B981' : '#E2E8F0',
-                            color: photos[`demold-${job.id}`] && (entry.good + entry.defect > 0) ? '#ffffff' : '#94A3B8',
-                            border: 'none', cursor: photos[`demold-${job.id}`] && (entry.good + entry.defect > 0) ? 'pointer' : 'not-allowed',
-                            boxShadow: photos[`demold-${job.id}`] && (entry.good + entry.defect > 0) ? '0 10px 20px -5px rgba(16,185,129,0.4)' : 'none',
+                            backgroundColor: photos[`demold-${job.id}`] && (entry.good + totalDefect > 0) ? '#10B981' : '#E2E8F0',
+                            color: photos[`demold-${job.id}`] && (entry.good + totalDefect > 0) ? '#ffffff' : '#94A3B8',
+                            border: 'none', cursor: photos[`demold-${job.id}`] && (entry.good + totalDefect > 0) ? 'pointer' : 'not-allowed',
+                            boxShadow: photos[`demold-${job.id}`] && (entry.good + totalDefect > 0) ? '0 10px 20px -5px rgba(16,185,129,0.4)' : 'none',
                           }}>
                           {saving ? <i className="fas fa-spinner fa-spin" style={{ fontSize: '20px' }}></i> : <><i className="fas fa-clipboard-check" style={{ fontSize: '16px' }}></i> สรุปและยืนยันข้อมูล</>}
                         </button>

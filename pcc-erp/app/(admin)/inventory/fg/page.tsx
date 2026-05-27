@@ -30,10 +30,18 @@ export default async function FgInventoryPage() {
     `)
     .order('created_at', { ascending: false })
 
+  // Fetch active products list for manual adjustments
+  const { data: products } = await supabase
+    .from('products')
+    .select('*')
+    .eq('is_active', true)
+    .order('category')
+    .order('code')
+
   return (
     <>
       <Header title="ยืนยันการผลิต (FG / ERP)" subtitle="ตรวจสอบใบสั่งผลิตและอัปเดตหมายเลขอ้างอิงระบบกลาง" />
-      <FgInventoryClient productionOrders={productionOrders ?? []} />
+      <FgInventoryClient productionOrders={productionOrders ?? []} products={products ?? []} />
     </>
   )
 }

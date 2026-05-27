@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
-import { receiveConcreteRound } from '@/app/actions/concrete'
+import { receiveConcreteRound, adjustLastRoundQty } from '@/app/actions/concrete'
 import { calculateConcreteRounds } from '@/lib/concrete-utils'
 import { compressImage } from '@/lib/utils/compress-image'
 
@@ -84,13 +84,20 @@ export default function WorkerClient({
   const [demoldingData, setDemoldingData] = useState<Record<string, { good: number, defect: number, reason: string }>>({})
   const [saving, setSaving] = useState(false)
   const [userProfile, setUserProfile] = useState<{full_name: string, role: string, avatar_url: string | null} | null>(null)
-  const [cacheBuster] = useState(() => Date.now())
 
   // Concrete Confirm Modal states
   const [showConcreteConfirmModal, setShowConcreteConfirmModal] = useState(false)
   const [orderMoreMode, setOrderMoreMode] = useState<'system' | 'custom'>('system')
   const [customConcreteQty, setCustomConcreteQty] = useState<string>('')
   const [confirmingBedIndex, setConfirmingBedIndex] = useState<number>(0)
+
+  // Final Round Confirmation Modal states
+  const [showFinalRoundConfirmModal, setShowFinalRoundConfirmModal] = useState(false)
+  const [currentRoundToReceive, setCurrentRoundToReceive] = useState<{ id: string, round_number: number, qty_per_round: number } | null>(null)
+  const [lastRoundToAdjust, setLastRoundToAdjust] = useState<{ id: string, round_number: number, qty_per_round: number } | null>(null)
+  const [finalRoundMode, setFinalRoundMode] = useState<'system' | 'custom'>('system')
+  const [finalRoundCustomQty, setFinalRoundCustomQty] = useState<string>('')
+  const [updatingFinalRound, setUpdatingFinalRound] = useState(false)
 
   // Daily Jobs — per-item checklist, photo, expand state
   const [jobItemChecks, setJobItemChecks] = useState<Record<string, { clean: boolean; wip: boolean }>>({ })
@@ -224,9 +231,10 @@ export default function WorkerClient({
 
           await supabase.from('job_orders').update({
             status: 'concrete_ordered',
-            cast_at: new Date().toISOString(),
+            cast_at: null,
             qty_cast: job.qty_target,
             photo_ready_url: photoUrl,
+            worker_id: user.id,
           }).eq('id', job.id)
         }
 
@@ -313,6 +321,32 @@ export default function WorkerClient({
     }
   }
 
+  const handleConfirmFinalRoundReceive = async () => {
+    if (!currentRoundToReceive || !lastRoundToAdjust) return
+    
+    setUpdatingFinalRound(true)
+    try {
+      if (finalRoundMode === 'custom') {
+        const newQty = parseFloat(finalRoundCustomQty)
+        if (isNaN(newQty) || newQty <= 0) {
+          toast.error('กรุณาระบุจำนวนคอนกรีตให้ถูกต้อง')
+          setUpdatingFinalRound(false)
+          return
+        }
+        await adjustLastRoundQty(lastRoundToAdjust.id, newQty)
+      }
+      
+      await receiveConcreteRound(currentRoundToReceive.id)
+      toast.success('ยืนยันรับคอนกรีตสำเร็จ')
+      setShowFinalRoundConfirmModal(false)
+      await fetchActiveConcreteOrders()
+    } catch (e: any) {
+      toast.error(e.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล')
+    } finally {
+      setUpdatingFinalRound(false)
+    }
+  }
+
   useEffect(() => {
     fetchActiveConcreteOrders()
     const interval = setInterval(fetchActiveConcreteOrders, 8000)
@@ -335,9 +369,10 @@ export default function WorkerClient({
         totalCalculatedQty += jobConcreteQty
         await supabase.from('job_orders').update({
           status: 'concrete_ordered',
-          cast_at: new Date().toISOString(),
+          cast_at: null,
           qty_cast: job.qty_target,
           photo_ready_url: p1PhotoUrl,
+          worker_id: user?.id,
         }).eq('id', job.id)
       }
 
@@ -504,7 +539,7 @@ export default function WorkerClient({
                 flexShrink: 0,
               }}>
                 <img
-                  src={userProfile?.avatar_url ? `${userProfile.avatar_url}?t=${cacheBuster}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile?.full_name || 'Worker')}&background=random`}
+                  src={userProfile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile?.full_name || 'Worker')}&background=2563EB&color=fff`}
                   alt="Profile"
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
@@ -1220,6 +1255,10 @@ export default function WorkerClient({
                         const isReceived = r.status === 'received'
                         const isNext = !isSupplied && (idx === 0 || order.rounds[idx - 1]?.status === 'received')
                         const isLocked = !isSupplied && !isNext
+                        
+                        const isSecondToLast = order.rounds.length >= 2 && idx === order.rounds.length - 2
+                        const lastRound = order.rounds[order.rounds.length - 1]
+
                         return (
                           <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', borderBottom: idx < order.rounds.length - 1 ? '1px solid #F8FAFC' : 'none', background: isReceived ? '#F0FDF4' : isSupplied ? '#FFFBEB' : 'transparent', opacity: isLocked ? 0.4 : 1 }}>
                             <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, background: isReceived ? '#D1FAE5' : isSupplied ? '#FEF3C7' : isNext ? '#DBEAFE' : '#F3F4F6', color: isReceived ? '#059669' : isSupplied ? '#D97706' : isNext ? '#2563EB' : '#9CA3AF' }}>
@@ -1238,7 +1277,17 @@ export default function WorkerClient({
                             </div>
                             {isSupplied && !isReceived ? (
                               <button
-                                onClick={() => handleReceiveRound(r.id)}
+                                onClick={() => {
+                                  if (isSecondToLast && lastRound && lastRound.status === 'pending') {
+                                    setCurrentRoundToReceive(r)
+                                    setLastRoundToAdjust(lastRound)
+                                    setFinalRoundMode('system')
+                                    setFinalRoundCustomQty(lastRound.qty_per_round.toString())
+                                    setShowFinalRoundConfirmModal(true)
+                                  } else {
+                                    handleReceiveRound(r.id)
+                                  }
+                                }}
                                 disabled={!!receivingId}
                                 style={{
                                   padding: '6px 14px', borderRadius: '10px', background: '#D97706', color: '#fff', border: 'none',
@@ -1531,6 +1580,234 @@ export default function WorkerClient({
                   </div>
                 )
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Final Round Confirmation & Adjustment Modal */}
+      {showFinalRoundConfirmModal && currentRoundToReceive && lastRoundToAdjust && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '28px',
+            maxWidth: '440px',
+            width: '100%',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            border: '1px solid rgba(255, 255, 255, 0.8)',
+            position: 'relative'
+          }}>
+            {/* Top decorative bar */}
+            <div style={{ height: '6px', background: 'linear-gradient(to right, #F59E0B, #D97706)' }} />
+            
+            {/* Header */}
+            <div style={{ padding: '24px 28px 16px', borderBottom: '1px solid #F1F5F9' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <i className="fas fa-exclamation-triangle" style={{ color: '#D97706' }} /> ยืนยันรับปูนและตรวจสอบรอบสุดท้าย
+              </h3>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748B', fontWeight: 700 }}>
+                รอบที่กำลังกดยืนยันรับ: รอบที่ {currentRoundToReceive.round_number} ({Number(currentRoundToReceive.qty_per_round).toFixed(2)} คิว)
+              </p>
+            </div>
+
+            {/* Content */}
+            <div style={{ padding: '24px 28px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <p style={{ margin: 0, fontSize: '14px', color: '#475569', lineHeight: 1.5, fontWeight: 500 }}>
+                  คุณกำลังจะกดยืนยันรับคอนกรีตในรอบนี้เรียบร้อยแล้ว ในรอบถัดไปจะเป็น <strong>รอบสุดท้าย (รอบที่ {lastRoundToAdjust.round_number})</strong>
+                  <br />
+                  ยอดคำนวณเดิมคือ <strong style={{ color: '#D97706' }}>{Number(lastRoundToAdjust.qty_per_round).toFixed(2)} คิว</strong> คุณต้องการใช้จำนวนเดิมหรือปรับเปลี่ยนจำนวนใหม่หรือไม่?
+                </p>
+
+                {/* Option 1: System Qty */}
+                <div 
+                  onClick={() => {
+                    setFinalRoundMode('system')
+                  }}
+                  style={{
+                    padding: '16px 20px',
+                    borderRadius: '16px',
+                    border: finalRoundMode === 'system' ? '2.5px solid #D97706' : '1px solid #E2E8F0',
+                    backgroundColor: finalRoundMode === 'system' ? '#FEF3C7' : '#ffffff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div>
+                    <span style={{ display: 'block', fontSize: '14px', fontWeight: 800, color: finalRoundMode === 'system' ? '#92400E' : '#475569' }}>ใช้ยอดที่ระบบคำนวณเดิม</span>
+                    <span style={{ fontSize: '11px', color: finalRoundMode === 'system' ? '#D97706' : '#94A3B8', fontWeight: 600 }}>ต้องการตามเดิมที่ตั้งไว้</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '18px', fontWeight: 900, color: finalRoundMode === 'system' ? '#D97706' : '#475569' }}>{Number(lastRoundToAdjust.qty_per_round).toFixed(2)} <span style={{ fontSize: '12px', fontWeight: 700 }}>คิว</span></span>
+                    <div style={{
+                      width: '20px', height: '20px', borderRadius: '50%',
+                      border: finalRoundMode === 'system' ? '5px solid #D97706' : '2px solid #CBD5E1',
+                      boxSizing: 'border-box',
+                      backgroundColor: '#ffffff'
+                    }} />
+                  </div>
+                </div>
+
+                {/* Option 2: Adjust Qty */}
+                <div 
+                  onClick={() => {
+                    setFinalRoundMode('custom')
+                  }}
+                  style={{
+                    padding: '16px 20px',
+                    borderRadius: '16px',
+                    border: finalRoundMode === 'custom' ? '2.5px solid #D97706' : '1px solid #E2E8F0',
+                    backgroundColor: finalRoundMode === 'custom' ? '#FEF3C7' : '#ffffff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <div>
+                      <span style={{ display: 'block', fontSize: '14px', fontWeight: 800, color: finalRoundMode === 'custom' ? '#92400E' : '#475569' }}>ต้องการปรับจำนวนใหม่</span>
+                      <span style={{ fontSize: '11px', color: finalRoundMode === 'custom' ? '#D97706' : '#94A3B8', fontWeight: 600 }}>ระบุตัวเลขที่ต้องการส่งจริงรอบสุดท้าย</span>
+                    </div>
+                    <div style={{
+                      width: '20px', height: '20px', borderRadius: '50%',
+                      border: finalRoundMode === 'custom' ? '5px solid #D97706' : '2px solid #CBD5E1',
+                      boxSizing: 'border-box',
+                      backgroundColor: '#ffffff',
+                      flexShrink: 0
+                    }} />
+                  </div>
+
+                  {finalRoundMode === 'custom' && (
+                    <div onClick={e => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {/* Minus Buttons */}
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const val = parseFloat(finalRoundCustomQty) || 0
+                            setFinalRoundCustomQty(Math.max(0.1, val - 0.5).toFixed(2))
+                          }}
+                          style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#F1F5F9', border: '1px solid #CBD5E1', fontWeight: 800, fontSize: '14px', cursor: 'pointer', color: '#475569' }}
+                        >
+                          -0.5
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const val = parseFloat(finalRoundCustomQty) || 0
+                            setFinalRoundCustomQty(Math.max(0.1, val - 0.1).toFixed(2))
+                          }}
+                          style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#F1F5F9', border: '1px solid #CBD5E1', fontWeight: 800, fontSize: '14px', cursor: 'pointer', color: '#475569' }}
+                        >
+                          -0.1
+                        </button>
+
+                        {/* TextInput */}
+                        <input 
+                          type="number"
+                          step="0.05"
+                          min="0.1"
+                          value={finalRoundCustomQty}
+                          onChange={e => setFinalRoundCustomQty(e.target.value)}
+                          style={{
+                            flex: 1,
+                            padding: '8px',
+                            borderRadius: '10px',
+                            border: '1.5px solid #D97706',
+                            outline: 'none',
+                            fontSize: '16px',
+                            fontWeight: 800,
+                            color: '#0F172A',
+                            textAlign: 'center',
+                            fontFamily: 'monospace'
+                          }}
+                        />
+
+                        {/* Plus Buttons */}
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const val = parseFloat(finalRoundCustomQty) || 0
+                            setFinalRoundCustomQty((val + 0.1).toFixed(2))
+                          }}
+                          style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#F1F5F9', border: '1px solid #CBD5E1', fontWeight: 800, fontSize: '14px', cursor: 'pointer', color: '#475569' }}
+                        >
+                          +0.1
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const val = parseFloat(finalRoundCustomQty) || 0
+                            setFinalRoundCustomQty((val + 0.5).toFixed(2))
+                          }}
+                          style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#F1F5F9', border: '1px solid #CBD5E1', fontWeight: 800, fontSize: '14px', cursor: 'pointer', color: '#475569' }}
+                        >
+                          +0.5
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                <button 
+                  onClick={() => setShowFinalRoundConfirmModal(false)}
+                  disabled={updatingFinalRound}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    borderRadius: '14px',
+                    border: '1px solid #E2E8F0',
+                    backgroundColor: '#ffffff',
+                    color: '#64748B',
+                    fontWeight: 800,
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ยกเลิก
+                </button>
+                <button 
+                  onClick={handleConfirmFinalRoundReceive}
+                  disabled={updatingFinalRound}
+                  style={{
+                    flex: 2,
+                    padding: '14px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    backgroundColor: '#D97706',
+                    color: '#ffffff',
+                    fontWeight: 900,
+                    fontSize: '14px',
+                    cursor: updatingFinalRound ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 8px 20px -4px rgba(217,119,6,0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  {updatingFinalRound ? <i className="fas fa-spinner fa-spin" /> : <><i className="fas fa-check-double" /> ยืนยันรับปูนและอัปเดต</>}
+                </button>
+              </div>
             </div>
           </div>
         </div>

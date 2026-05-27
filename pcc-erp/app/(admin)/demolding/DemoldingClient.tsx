@@ -6,7 +6,7 @@ interface Job {
   id: string; bed: string; qty_cast: number; qty_target: number
   status: string; cast_at: string | null; expected_demold_at: string | null
   plan_item: {
-    product: { id: string; code?: string; name: string; category: string; unit: string } | null
+    product: { id: string; code?: string; name: string; category: string; unit: string; concrete_per_unit?: number | null } | null
     plan?: { id: string; plan_date: string } | null
   } | null
   worker: { full_name: string } | null
@@ -19,7 +19,7 @@ interface DemoldRecord {
   job_order: {
     bed: string
     plan_item: {
-      product: { name: string; code?: string; unit: string } | null
+      product: { name: string; code?: string; unit: string; concrete_per_unit?: number | null } | null
       plan?: { id: string; plan_date: string } | null
     } | null
     production_order?: { order_number: string } | null
@@ -112,12 +112,23 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
   const qtyGood = records.reduce((sum, r) => sum + (r.qty_good || 0), 0)
   const qtyDefect = records.reduce((sum, r) => sum + (r.qty_defect || 0), 0)
 
+  // Calculate weights based on concrete volume: 1 Q = 2.4 tons
+  const weightGood = records.reduce((sum, r) => {
+    const cperu = r.job_order?.plan_item?.product?.concrete_per_unit ?? 0
+    return sum + (r.qty_good || 0) * cperu * 2.4
+  }, 0)
+
+  const weightDefect = records.reduce((sum, r) => {
+    const cperu = r.job_order?.plan_item?.product?.concrete_per_unit ?? 0
+    return sum + (r.qty_defect || 0) * cperu * 2.4
+  }, 0)
+
   const kpis = [
-    { label: 'กำลังบ่ม', value: countCuring, icon: 'fa-hourglass-half', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
-    { label: 'พร้อมถอดแบบ', value: countReady, icon: 'fa-check-circle', color: '#059669', bg: '#ECFDF5', border: '#A7F3D0' },
-    { label: 'ถอดแบบแล้ว', value: countDemolded, icon: 'fa-cubes', color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE' },
-    { label: 'สินค้าดี', value: qtyGood, icon: 'fa-box-open', color: '#16A34A', bg: '#F0FDF4', border: '#86EFAC' },
-    { label: 'สินค้าเสีย', value: qtyDefect, icon: 'fa-times-circle', color: '#DC2626', bg: '#FEF2F2', border: '#FECACA' },
+    { label: 'กำลังบ่ม', value: countCuring, unit: 'รายการ', icon: 'fa-hourglass-half', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
+    { label: 'พร้อมถอดแบบ', value: countReady, unit: 'รายการ', icon: 'fa-check-circle', color: '#059669', bg: '#ECFDF5', border: '#A7F3D0' },
+    { label: 'ถอดแบบแล้ว', value: countDemolded, unit: 'รายการ', icon: 'fa-cubes', color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE' },
+    { label: 'สินค้าดี', value: qtyGood, unit: 'ชิ้น', subValue: weightGood.toFixed(2) + ' ตัน', icon: 'fa-box-open', color: '#16A34A', bg: '#F0FDF4', border: '#86EFAC' },
+    { label: 'สินค้าเสีย', value: qtyDefect, unit: 'ชิ้น', subValue: weightDefect.toFixed(2) + ' ตัน', icon: 'fa-times-circle', color: '#DC2626', bg: '#FEF2F2', border: '#FECACA' },
   ]
 
   // --- Grouping ---
@@ -266,8 +277,17 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
               <i className={`fas ${k.icon}`} />
             </div>
             <div>
-              <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1, color: '#111827' }}>{k.value}</div>
+              <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1, color: '#111827', display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                {k.value.toLocaleString()}
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>{k.unit}</span>
+              </div>
               <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4, fontWeight: 600 }}>{k.label}</div>
+              {k.subValue && (
+                <div style={{ fontSize: 11, color: k.color, marginTop: 2, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <i className="fas fa-weight-hanging" style={{ fontSize: 10 }} />
+                  {k.subValue}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -393,6 +413,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
                                 <th style={thStyle}>โรงผลิต</th>
                                 <th style={thStyle}>สินค้า</th>
                                 <th style={{ ...thStyle, textAlign: 'center' }}>จำนวน</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>น้ำหนัก</th>
                                 <th style={{ ...thStyle, textAlign: 'center' }}>ถอดได้</th>
                                 <th style={{ ...thStyle, textAlign: 'center' }}>สถานะ</th>
                                 <th style={thStyle}>พนักงาน</th>
@@ -424,6 +445,22 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
                                     </td>
                                     <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, color: '#2563EB' }}>
                                       {job.qty_cast} <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 400 }}>{job.plan_item?.product?.unit}</span>
+                                    </td>
+                                    <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, color: '#4B5563' }}>
+                                      {(() => {
+                                        const cperu = job.plan_item?.product?.concrete_per_unit ?? 0
+                                        const weight = job.qty_cast * cperu * 2.4
+                                        return (
+                                          <div>
+                                            <div>{weight.toFixed(2)} <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 400 }}>ตัน</span></div>
+                                            {cperu > 0 && (
+                                              <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 400, marginTop: 2 }}>
+                                                ({cperu} คิว/ชิ้น)
+                                              </div>
+                                            )}
+                                          </div>
+                                        )
+                                      })()}
                                     </td>
                                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                                       {(() => {
@@ -511,6 +548,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
                                 <th style={thStyle}>สินค้า</th>
                                 <th style={{ ...thStyle, textAlign: 'center' }}>ดี</th>
                                 <th style={{ ...thStyle, textAlign: 'center' }}>เสีย</th>
+                                <th style={{ ...thStyle, textAlign: 'center' }}>น้ำหนักรวม</th>
                                 <th style={thStyle}>สาเหตุ</th>
                                 <th style={{ ...thStyle, textAlign: 'center' }}>ภาพถ่าย</th>
                                 <th style={thStyle}>พนักงาน</th>
@@ -540,6 +578,25 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
                                   </td>
                                   <td style={{ padding: '12px 16px', textAlign: 'center', color: '#10B981', fontWeight: 800 }}>{r.qty_good}</td>
                                   <td style={{ padding: '12px 16px', textAlign: 'center', color: r.qty_defect > 0 ? '#EF4444' : '#9CA3AF', fontWeight: 800 }}>{r.qty_defect}</td>
+                                  <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, color: '#4B5563' }}>
+                                    {(() => {
+                                      const cperu = r.job_order?.plan_item?.product?.concrete_per_unit ?? 0
+                                      const totalQty = (r.qty_good ?? 0) + (r.qty_defect ?? 0)
+                                      const weight = totalQty * cperu * 2.4
+                                      const wGood = (r.qty_good ?? 0) * cperu * 2.4
+                                      const wDefect = (r.qty_defect ?? 0) * cperu * 2.4
+                                      return (
+                                        <div>
+                                          <div>{weight.toFixed(2)} <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 400 }}>ตัน</span></div>
+                                          {cperu > 0 && (
+                                            <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 400, marginTop: 2 }}>
+                                              ดี: {wGood.toFixed(2)} / เสีย: {wDefect.toFixed(2)} ตัน
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })()}
+                                  </td>
                                   <td style={{ padding: '12px 16px', fontSize: 12, color: '#6B7280' }}>{r.defect_reason ? DEFECT_REASONS.find(x => x.value === r.defect_reason)?.label : '—'}</td>
                                   <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                                     <button
