@@ -127,19 +127,12 @@ export default function DispenseConfirmModal({ item, onClose, onConfirm, isLoadi
         <style>{`@keyframes fadeInUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }`}</style>
 
         {/* Header */}
-        <div style={{ padding: '20px 24px 18px', background: 'linear-gradient(135deg, #1E3A5F 0%, #2563EB 100%)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div style={{ padding: '20px 24px 16px', background: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', borderBottom: '1px solid #F1F5F9' }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <i className="fas fa-boxes" style={{ color: '#fff', fontSize: 16 }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px' }}>ยืนยันการเบิกจ่ายวัตถุดิบ</div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 1 }}>กรุณาตรวจสอบข้อมูลก่อนยืนยัน</div>
-              </div>
-            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#111827', letterSpacing: '-0.3px' }}>ยืนยันการเบิกจ่ายวัตถุดิบ</div>
+            <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 3 }}>กรุณาตรวจสอบข้อมูลก่อนยืนยัน</div>
           </div>
-          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 14, transition: 'background 0.15s', flexShrink: 0 }}>
+          <button onClick={onClose} style={{ background: '#F3F4F6', border: 'none', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6B7280', fontSize: 14, transition: 'background 0.15s', flexShrink: 0 }}>
             <i className="fas fa-times" />
           </button>
         </div>

@@ -50,17 +50,6 @@ export default async function ProductionOrderPrintPage({ params }: PageProps) {
     productBoms = boms ?? []
   }
 
-  // Fetch a generic worker token for QR code
-  const { data: workerProfile } = await supabase
-    .from('profiles')
-    .select('worker_token')
-    .eq('role', 'worker')
-    .eq('is_active', true)
-    .limit(1)
-    .single()
-
-  const workerToken = workerProfile?.worker_token || ''
-
   // Format date/time from plan_date
   const planDate = new Date(plan.plan_date)
   const createdAt = plan.created_at ? new Date(plan.created_at) : planDate
@@ -126,7 +115,6 @@ export default async function ProductionOrderPrintPage({ params }: PageProps) {
       time={timeStr}
       userFullName={userFullName}
       items={items}
-      workerToken={workerToken}
       planId={planId}
       status={plan.status}
     />

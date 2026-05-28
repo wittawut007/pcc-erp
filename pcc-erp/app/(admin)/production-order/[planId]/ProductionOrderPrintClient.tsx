@@ -29,7 +29,6 @@ interface ProductionOrderPrintClientProps {
   time: string
   userFullName: string
   items: PlanItem[]
-  workerToken: string
   planId: string
   status: string
 }
@@ -58,7 +57,6 @@ export default function ProductionOrderPrintClient({
   time,
   userFullName,
   items,
-  workerToken,
   planId,
   status,
 }: ProductionOrderPrintClientProps) {
@@ -75,13 +73,13 @@ export default function ProductionOrderPrintClient({
     // Generate URL on client-side only to prevent SSR Hydration Mismatch
     if (typeof window === 'undefined') return
     const baseUrl = window.location.origin
-    const currentUrl = `${baseUrl.replace(/\/$/, '')}/worker-entry?token=${workerToken}`
-    setQrUrl(currentUrl)
+    const loginUrl = `${baseUrl.replace(/\/$/, '')}/login`
+    setQrUrl(loginUrl)
 
-    QRCode.toDataURL(currentUrl, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
+    QRCode.toDataURL(loginUrl, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
       .then((url) => setQrCodeDataUrl(url))
       .catch(console.error)
-  }, [workerToken])
+  }, [])
 
   const handleDownloadPDF = async () => {
     const element = printRef.current
@@ -378,7 +376,7 @@ export default function ProductionOrderPrintClient({
                 URL: {qrUrl}
               </div>
               <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '8px 12px', fontSize: 11, color: '#3B82F6', lineHeight: 1.6 }}>
-                <strong>วิธีใช้:</strong> ให้พนักงานหน้างานสแกน QR Code นี้ เพื่อเข้าระบบและลงแจ้งยอดการทำงานผ่านโทรศัพท์/แท็บเล็ต โดยไม่ต้อง Login ซ้ำ
+                <strong>วิธีใช้:</strong> ให้พนักงานหน้างานสแกน QR Code นี้ เพื่อเข้าสู่ระบบผ่านโทรศัพท์/แท็บเล็ต
               </div>
             </div>
           </div>
