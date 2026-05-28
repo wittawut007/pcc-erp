@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import toast, { Toaster } from 'react-hot-toast'
 import { startCuring, recordDemoldInspection, fastForwardCuring } from '@/app/actions/qc'
 import { createClient } from '@/lib/supabase/client'
+import { compressImage } from '@/lib/utils/compress-image'
 
 const DEFECT_REASONS = [
   { value: 'crack', label: 'แตก/ร้าว' },
@@ -63,9 +64,11 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
 
   const uploadPhoto = async (file: File, folder: string): Promise<string> => {
     const supabase = createClient()
-    const fileExt = file.name.split('.').pop()
-    const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
-    const { error } = await supabase.storage.from('job_photos').upload(fileName, file)
+    const compressed = await compressImage(file, 1280, 0.75)
+    const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(2)}.jpg`
+    const { error } = await supabase.storage
+      .from('job_photos')
+      .upload(fileName, compressed, { contentType: 'image/jpeg' })
     if (error) throw error
     const { data: publicUrlData } = supabase.storage.from('job_photos').getPublicUrl(fileName)
     return publicUrlData.publicUrl
