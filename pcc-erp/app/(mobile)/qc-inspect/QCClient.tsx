@@ -30,6 +30,12 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
     defects: { reason: 'crack' | 'chip' | 'honeycomb' | 'other' | ''; qty: number }[];
   }>>({})
   const [saving, setSaving] = useState(false)
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    jobId: string;
+    target: number;
+    good: number;
+    defects: number;
+  } | null>(null)
 
   // Timer for curing countdown
   useEffect(() => {
@@ -181,11 +187,12 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
     })
   }
 
-  const handleDemoldSubmit = async (jobId: string, target: number) => {
+  const handleDemoldSubmit = async (jobId: string, target: number, bypassWarning = false) => {
     const data = demoldingData[jobId] || { good: 0, defects: [] }
     const totalDefects = (data.defects || []).reduce((s, d) => s + d.qty, 0)
+    const totalCounted = data.good + totalDefects
     
-    if (data.good + totalDefects === 0) {
+    if (totalCounted === 0) {
       toast.error('กรุณาระบุยอดงานดีหรืองานเสีย')
       return
     }
@@ -199,6 +206,17 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
     const photo = photos[`demold-${jobId}`]
     if (!photo) {
       toast.error('กรุณาถ่ายภาพยืนยันการถอดแบบ')
+      return
+    }
+
+    // Check if total is less than target
+    if (totalCounted < target && !bypassWarning) {
+      setPendingConfirm({
+        jobId,
+        target,
+        good: data.good,
+        defects: totalDefects
+      })
       return
     }
     
@@ -225,6 +243,7 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
       setJobs(prev => prev.filter(j => j.id !== jobId))
       setPhotos(p => { const newP = {...p}; delete newP[`demold-${jobId}`]; return newP; })
       setDemoldingData(p => { const newP = {...p}; delete newP[jobId]; return newP; })
+      setPendingConfirm(null)
       toast.success('บันทึกผลการตรวจสอบสำเร็จ')
     } catch (e: any) {
       toast.error(e.message)
@@ -702,6 +721,123 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
           </button>
         ))}
       </nav>
+
+      {/* Warning Confirmation Modal */}
+      {pendingConfirm && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.4)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          zIndex: 100,
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '24px',
+            width: '100%',
+            maxWidth: '400px',
+            padding: '28px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            border: '1px solid #F1F5F9',
+            animation: 'modalFadeIn 0.25s ease-out'
+          }}>
+            {/* Warning Icon */}
+            <div style={{
+              width: '56px',
+              height: '56px',
+              backgroundColor: '#FEF3C7',
+              borderRadius: '99px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 20px',
+              border: '2px solid #FDE68A'
+            }}>
+              <i className="fas fa-exclamation-triangle" style={{ fontSize: '24px', color: '#D97706' }}></i>
+            </div>
+
+            <h3 style={{
+              fontSize: '18px',
+              fontWeight: 900,
+              color: '#1E293B',
+              textAlign: 'center',
+              margin: '0 0 12px 0'
+            }}>
+              จำนวนไม่ครบตามเป้าหมาย
+            </h3>
+
+            <p style={{
+              fontSize: '13px',
+              color: '#64748B',
+              textAlign: 'center',
+              lineHeight: '1.6',
+              margin: '0 0 24px 0'
+            }}>
+              ยอดรวมสินค้าดีและสินค้าเสียมีจำนวนทั้งหมด <strong style={{ color: '#0F172A', fontWeight: 800 }}>{pendingConfirm.good + pendingConfirm.defects}</strong> ชิ้น
+              (เป้าหมายคือ <strong style={{ color: '#0F172A', fontWeight: 800 }}>{pendingConfirm.target}</strong> ชิ้น, ขาดไป <strong style={{ color: '#EF4444', fontWeight: 800 }}>{pendingConfirm.target - (pendingConfirm.good + pendingConfirm.defects)}</strong> ชิ้น)
+              <br />
+              <span style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#D97706', marginTop: '10px' }}>คุณยืนยันที่จะบันทึกยอดจำนวนนี้หรือไม่?</span>
+            </p>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                disabled={saving}
+                onClick={() => handleDemoldSubmit(pendingConfirm.jobId, pendingConfirm.target, true)}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '16px',
+                  backgroundColor: '#D97706',
+                  color: '#ffffff',
+                  fontWeight: 900,
+                  fontSize: '14px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 12px rgba(217, 119, 6, 0.25)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {saving ? <i className="fas fa-spinner fa-spin" style={{ fontSize: '18px' }}></i> : 'ยืนยันและบันทึกข้อมูล'}
+              </button>
+
+              <button
+                disabled={saving}
+                onClick={() => setPendingConfirm(null)}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '16px',
+                  backgroundColor: '#F1F5F9',
+                  color: '#475569',
+                  fontWeight: 800,
+                  fontSize: '14px',
+                  border: '1px solid #E2E8F0',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                ย้อนกลับไปแก้ไข
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes modalFadeIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+      `}} />
     </div>
   )
 }

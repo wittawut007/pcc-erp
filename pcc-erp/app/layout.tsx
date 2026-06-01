@@ -4,7 +4,10 @@ import { Toaster } from 'react-hot-toast'
 
 export const metadata: Metadata = {
   title: 'PCC POST-TENSION ERP',
-  description: 'ระบบบริหารจัดการการผลิต Precast Concrete',
+  description: 'ระบบบริหารจัดการการผลิต PCC POST-TENSION',
+  icons: {
+    icon: '/logo.png',
+  },
 }
 
 export default function RootLayout({
