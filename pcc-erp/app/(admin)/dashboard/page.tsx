@@ -51,12 +51,13 @@ async function getSupabaseData() {
 function getThaiCategoryName(category: string): string {
   if (!category) return 'ไม่ระบุ'
   const cat = category.trim().toUpperCase()
-  if (cat.startsWith('A13')) return 'แผ่นพื้นตัน'
+  if (cat.startsWith('A13')) return 'แผ่นพื้น'
   if (cat.startsWith('A30')) return 'ผนังรั้วสำเร็จรูป'
   if (cat.startsWith('A35')) return 'รั้วสำเร็จรูป'
   if (cat.startsWith('A36')) return 'เสา คาน บันได'
   if (cat.startsWith('A41')) return 'เสาเข็ม'
   if (cat.startsWith('A42')) return 'กำแพงกันดิน'
+  if (cat.startsWith('A82')) return 'เสารั้ว'
   return category
 }
 

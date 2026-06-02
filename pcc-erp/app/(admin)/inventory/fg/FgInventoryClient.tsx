@@ -24,12 +24,13 @@ interface Product {
 }
 
 const CATEGORIES = [
-  'A13 แผ่นพื้นตัน',
+  'A13 แผ่นพื้น',
   'A30 ผนังรั้วสำเร็จรูป',
   'A35 รั้วสำเร็จรูป',
   'A36 เสา คาน บันได',
   'A41 เสาเข็ม',
   'A42 กำแพงกันดิน',
+  'A82 เสารั้ว',
 ]
 
 export default function FgInventoryClient({ 

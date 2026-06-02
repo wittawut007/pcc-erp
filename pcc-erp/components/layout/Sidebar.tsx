@@ -4,12 +4,14 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
 import type { UserRole } from '@/lib/supabase/types'
+import type { SidebarBadgeCounts } from '@/app/actions/sidebar-badges'
 
 interface NavLink {
   href: string
   icon: string
   label: string
   roles: UserRole[]
+  badgeKey?: keyof SidebarBadgeCounts
 }
 
 interface NavSection {
@@ -33,29 +35,29 @@ const allNavItems: NavSection[] = [
     label: 'PRODUCTION',
     links: [
       { href: '/planner',          icon: 'fa-calendar-alt',   label: 'แผนการผลิต',      roles: ['admin', 'planner'] },
-      { href: '/production-order', icon: 'fa-file-invoice',   label: 'ใบสั่งผลิต',      roles: ['admin', 'planner'] },
-      { href: '/job-orders',       icon: 'fa-clipboard-list', label: 'คิวงานเทคอนกรีต',     roles: ['admin', 'planner'] },
-      { href: '/demolding',        icon: 'fa-hammer',         label: 'งานตัดยก',         roles: ['admin', 'planner'] },
+      { href: '/production-order', icon: 'fa-file-invoice',   label: 'ใบสั่งผลิต',      roles: ['admin', 'planner'], badgeKey: 'productionOrder' },
+      { href: '/job-orders',       icon: 'fa-clipboard-list', label: 'คิวงานเทคอนกรีต', roles: ['admin', 'planner'], badgeKey: 'jobOrders' },
+      { href: '/demolding',        icon: 'fa-hammer',         label: 'งานตัดยก',         roles: ['admin', 'planner'], badgeKey: 'demolding' },
       { href: '/qc',               icon: 'fa-microscope',     label: 'การจัดการของเสีย', roles: ['admin', 'planner'] },
     ],
   },
   {
     label: 'MATERIAL',
     links: [
-      { href: '/material',         icon: 'fa-dolly',          label: 'เบิกจ่ายวัตถุดิบ', roles: ['admin', 'material'] },
+      { href: '/material',         icon: 'fa-dolly',          label: 'เบิกจ่ายวัตถุดิบ', roles: ['admin', 'material'], badgeKey: 'material' },
     ],
   },
   {
     label: 'CONCRETE',
     links: [
-      { href: '/concrete',         icon: 'fa-fill-drip',      label: 'คิวผสมคอนกรีต',  roles: ['admin', 'concrete'] },
+      { href: '/concrete',         icon: 'fa-fill-drip',      label: 'คิวผสมคอนกรีต',  roles: ['admin', 'concrete'], badgeKey: 'concrete' },
     ],
   },
   {
     label: 'INVENTORY',
     links: [
       { href: '/inventory/raw', icon: 'fa-layer-group', label: 'คลังวัตถุดิบ',    roles: ['admin', 'material', 'warehouse'] },
-      { href: '/inventory/fg',  icon: 'fa-cubes',       label: 'สินค้าพร้อมขาย',  roles: ['admin', 'warehouse'] },
+      { href: '/inventory/fg',  icon: 'fa-cubes',       label: 'สินค้าพร้อมขาย',  roles: ['admin', 'warehouse'], badgeKey: 'fgInventory' },
     ],
   },
   {
@@ -70,9 +72,69 @@ const allNavItems: NavSection[] = [
 
 interface SidebarProps {
   role: UserRole
+  badgeCounts?: SidebarBadgeCounts
 }
 
-export default function Sidebar({ role }: SidebarProps) {
+/** แสดง badge วงกลมสีแดงพร้อมตัวเลข */
+function BadgeDot({ count, isCollapsed }: { count: number; isCollapsed: boolean }) {
+  if (count <= 0) return null
+  const label = count >= 100 ? '99+' : String(count)
+
+  if (isCollapsed) {
+    // Collapsed: dot เล็กๆ ตำแหน่ง absolute มุมบนขวาของ icon wrapper
+    return (
+      <span
+        style={{
+          position: 'absolute',
+          top: 4,
+          right: 4,
+          minWidth: 14,
+          height: 14,
+          background: '#EF4444',
+          borderRadius: 999,
+          fontSize: 8,
+          fontWeight: 700,
+          color: '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '0 3px',
+          lineHeight: 1,
+          boxShadow: '0 0 0 2px #fff',
+          pointerEvents: 'none',
+        }}
+      >
+        {count >= 100 ? '!' : label}
+      </span>
+    )
+  }
+
+  // Expanded: badge ลอยชิดขวาของ row
+  return (
+    <span
+      style={{
+        marginLeft: 'auto',
+        minWidth: 18,
+        height: 18,
+        background: '#EF4444',
+        borderRadius: 999,
+        fontSize: 10,
+        fontWeight: 700,
+        color: '#fff',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0 5px',
+        lineHeight: 1,
+        flexShrink: 0,
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
+export default function Sidebar({ role, badgeCounts }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -194,6 +256,7 @@ export default function Sidebar({ role }: SidebarProps) {
             {/* Nav links */}
             {section.links.map((link) => {
               const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
+              const badgeCount = link.badgeKey ? (badgeCounts?.[link.badgeKey] ?? 0) : 0
               return (
                 <Link
                   key={link.href}
@@ -214,6 +277,7 @@ export default function Sidebar({ role }: SidebarProps) {
                     transition: 'background 0.12s, color 0.12s',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
+                    position: 'relative',
                   }}
                   onMouseEnter={e => {
                     if (!isActive) {
@@ -239,6 +303,7 @@ export default function Sidebar({ role }: SidebarProps) {
                     }}
                   />
                   {!isCollapsed && <span>{link.label}</span>}
+                  <BadgeDot count={badgeCount} isCollapsed={isCollapsed} />
                 </Link>
               )
             })}

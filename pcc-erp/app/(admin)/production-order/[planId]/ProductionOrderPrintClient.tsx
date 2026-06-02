@@ -43,6 +43,7 @@ function getThaiCategoryDisplay(category: string): string {
     { prefix: 'A36', short: 'เสา คาน บันได' },
     { prefix: 'A41', short: 'เสาเข็ม' },
     { prefix: 'A42', short: 'กำแพงกันดิน' },
+    { prefix: 'A82', short: 'เสารั้ว' },
   ]
   const matched = CAT_STYLES.find(c => c.prefix.toLowerCase() === prefix.toLowerCase())
   if (matched) {
@@ -289,7 +290,7 @@ export default function ProductionOrderPrintClient({
             <tbody>
               {Object.entries(
                 items.reduce((acc, item) => {
-                  const cat = item.category || 'อื่นๆ'
+                  const cat = getThaiCategoryDisplay(item.category || 'อื่นๆ')
                   if (!acc[cat]) acc[cat] = []
                   acc[cat].push(item)
                   return acc
@@ -298,7 +299,7 @@ export default function ProductionOrderPrintClient({
                 <React.Fragment key={category}>
                   <tr style={{ background: '#F1F5F9' }}>
                     <td colSpan={7} style={{ border: '1px solid #E5E7EB', padding: '10px 16px', fontWeight: 800, color: '#334155', fontSize: 13 }}>
-                      หมวดหมู่: {getThaiCategoryDisplay(category)}
+                      หมวดหมู่: {category}
                     </td>
                   </tr>
                   {catItems.map((item, idx) => (

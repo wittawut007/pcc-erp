@@ -65,21 +65,23 @@ interface FormBom {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const CATEGORIES = [
-  'A13 แผ่นพื้นตัน',
+  'A13 แผ่นพื้น',
   'A30 ผนังรั้วสำเร็จรูป',
   'A35 รั้วสำเร็จรูป',
   'A36 เสา คาน บันได',
   'A41 เสาเข็ม',
   'A42 กำแพงกันดิน',
+  'A82 เสารั้ว',
 ]
 
 const CAT_STYLES = [
-  { prefix: 'A13', short: 'แผ่นพื้นตัน', icon: 'fa-layer-group', pillBg: '#FFF7ED', pillText: '#EA580C', colorCode: '#2563EB' },
+  { prefix: 'A13', short: 'แผ่นพื้น', icon: 'fa-layer-group', pillBg: '#FFF7ED', pillText: '#EA580C', colorCode: '#2563EB' },
   { prefix: 'A30', short: 'ผนังรั้วสำเร็จรูป', icon: 'fa-table-cells-large', pillBg: '#FDF4FF', pillText: '#9333EA', colorCode: '#2563EB' },
   { prefix: 'A35', short: 'รั้วสำเร็จรูป', icon: 'fa-bars', pillBg: '#F3F4F6', pillText: '#4B5563', colorCode: '#2563EB' },
   { prefix: 'A36', short: 'เสา คาน บันได', icon: 'fa-cube', pillBg: '#F3F4F6', pillText: '#4B5563', colorCode: '#2563EB' },
   { prefix: 'A41', short: 'เสาเข็ม', icon: 'fa-arrows-up-down', pillBg: '#EFF4FF', pillText: '#2563EB', colorCode: '#2563EB' },
   { prefix: 'A42', short: 'กำแพงกันดิน', icon: 'fa-shield-halved', pillBg: '#F0FDF4', pillText: '#16A34A', colorCode: '#2563EB' },
+  { prefix: 'A82', short: 'เสารั้ว', icon: 'fa-cubes', pillBg: '#FFF7ED', pillText: '#EA580C', colorCode: '#2563EB' },
 ]
 
 const BOM_CATEGORY_CONFIG = {

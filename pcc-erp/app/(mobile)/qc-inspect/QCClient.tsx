@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import toast, { Toaster } from 'react-hot-toast'
-import { startCuring, recordDemoldInspection, fastForwardCuring } from '@/app/actions/qc'
+import { startCuring, recordDemoldInspection } from '@/app/actions/qc'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/utils/compress-image'
 
@@ -252,19 +252,6 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
     }
   }
 
-  const handleFastForward = async (jobId: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setSaving(true)
-    try {
-      await fastForwardCuring(jobId)
-      toast.success('เร่งเวลาสำเร็จ')
-      setJobs(prev => prev.map(j => j.id === jobId ? { ...j, cast_at: new Date(Date.now() - 21 * 60 * 60 * 1000).toISOString() } : j))
-    } catch (err: any) {
-      toast.error(err.message)
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const getCuringTimeLeft = (castAt: string) => {
     const castDate = new Date(castAt)
@@ -501,14 +488,9 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
                             <i className="fas fa-check-circle"></i> พร้อมถอดแบบ
                           </span>
                         ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <button onClick={(e) => handleFastForward(job.id, e)} style={{ backgroundColor: '#F1F5F9', border: '1px solid #CBD5E1', padding: '6px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: 800, color: '#475569', cursor: 'pointer', zIndex: 10 }}>
-                              <i className="fas fa-forward"></i> เร่งเวลา
-                            </button>
-                            <span style={{ backgroundColor: '#FEF3C7', color: '#D97706', padding: '6px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 800, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <i className="fas fa-clock"></i> {timer.text}
-                            </span>
-                          </div>
+                          <span style={{ backgroundColor: '#FEF3C7', color: '#D97706', padding: '6px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 800, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <i className="fas fa-clock"></i> {timer.text}
+                          </span>
                         )}
                       </div>
                     </div>
