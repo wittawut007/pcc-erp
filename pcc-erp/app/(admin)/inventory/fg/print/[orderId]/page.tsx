@@ -22,7 +22,7 @@ export default async function FgPrintPage({ params }: PageProps) {
       erp_reference,
       created_at,
       confirmed_by:profiles(full_name, role),
-      plan:production_plans(plan_date),
+      plan:production_plans(id, plan_date, total_concrete),
       job_orders(
         id,
         bed,
@@ -37,7 +37,31 @@ export default async function FgPrintPage({ params }: PageProps) {
           defect_detail
         ),
         plan_item:production_plan_items(
-          product:products(id, code, name, category, unit, size)
+          product:products(
+            id,
+            code,
+            name,
+            category,
+            unit,
+            size,
+            concrete_per_unit,
+            wire_per_unit,
+            rebar_per_unit,
+            mesh_per_unit,
+            length,
+            product_bom_items(
+              id,
+              qty_per_unit,
+              raw_materials(
+                id,
+                name,
+                category,
+                unit,
+                material_code,
+                weight_per_meter
+              )
+            )
+          )
         )
       )
     `)
@@ -49,9 +73,56 @@ export default async function FgPrintPage({ params }: PageProps) {
     notFound()
   }
 
+  // Handle plan object/array mapping and fetch actual materials
+  const planObj = Array.isArray(order.plan) ? order.plan[0] : order.plan
+  const planId = planObj?.id
+  const totalConcrete = planObj?.total_concrete ? parseFloat(planObj.total_concrete as any) : 0
+
+  let planMaterials: any[] = []
+  if (planId) {
+    const { data: pmData, error: pmErr } = await supabase
+      .from('plan_materials')
+      .select(`
+        id,
+        plan_id,
+        raw_material_id,
+        qty_required,
+        qty_dispensed,
+        status,
+        notes,
+        raw_material:raw_materials(
+          id,
+          name,
+          category,
+          unit,
+          material_code,
+          weight_per_meter
+        )
+      `)
+      .eq('plan_id', planId)
+    
+    if (!pmErr && pmData) {
+      planMaterials = pmData.map((m: any) => ({
+        id: m.id,
+        qtyRequired: m.qty_required ? parseFloat(m.qty_required) : 0,
+        qtyDispensed: m.qty_dispensed ? parseFloat(m.qty_dispensed) : 0,
+        status: m.status,
+        notes: m.notes,
+        rawMaterial: m.raw_material ? {
+          id: m.raw_material.id,
+          name: m.raw_material.name,
+          category: m.raw_material.category,
+          unit: m.raw_material.unit,
+          materialCode: m.raw_material.material_code,
+          weightPerMeter: m.raw_material.weight_per_meter ? parseFloat(m.raw_material.weight_per_meter) : null,
+        } : null,
+      }))
+    }
+  }
+
   // Format date/time
-  const planDate = order.plan?.[0]?.plan_date
-    ? new Date(order.plan[0].plan_date)
+  const planDate = planObj?.plan_date
+    ? new Date(planObj.plan_date)
     : new Date(order.created_at)
   
   const dateStr = planDate.toLocaleDateString('th-TH', {
@@ -100,7 +171,24 @@ export default async function FgPrintPage({ params }: PageProps) {
       qtyTarget: job.qty_target || 0,
       qtyGood,
       qtyDefect,
-      defectDetail: defectDetails || (qtyDefect > 0 ? 'ระบุเสีย (ไม่ระบุสาเหตุ)' : '-')
+      defectDetail: defectDetails || (qtyDefect > 0 ? 'ระบุเสีย (ไม่ระบุสาเหตุ)' : '-'),
+      concretePerUnit: p.concrete_per_unit ? parseFloat(p.concrete_per_unit) : 0,
+      wirePerUnit: p.wire_per_unit ? parseFloat(p.wire_per_unit) : 0,
+      rebarPerUnit: p.rebar_per_unit ? parseFloat(p.rebar_per_unit) : 0,
+      meshPerUnit: p.mesh_per_unit ? parseFloat(p.mesh_per_unit) : 0,
+      length: p.length ? parseFloat(p.length) : 0,
+      bomItems: (p.product_bom_items ?? []).map((bom: any) => {
+        const rm = bom.raw_materials || {}
+        return {
+          id: bom.id,
+          qtyPerUnit: bom.qty_per_unit ? parseFloat(bom.qty_per_unit) : 0,
+          materialName: rm.name ?? '',
+          materialCategory: rm.category ?? '',
+          materialUnit: rm.unit ?? '',
+          materialCode: rm.material_code ?? null,
+          weightPerMeter: rm.weight_per_meter ? parseFloat(rm.weight_per_meter) : null,
+        }
+      })
     }
   })
 
@@ -121,6 +209,8 @@ export default async function FgPrintPage({ params }: PageProps) {
       items={items}
       erpReference={order.erp_reference}
       status={order.status}
+      totalConcrete={totalConcrete}
+      planMaterials={planMaterials}
     />
   )
 }

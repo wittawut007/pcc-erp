@@ -139,6 +139,10 @@ export default function Sidebar({ role, badgeCounts }: SidebarProps) {
   const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
 
+  if (pathname && pathname.includes('/print/')) {
+    return null
+  }
+
   const navItems = allNavItems
     .map((section) => ({
       ...section,
