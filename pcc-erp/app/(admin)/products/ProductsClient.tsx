@@ -550,7 +550,7 @@ export default function ProductsClient({
                 >
                   {options.map(opt => (
                     <option key={opt.id} value={opt.id}>
-                      {opt.name} ({opt.material_code ?? opt.unit})
+                      {opt.name} {opt.material_code ? `[${opt.material_code}]` : ''} ({categoryKey === 'wire' ? 'เมตร' : opt.unit})
                     </option>
                   ))}
                 </select>
@@ -575,7 +575,7 @@ export default function ProductsClient({
                     }}
                   />
                   <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#94a3b8', pointerEvents: 'none' }}>
-                    {row.raw_material_unit || config.unitLabel.split('/')[0]}
+                    {categoryKey === 'wire' ? 'เมตร' : (row.raw_material_unit || config.unitLabel.split('/')[0])}
                   </span>
                 </div>
 

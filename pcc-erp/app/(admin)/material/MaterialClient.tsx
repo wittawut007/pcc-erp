@@ -38,11 +38,7 @@ interface Requisition {
   receiver_name: string | null
 }
 
-interface Props {
-  initialData: Requisition[]
-  role?: string
-  userFullName?: string
-}
+
 
 const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }> = {
   pending:   { label: 'รอจ่าย',        bg: '#FFF7ED', color: '#EA580C' },
@@ -51,6 +47,12 @@ const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }>
 }
 
 import MaterialDocumentModal from '@/components/shared/MaterialDocumentModal'
+
+interface Props {
+  initialData: Requisition[]
+  role?: string
+  userFullName?: string
+}
 
 export default function MaterialClient({ initialData, role, userFullName }: Props) {
   const [items, setItems] = useState<Requisition[]>(initialData)
@@ -203,11 +205,11 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 12, borderBottom: '1px solid #E5E7EB', paddingBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid #E5E7EB', paddingBottom: 16 }}>
         <button
           onClick={() => setActiveTab('today')}
           style={{
-            padding: '10px 24px', borderRadius: 50, fontSize: 14, fontWeight: 700,
+            padding: '10px 22px', borderRadius: 50, fontSize: 13, fontWeight: 700,
             cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 8,
             background: activeTab === 'today' ? '#2563EB' : '#fff',
             color: activeTab === 'today' ? '#fff' : '#6B7280',
@@ -220,7 +222,7 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
         <button
           onClick={() => setActiveTab('history')}
           style={{
-            padding: '10px 24px', borderRadius: 50, fontSize: 14, fontWeight: 700,
+            padding: '10px 22px', borderRadius: 50, fontSize: 13, fontWeight: 700,
             cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 8,
             background: activeTab === 'history' ? '#475569' : '#fff',
             color: activeTab === 'history' ? '#fff' : '#6B7280',
@@ -431,7 +433,6 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
         )
       })}
 
-      {/* Dispense Confirm Modal */}
       <DispenseConfirmModal
         item={confirmItem}
         onClose={() => setConfirmItem(null)}

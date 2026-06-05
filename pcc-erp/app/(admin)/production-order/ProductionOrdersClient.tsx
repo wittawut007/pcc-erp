@@ -4,6 +4,7 @@ import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { toast } from 'react-hot-toast'
 import { deleteProductionPlan } from '@/app/actions/planner'
+import PoDocumentModal from '@/components/shared/PoDocumentModal'
 
 interface Plan {
   id: string
@@ -97,6 +98,7 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
   const [search, setSearch] = useState('')
   const [isPending, startTransition] = useTransition()
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [printModalPlanId, setPrintModalPlanId] = useState<string | null>(null)
 
   const handleDelete = (planId: string, orderNumber: string) => {
     if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งผลิต ${orderNumber} ?\nการกระทำนี้จะลบข้อมูลที่เกี่ยวข้องทั้งหมดและไม่สามารถย้อนกลับได้`)) return
@@ -352,15 +354,15 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
                       {/* Actions */}
                       <td style={{ padding: '14px 20px', textAlign: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                          <Link
-                            href={`/production-order/${plan.id}`}
+                          <button
+                            onClick={() => setPrintModalPlanId(plan.id)}
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: 6,
                               padding: '6px 16px', borderRadius: 8,
                               background: '#EFF6FF', color: '#2563EB',
                               fontSize: 12, fontWeight: 700,
                               border: '1px solid #BFDBFE',
-                              textDecoration: 'none',
+                              cursor: 'pointer',
                               transition: 'all 0.15s',
                               whiteSpace: 'nowrap',
                             }}
@@ -375,7 +377,7 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
                           >
                             <i className="fas fa-eye" style={{ fontSize: 11 }}></i>
                             ดูรายละเอียด
-                          </Link>
+                          </button>
 
                           {userRole === 'admin' && (
                             <button
@@ -445,6 +447,12 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
           </div>
         )}
       </div>
+
+      <PoDocumentModal
+        isOpen={printModalPlanId !== null}
+        onClose={() => setPrintModalPlanId(null)}
+        planId={printModalPlanId}
+      />
     </div>
   )
 }

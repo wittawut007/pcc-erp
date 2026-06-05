@@ -45,6 +45,7 @@ interface FgPrintClientProps {
   status: string
   totalConcrete: number
   planMaterials: any[]
+  onClose?: () => void
 }
 
 // อัตราส่วนแปลงน้ำหนัก/ความยาวมาตรฐาน PCC
@@ -84,6 +85,7 @@ export default function FgPrintClient({
   status,
   totalConcrete,
   planMaterials = [],
+  onClose,
 }: FgPrintClientProps) {
   const router = useRouter()
   const printRef = useRef<HTMLDivElement>(null)
@@ -1136,7 +1138,7 @@ export default function FgPrintClient({
 
           {/* Back */}
           <button
-            onClick={() => window.history.length > 1 ? window.history.back() : router.push('/inventory/fg')}
+            onClick={() => onClose ? onClose() : (window.history.length > 1 ? window.history.back() : router.push('/inventory/fg'))}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '8px 14px',

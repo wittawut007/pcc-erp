@@ -3,6 +3,7 @@
 import { useState, Fragment } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
+import RawMaterialSummaryTab from './RawMaterialSummaryTab'
 
 interface RawMaterial {
   id: string
@@ -19,9 +20,10 @@ interface RawMaterial {
 
 const CATEGORIES = ['ทั้งหมด', 'เหล็กเส้น', 'ลวด', 'น้ำยา', 'ปูน', 'เมช', 'อื่นๆ']
 
-export default function RawMaterialsClient({ materials: initial }: { materials: RawMaterial[] }) {
+export default function RawMaterialsClient({ materials: initial, summaryData = [] }: { materials: RawMaterial[]; summaryData?: any[] }) {
   const supabase = createClient()
   const [materials, setMaterials] = useState<RawMaterial[]>(initial)
+  const [activeTab, setActiveTab] = useState<'stock' | 'summary'>('stock')
   const [filterCat, setFilterCat] = useState('ทั้งหมด')
   const [filterActive, setFilterActive] = useState('all') // 'all', 'active', 'inactive'
   const [search, setSearch] = useState('')
@@ -206,7 +208,44 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
 
-      {/* KPI */}
+      {/* ── Tab Bar ─────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border)', paddingBottom: 14, marginBottom: 18 }}>
+        <button
+          onClick={() => setActiveTab('stock')}
+          style={{
+            padding: '8px 20px', borderRadius: 50, fontSize: 12, fontWeight: 700,
+            cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 7,
+            background: activeTab === 'stock' ? '#2563EB' : 'transparent',
+            color:      activeTab === 'stock' ? '#fff'    : 'var(--text-secondary)',
+            border:     activeTab === 'stock' ? 'none'    : '1px solid var(--border)',
+            boxShadow:  activeTab === 'stock' ? '0 4px 12px rgba(37,99,235,0.2)' : 'none',
+          }}
+        >
+          <i className="fas fa-warehouse" />สต็อควัตถุดิบ
+        </button>
+        <button
+          onClick={() => setActiveTab('summary')}
+          style={{
+            padding: '8px 20px', borderRadius: 50, fontSize: 12, fontWeight: 700,
+            cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 7,
+            background: activeTab === 'summary' ? '#7C3AED' : 'transparent',
+            color:      activeTab === 'summary' ? '#fff'    : 'var(--text-secondary)',
+            border:     activeTab === 'summary' ? 'none'    : '1px solid var(--border)',
+            boxShadow:  activeTab === 'summary' ? '0 4px 12px rgba(124,58,237,0.2)' : 'none',
+          }}
+        >
+          <i className="fas fa-chart-bar" />สรุปการเบิกจ่าย
+        </button>
+      </div>
+
+      {/* ── Summary Tab ─────────────────────────────────────────────── */}
+      {activeTab === 'summary' && (
+        <RawMaterialSummaryTab initialData={summaryData} />
+      )}
+
+      {/* ── Stock Tab ───────────────────────────────────────────────── */}
+      {activeTab === 'stock' && (
+      <div style={{ display: 'contents' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
         {[
           { label: 'รายการทั้งหมด', value: materials.length, color: 'var(--accent)', icon: 'fa-layer-group' },
@@ -359,9 +398,12 @@ export default function RawMaterialsClient({ materials: initial }: { materials: 
         )}
 
       </div>
+      </div>
+      )}
 
-      {/* Adjust Modal */}
+      {/* Adjust Modal – always mounted so it can appear from any tab */}
       {adjustModal && (
+
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'white', borderRadius: 14, padding: 28, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>

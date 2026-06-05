@@ -171,3 +171,43 @@ export async function getPendingRequisitions() {
   return data
 }
 
+
+/**
+ * ดึงข้อมูลสรุปการเบิกจ่ายวัตถุดิบทั้งหมด
+ * สำหรับหน้า Summary พร้อม filter วันที่และหมวดหมู่
+ */
+export async function getMaterialSummary(params?: {
+  dateFrom?: string
+  dateTo?: string
+  category?: string  // 'ลวด' | 'เหล็กเส้น' | 'เมช' | '' (all)
+}) {
+  const supabase = await createClient()
+
+  let query = supabase
+    .from('plan_materials')
+    .select(`
+      *,
+      raw_material:raw_materials(id, name, category, unit, material_code, weight_per_meter),
+      plan:production_plans!inner(id, plan_date, status, total_concrete, production_orders(order_number, status)),
+      dispensed_by_profile:profiles!plan_materials_dispensed_by_fkey(full_name)
+    `)
+    .order('created_at', { ascending: false })
+
+  if (params?.dateFrom) {
+    query = query.gte('plan.plan_date' as any, params.dateFrom)
+  }
+  if (params?.dateTo) {
+    query = query.lte('plan.plan_date' as any, params.dateTo)
+  }
+
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+
+  // ถ้ากรองหมวดหมู่ ทำ filter ฝั่ง JS เพราะ nested filter บน Supabase ทำยาก
+  let filtered = data ?? []
+  if (params?.category && params.category !== '') {
+    filtered = filtered.filter((r: any) => r.raw_material?.category === params!.category)
+  }
+
+  return filtered
+}

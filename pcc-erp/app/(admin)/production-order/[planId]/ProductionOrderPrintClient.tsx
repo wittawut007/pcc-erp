@@ -31,6 +31,7 @@ interface ProductionOrderPrintClientProps {
   items: PlanItem[]
   planId: string
   status: string
+  onClose?: () => void
 }
 
 function getThaiCategoryDisplay(category: string): string {
@@ -60,6 +61,7 @@ export default function ProductionOrderPrintClient({
   items,
   planId,
   status,
+  onClose,
 }: ProductionOrderPrintClientProps) {
   const router = useRouter()
   const printRef = useRef<HTMLDivElement>(null)
@@ -533,7 +535,13 @@ export default function ProductionOrderPrintClient({
 
           {/* Back */}
           <button
-            onClick={() => router.back()}
+            onClick={() => {
+              if (onClose) {
+                onClose()
+              } else {
+                router.back()
+              }
+            }}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '8px 14px',

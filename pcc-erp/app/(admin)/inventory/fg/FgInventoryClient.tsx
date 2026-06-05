@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { saveErpReference, createManualFgOrder } from '@/app/actions/fg'
+import FgDocumentModal from '@/components/shared/FgDocumentModal'
 
 interface ProductionOrder {
   id: string
@@ -45,6 +46,7 @@ export default function FgInventoryClient({
   const [manageModal, setManageModal] = useState<ProductionOrder | null>(null)
   const [erpRef, setErpRef] = useState('')
   const [saving, setSaving] = useState(false)
+  const [printModalOrderId, setPrintModalOrderId] = useState<string | null>(null)
 
   // New state variables for manual addition modal
   const [showAddModal, setShowAddModal] = useState(false)
@@ -314,11 +316,11 @@ export default function FgInventoryClient({
                     ) : '-'}
                   </td>
                   <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
-                    <a href={`/inventory/fg/print/${order.id}`} target="_blank" rel="noopener noreferrer"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontWeight: 600, textDecoration: 'none' }}
+                    <button onClick={() => setPrintModalOrderId(order.id)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
                       className="hover:bg-slate-100 transition-colors">
                       <i className="fas fa-print" style={{ color: 'var(--accent)' }}></i> พิมพ์เอกสาร
-                    </a>
+                    </button>
                   </td>
                   <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
                     {statusText === 'QC ตรวจสอบแล้ว' ? (
@@ -684,6 +686,13 @@ export default function FgInventoryClient({
           </div>
         </div>
       )}
+
+      {/* Fg Document Print Modal Overlay */}
+      <FgDocumentModal 
+        isOpen={printModalOrderId !== null} 
+        onClose={() => setPrintModalOrderId(null)} 
+        orderId={printModalOrderId} 
+      />
     </div>
   )
 }

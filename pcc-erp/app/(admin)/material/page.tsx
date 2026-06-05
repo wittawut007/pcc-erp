@@ -18,6 +18,7 @@ export default async function MaterialPage() {
       role = profile?.role || ''
       userFullName = profile?.full_name || ''
     }
+
     requisitions = await getPendingRequisitions()
   } catch {
     // Supabase not configured or error — show empty state
@@ -30,7 +31,11 @@ export default async function MaterialPage() {
         subtitle="จัดการและยืนยันการจ่ายวัตถุดิบตามแผนการผลิต"
       />
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 36px' }}>
-        <MaterialClient initialData={requisitions} role={role} userFullName={userFullName} />
+        <MaterialClient
+          initialData={requisitions}
+          role={role}
+          userFullName={userFullName}
+        />
       </div>
     </>
   )
