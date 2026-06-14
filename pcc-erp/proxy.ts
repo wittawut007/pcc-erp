@@ -3,6 +3,14 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
 import { canAccess, getDefaultPath } from '@/lib/rbac'
 import type { UserRole } from '@/lib/supabase/types'
+function redirectWithCookies(url: string | URL, baseResponse: NextResponse): NextResponse {
+  const response = NextResponse.redirect(url)
+  baseResponse.cookies.getAll().forEach((cookie) => {
+    const { name, value, ...options } = cookie
+    response.cookies.set(name, value, options)
+  })
+  return response
+}
 
 export async function proxy(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -14,6 +22,16 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
   const path = request.nextUrl.pathname
+
+  // Skip proxy logic for Next.js prefetch requests to prevent token refresh race conditions
+  if (
+    request.headers.get('next-router-prefetch') ||
+    request.headers.get('purpose') === 'prefetch' ||
+    request.headers.get('x-middleware-prefetch') ||
+    request.headers.get('x-proxy-prefetch')
+  ) {
+    return NextResponse.next()
+  }
 
   // Bypass proxy for static public assets (images, fonts, etc.)
   if (
@@ -66,19 +84,24 @@ export async function proxy(request: NextRequest) {
     const supabaseMobile = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
         getAll() { return request.cookies.getAll() },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet, headers) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponseMobile = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponseMobile.cookies.set(name, value, options)
           )
+          if (headers) {
+            Object.entries(headers).forEach(([key, value]) =>
+              supabaseResponseMobile.headers.set(key, value)
+            )
+          }
         },
       },
     })
 
     const { data: { user } } = await supabaseMobile.auth.getUser()
     if (!user) {
-      return NextResponse.redirect(new URL('/login', request.url))
+      return redirectWithCookies(new URL('/login', request.url), supabaseResponseMobile)
     }
 
     try {
@@ -89,18 +112,18 @@ export async function proxy(request: NextRequest) {
         .single()
 
       if (!profile || !profile.is_active) {
-        return NextResponse.redirect(new URL('/unauthorized?reason=forbidden', request.url))
+        return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponseMobile)
       }
 
       // Check specific role
       if (path.startsWith('/qc-inspect') && profile.role !== 'qc' && profile.role !== 'admin') {
-        return NextResponse.redirect(new URL('/unauthorized?reason=forbidden', request.url))
+        return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponseMobile)
       }
       if (path.startsWith('/worker') && profile.role !== 'worker' && profile.role !== 'admin') {
-        return NextResponse.redirect(new URL('/unauthorized?reason=forbidden', request.url))
+        return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponseMobile)
       }
     } catch {
-      return NextResponse.redirect(new URL('/unauthorized?reason=forbidden', request.url))
+      return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponseMobile)
     }
 
     return supabaseResponseMobile
@@ -114,12 +137,17 @@ export async function proxy(request: NextRequest) {
       getAll() {
         return request.cookies.getAll()
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet, headers) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
         supabaseResponse = NextResponse.next({ request })
         cookiesToSet.forEach(({ name, value, options }) =>
           supabaseResponse.cookies.set(name, value, options)
         )
+        if (headers) {
+          Object.entries(headers).forEach(([key, value]) =>
+            supabaseResponse.headers.set(key, value)
+          )
+        }
       },
     },
   })
@@ -128,7 +156,7 @@ export async function proxy(request: NextRequest) {
 
   // ไม่ได้ Login และพยายามเข้าหน้าอื่น → redirect /login
   if (!user && path !== '/login' && path !== '/unauthorized') {
-    return NextResponse.redirect(new URL('/login', request.url))
+    return redirectWithCookies(new URL('/login', request.url), supabaseResponse)
   }
 
   // Login แล้วเข้า /login → redirect ไปหน้าที่เหมาะสมตาม role
@@ -141,9 +169,9 @@ export async function proxy(request: NextRequest) {
         .single()
       const role = (profile?.role ?? 'admin') as UserRole
       const defaultPath = getDefaultPath(role)
-      return NextResponse.redirect(new URL(defaultPath, request.url))
+      return redirectWithCookies(new URL(defaultPath, request.url), supabaseResponse)
     } catch {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+      return redirectWithCookies(new URL('/dashboard', request.url), supabaseResponse)
     }
   }
 
@@ -160,17 +188,17 @@ export async function proxy(request: NextRequest) {
 
       // Worker → redirect ไป mobile route
       if (role === 'worker') {
-        return NextResponse.redirect(new URL('/worker', request.url))
+        return redirectWithCookies(new URL('/worker', request.url), supabaseResponse)
       }
 
       // QC → redirect ไป mobile route
       if (role === 'qc') {
-        return NextResponse.redirect(new URL('/qc-inspect', request.url))
+        return redirectWithCookies(new URL('/qc-inspect', request.url), supabaseResponse)
       }
 
       // ตรวจสิทธิ์ตาม role
       if (!canAccess(role, path)) {
-        return NextResponse.redirect(new URL('/unauthorized?reason=forbidden', request.url))
+        return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponse)
       }
     } catch {
       // ถ้า query ไม่ได้ให้ผ่านไปก่อน (เช่น ตอน dev)

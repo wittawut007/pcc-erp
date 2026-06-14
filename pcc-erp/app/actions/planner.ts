@@ -80,6 +80,7 @@ export async function deleteProductionPlan(planId: string) {
 
     revalidatePath('/production-order')
     revalidatePath('/planner')
+    revalidatePath('/material')
     return { success: true }
   } catch (err: any) {
     console.error('deleteProductionPlan error:', err)

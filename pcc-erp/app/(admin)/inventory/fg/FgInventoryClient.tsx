@@ -47,6 +47,7 @@ export default function FgInventoryClient({
   const [erpRef, setErpRef] = useState('')
   const [saving, setSaving] = useState(false)
   const [printModalOrderId, setPrintModalOrderId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'queue' | 'history'>('queue')
 
   // New state variables for manual addition modal
   const [showAddModal, setShowAddModal] = useState(false)
@@ -186,15 +187,62 @@ export default function FgInventoryClient({
     }
   }
 
-  // Filter orders (only showing ones that have at least some jobs, perhaps demolded)
-  // For now, we show all, but we might filter out empty ones
-  const filtered = orders.filter(o => {
-    const matchSearch = !search || o.order_number.toLowerCase().includes(search.toLowerCase())
-    return matchSearch && o.job_orders && o.job_orders.length > 0
+  const TAB_STYLE = (active: boolean): React.CSSProperties => ({
+    padding: '10px 20px',
+    borderRadius: 8,
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    background: active ? 'var(--accent)' : 'transparent',
+    color: active ? '#fff' : 'var(--text-secondary)',
+    border: 'none',
+    transition: 'all 0.15s',
   })
 
-  const totalCompletedOrders = orders.filter(o => o.status === 'erp_synced').length
-  const totalPendingOrders = orders.filter(o => o.status !== 'erp_synced' && o.job_orders.length > 0).length
+  // Filter orders (only showing ones that have at least some jobs)
+  const filtered = useMemo(() => {
+    return orders.filter(o => {
+      const matchSearch = !search || o.order_number.toLowerCase().includes(search.toLowerCase())
+      const matchTab = activeTab === 'queue' ? o.status !== 'erp_synced' : o.status === 'erp_synced'
+      return matchSearch && o.job_orders && o.job_orders.length > 0 && matchTab
+    })
+  }, [orders, search, activeTab])
+
+  // Search-filtered KPI counts
+  const totalAllOrders = useMemo(() => {
+    return orders.filter(o => 
+      o.job_orders && 
+      o.job_orders.length > 0 &&
+      (!search || o.order_number.toLowerCase().includes(search.toLowerCase()))
+    ).length
+  }, [orders, search])
+
+  const totalPendingOrders = useMemo(() => {
+    return orders.filter(o => 
+      o.status !== 'erp_synced' && 
+      o.job_orders && 
+      o.job_orders.length > 0 &&
+      (!search || o.order_number.toLowerCase().includes(search.toLowerCase()))
+    ).length
+  }, [orders, search])
+
+  const totalCompletedOrders = useMemo(() => {
+    return orders.filter(o => 
+      o.status === 'erp_synced' && 
+      o.job_orders && 
+      o.job_orders.length > 0 &&
+      (!search || o.order_number.toLowerCase().includes(search.toLowerCase()))
+    ).length
+  }, [orders, search])
+
+  // Global counts for tab badges
+  const globalPendingCount = useMemo(() => {
+    return orders.filter(o => o.status !== 'erp_synced' && o.job_orders && o.job_orders.length > 0).length
+  }, [orders])
+
+  const globalCompletedCount = useMemo(() => {
+    return orders.filter(o => o.status === 'erp_synced' && o.job_orders && o.job_orders.length > 0).length
+  }, [orders])
 
   const handleManage = (order: ProductionOrder) => {
     setManageModal(order)
@@ -234,7 +282,7 @@ export default function FgInventoryClient({
       {/* KPI */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 18 }}>
         {[
-          { label: 'ใบสั่งผลิตทั้งหมด', value: filtered.length, icon: 'fa-file-invoice', color: 'var(--accent)' },
+          { label: 'ใบสั่งผลิตทั้งหมด', value: totalAllOrders, icon: 'fa-file-invoice', color: 'var(--accent)' },
           { label: 'รอการยืนยัน', value: totalPendingOrders, icon: 'fa-clock', color: 'var(--amber)' },
           { label: 'บันทึกเข้าระบบแล้ว', value: totalCompletedOrders, icon: 'fa-check-circle', color: 'var(--green)' },
         ].map(s => (
@@ -264,7 +312,35 @@ export default function FgInventoryClient({
       </div>
 
       {/* Table */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+        {/* Tabs */}
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg)' }}>
+          <button 
+            type="button"
+            style={TAB_STYLE(activeTab === 'queue')} 
+            onClick={() => setActiveTab('queue')}
+          >
+            <i className="fas fa-clock" style={{ marginRight: 6 }} />
+            คิวงานรออยู่ {globalPendingCount > 0 && (
+              <span style={{ background: 'var(--amber)', color: '#fff', borderRadius: 50, padding: '1px 7px', fontSize: 11, marginLeft: 4 }}>
+                {globalPendingCount}
+              </span>
+            )}
+          </button>
+          <button 
+            type="button"
+            style={TAB_STYLE(activeTab === 'history')} 
+            onClick={() => setActiveTab('history')}
+          >
+            <i className="fas fa-history" style={{ marginRight: 6 }} />
+            ย้อนหลัง {globalCompletedCount > 0 && (
+              <span style={{ background: 'var(--green)', color: '#fff', borderRadius: 50, padding: '1px 7px', fontSize: 11, marginLeft: 4 }}>
+                {globalCompletedCount}
+              </span>
+            )}
+          </button>
+        </div>
+
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr>

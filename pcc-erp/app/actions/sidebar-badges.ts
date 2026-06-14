@@ -74,14 +74,14 @@ export async function getSidebarBadgeCounts(): Promise<SidebarBadgeCounts> {
       // plan_materials → plan_id → production_plans → production_orders
       supabase
         .from('plan_materials')
-        .select('plan:production_plans!inner(id, status, production_orders(id))')
+        .select('plan:production_plans!inner(id, status, production_orders(id, status))')
         .in('status', ['pending', 'partial']),
 
       // 5. คิวผสมคอนกรีต
-      // นับ distinct PO ผ่าน concrete_orders → job_orders → production_orders
+      // ดึง concrete_orders ที่รอดำเนินการ (status = 'requested') พร้อม rounds เพื่อใช้นับรอบที่ค้างอยู่
       supabase
         .from('concrete_orders')
-        .select('job_order:job_orders!inner(order_id, production_order:production_orders!job_orders_order_id_fkey(status))')
+        .select('id, rounds:concrete_rounds(status)')
         .eq('status', 'requested'),
 
       // 6. สินค้าพร้อมขาย
@@ -121,23 +121,23 @@ export async function getSidebarBadgeCounts(): Promise<SidebarBadgeCounts> {
       if (!plan) continue
       // เฉพาะ plan ที่ confirmed หรือ completed
       if (plan.status !== 'confirmed' && plan.status !== 'completed') continue
-      const orders: Array<{ id: string }> = plan.production_orders ?? []
+      const orders: Array<{ id: string; status: string }> = plan.production_orders ?? []
       for (const po of orders) {
-        materialPoIds.add(po.id)
+        if (po.status !== 'erp_synced') {
+          materialPoIds.add(po.id)
+        }
       }
     }
     const materialCount = materialPoIds.size
 
-    // ── 5. คิวผสมคอนกรีต — distinct PO ผ่าน concrete_orders → job_orders ──
-    const concreteData = concreteRes.data ?? []
-    const concretePoIds = new Set<string>()
-    for (const row of concreteData) {
-      const jo = (row as any).job_order
-      if (!jo) continue
-      if (jo.production_order?.status === 'erp_synced') continue
-      if (jo.order_id) concretePoIds.add(jo.order_id)
+    // ── 5. คิวผสมคอนกรีต — นับจำนวนรอบคอนกรีตที่ยังค้างอยู่ (status = 'pending') ──
+    const concreteOrders = concreteRes.data ?? []
+    let concreteCount = 0
+    for (const order of concreteOrders) {
+      const rounds = order.rounds ?? []
+      const pendingRounds = rounds.filter((r: any) => r.status === 'pending')
+      concreteCount += pendingRounds.length
     }
-    const concreteCount = concretePoIds.size
 
     // ── 6. สินค้าพร้อมขาย — count PO โดยตรง ──
     const fgInventoryCount = fgInventoryRes.data?.length ?? 0

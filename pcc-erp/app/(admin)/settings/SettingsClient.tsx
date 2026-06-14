@@ -7,6 +7,7 @@ import UserManagementTab from './tabs/UserManagementTab'
 import MasterDataTab from './tabs/MasterDataTab'
 import DataManagementTab from './tabs/DataManagementTab'
 import MonitoringTab from './tabs/MonitoringTab'
+import SupabaseTab from './tabs/SupabaseTab'
 
 interface Tab {
   id: string
@@ -20,6 +21,7 @@ const tabs: Tab[] = [
   { id: 'general', label: 'ทั่วไป', icon: 'fa-cog' },
   { id: 'users', label: 'จัดการผู้ใช้', icon: 'fa-users-cog' },
   { id: 'master', label: 'ข้อมูลหลัก', icon: 'fa-database' },
+  { id: 'supabase', label: 'Supabase', icon: 'fa-bolt' },
   { id: 'data', label: 'ข้อมูล & รีเซ็ต', icon: 'fa-redo-alt', badge: '⚠️', badgeColor: '#DC2626' },
   { id: 'monitoring', label: 'Monitoring', icon: 'fa-chart-bar' },
 ]
@@ -155,6 +157,7 @@ export default function SettingsClient({ stats, statsError }: SettingsClientProp
                   {tab.id === 'general' && 'ข้อมูลทั่วไปและสถานะระบบ'}
                   {tab.id === 'users' && 'จัดการบัญชีผู้ใช้และสิทธิ์การเข้าถึง'}
                   {tab.id === 'master' && 'จัดการข้อมูลหลัก: สินค้า, วัตถุดิบ, BOM'}
+                  {tab.id === 'supabase' && 'รายละเอียดการใช้งานทรัพยากร Supabase'}
                   {tab.id === 'data' && '⚠️ ระวัง — การกระทำต่อไปนี้ไม่สามารถกู้คืนได้'}
                   {tab.id === 'monitoring' && 'ตรวจสอบสถานะระบบและสถิติข้อมูล'}
                 </div>
@@ -170,6 +173,7 @@ export default function SettingsClient({ stats, statsError }: SettingsClientProp
         {activeTab === 'general' && <GeneralTab stats={stats} />}
         {activeTab === 'users' && <UserManagementTab stats={stats} />}
         {activeTab === 'master' && <MasterDataTab stats={stats} />}
+        {activeTab === 'supabase' && <SupabaseTab />}
         {activeTab === 'data' && <DataManagementTab />}
         {activeTab === 'monitoring' && <MonitoringTab stats={stats} statsError={statsError} />}
       </div>

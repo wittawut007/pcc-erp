@@ -5,7 +5,7 @@ interface GeneralTabProps {
   stats: SystemStats | null
 }
 
-export default function GeneralTab({ stats: _ }: GeneralTabProps) {
+export default function GeneralTab({ stats }: GeneralTabProps) {
   const buildVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? '1.0.0'
   const environment = process.env.NODE_ENV ?? 'development'
   const supabaseProject = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -161,9 +161,31 @@ export default function GeneralTab({ stats: _ }: GeneralTabProps) {
 
       {/* Quick Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-        <StatCard icon="fa-users" label="ผู้ใช้ในระบบ" value="—" subLabel="โหลดใน Monitoring tab" size="sm" />
-        <StatCard icon="fa-box-open" label="สินค้าทั้งหมด" value="—" subLabel="โหลดใน Monitoring tab" size="sm" color="var(--green)" bgColor="var(--green-light)" />
-        <StatCard icon="fa-clipboard-list" label="Job Orders" value="—" subLabel="โหลดใน Monitoring tab" size="sm" color="var(--amber)" bgColor="var(--amber-light)" />
+        <StatCard
+          icon="fa-users"
+          label="ผู้ใช้ในระบบ"
+          value={stats ? stats.totalUsers.toLocaleString() : '—'}
+          subLabel={stats ? `ใช้งานอยู่ ${stats.activeUsers.toLocaleString()} บัญชี` : 'กำลังโหลด...'}
+          size="sm"
+        />
+        <StatCard
+          icon="fa-box-open"
+          label="สินค้าทั้งหมด"
+          value={stats ? stats.totalProducts.toLocaleString() : '—'}
+          subLabel={stats ? `เปิดใช้งานอยู่ ${stats.activeProducts.toLocaleString()} รายการ` : 'กำลังโหลด...'}
+          size="sm"
+          color="var(--green)"
+          bgColor="var(--green-light)"
+        />
+        <StatCard
+          icon="fa-clipboard-list"
+          label="Job Orders"
+          value={stats ? stats.totalJobOrders.toLocaleString() : '—'}
+          subLabel={stats ? `รอดำเนินการ ${stats.pendingJobOrders.toLocaleString()} รายการ` : 'กำลังโหลด...'}
+          size="sm"
+          color="var(--amber)"
+          bgColor="var(--amber-light)"
+        />
       </div>
 
       {/* Info Note */}

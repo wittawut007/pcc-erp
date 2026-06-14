@@ -231,7 +231,8 @@ export async function getQCJobOrders() {
       ),
       worker:profiles!job_orders_worker_id_fkey(full_name),
       qc_inspection:qc_inspections(*),
-      defect_breakdowns:job_order_defects(*)
+      defect_breakdowns:job_order_defects(*),
+      production_order:production_orders(order_number, status)
     `)
     .in('status', ['concrete_ordered', 'casting', 'curing', 'ready_demold', 'demolded'])
     .order('created_at', { ascending: true })

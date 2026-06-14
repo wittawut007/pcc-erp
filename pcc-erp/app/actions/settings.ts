@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -371,5 +372,147 @@ export async function nuclearResetAction(): Promise<ResetResult> {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'
     return { success: false, error: message }
+  }
+}
+
+// ─── Supabase Usage Types ───────────────────────────────────────────────────
+
+export interface TableStat {
+  table_name: string
+  row_count: number
+  total_size: number
+  table_size: number
+  index_size: number
+}
+
+export interface BucketStat {
+  id: string
+  name: string
+  file_count: number
+  total_size: number
+}
+
+export interface StorageStat {
+  total_size: number
+  total_files: number
+  buckets: BucketStat[]
+}
+
+export interface AuthStat {
+  total_users: number
+  created_last_30_days: number
+}
+
+export interface ConnectionStat {
+  active: number
+  max: number
+}
+
+export interface DatabaseStats {
+  db_size: number
+  postgres_version: string
+  connections: ConnectionStat
+  auth: AuthStat
+  storage: StorageStat
+  tables: TableStat[]
+}
+
+export interface ApiTimeSeriesPoint {
+  timestamp: string
+  total_auth_requests: number
+  total_realtime_requests: number
+  total_rest_requests: number
+  total_storage_requests: number
+}
+
+export interface ApiUsageStats {
+  total_requests: number
+  time_series: ApiTimeSeriesPoint[]
+}
+
+export interface SupabaseUsageSummary {
+  project_ref: string
+  project_name: string
+  region: string
+  status: string
+  db: DatabaseStats | null
+  api: ApiUsageStats | null
+}
+
+// ─── Supabase Usage Server Action ────────────────────────────────────────────
+
+export async function getSupabaseUsageAction(): Promise<{ data?: SupabaseUsageSummary; error?: string }> {
+  try {
+    // Verify admin authorization
+    await getAdminClient()
+
+    // Fetch Postgres stats via RPC using service role
+    const adminSupabase = createAdminClient()
+    const { data: dbStats, error: dbError } = await adminSupabase.rpc('get_db_stats')
+    if (dbError) {
+      console.error('Error calling get_db_stats RPC:', dbError)
+      throw new Error(`ล้มเหลวในการดึงข้อมูลจากฐานข้อมูล: ${dbError.message}`)
+    }
+
+    // Fetch API request stats from Supabase Management API
+    const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL
+      ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname.split('.')[0]
+      : 'ywogqmduwvjwzpgwfhhl'
+
+    const token = process.env.SUPABASE_ACCESS_TOKEN
+    let apiStats: ApiUsageStats | null = null
+
+    if (token) {
+      try {
+        // Total requests count
+        const countRes = await fetch(
+          `https://api.supabase.com/v1/projects/${projectRef}/analytics/endpoints/usage.api-requests-count`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            next: { revalidate: 300 } // cache for 5 minutes
+          }
+        )
+        const countData = await countRes.json()
+        const total_requests = countData?.result?.[0]?.count ?? 0
+
+        // Hourly timeseries api counts
+        const timeseriesRes = await fetch(
+          `https://api.supabase.com/v1/projects/${projectRef}/analytics/endpoints/usage.api-counts?interval=1day`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            next: { revalidate: 300 }
+          }
+        )
+        const timeseriesData = await timeseriesRes.json()
+        const time_series = timeseriesData?.result ?? []
+
+        apiStats = {
+          total_requests,
+          time_series,
+        }
+      } catch (apiErr) {
+        console.error('Error fetching Supabase Management API usage metrics:', apiErr)
+      }
+    }
+
+    return {
+      data: {
+        project_ref: projectRef,
+        project_name: 'PCC POSTENTION ERP',
+        region: 'ap-northeast-1',
+        status: 'ACTIVE_HEALTHY',
+        db: dbStats as DatabaseStats,
+        api: apiStats,
+      }
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการดึงข้อมูล Supabase'
+    return { error: message }
   }
 }

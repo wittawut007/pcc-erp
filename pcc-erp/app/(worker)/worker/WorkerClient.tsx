@@ -17,6 +17,11 @@ interface Job {
   cast_at?: string | null
   expected_demold_at: string | null
   plan_item_id?: string
+  order_id?: string | null
+  production_order?: {
+    order_number: string
+    status: string
+  } | null
   plan_item: {
     id?: string
     plan_id?: string
@@ -54,12 +59,47 @@ export default function WorkerClient({
 
   const [activeTab, setActiveTab] = useState<'dailyJobs'|'receiveConcreteTab'|'history'>('dailyJobs')
   const [activeSection, setActiveSection] = useState<'phase1'|'concreteSummary'|'success' | null>(null)
-  
   const [phaseMode, setPhaseMode] = useState<'casting' | 'demolding' | null>(null)
   const [selectedJobs, setSelectedJobs] = useState<Job[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [currentBedIndex, setCurrentBedIndex] = useState(0)
+  const [phase1Checks, setPhase1Checks] = useState({ clean: false, wip: false })
+  const [photos, setPhotos] = useState<Record<string, { file: File, preview: string }>>({})
+  const [demoldingData, setDemoldingData] = useState<Record<string, { good: number, defect: number, reason: string }>>({})
+  const [saving, setSaving] = useState(false)
+  const [userProfile, setUserProfile] = useState<{full_name: string, role: string, avatar_url: string | null} | null>(null)
+  const [showConcreteConfirmModal, setShowConcreteConfirmModal] = useState(false)
+  const [orderMoreMode, setOrderMoreMode] = useState<'system' | 'custom'>('system')
+  const [customConcreteQty, setCustomConcreteQty] = useState<string>('')
+  const [confirmingBedIndex, setConfirmingBedIndex] = useState<number>(0)
+  const [showFinalRoundConfirmModal, setShowFinalRoundConfirmModal] = useState(false)
+  const [currentRoundToReceive, setCurrentRoundToReceive] = useState<{ id: string, round_number: number, qty_per_round: number } | null>(null)
+  const [lastRoundToAdjust, setLastRoundToAdjust] = useState<{ id: string, round_number: number, qty_per_round: number } | null>(null)
+  const [finalRoundMode, setFinalRoundMode] = useState<'system' | 'custom'>('system')
+  const [finalRoundCustomQty, setFinalRoundCustomQty] = useState<string>('')
+  const [updatingFinalRound, setUpdatingFinalRound] = useState(false)
+  const [jobItemChecks, setJobItemChecks] = useState<Record<string, { clean: boolean; wip: boolean }>>({ })
+  const [jobItemPhotos, setJobItemPhotos] = useState<Record<string, { file: File; preview: string }>>({ })
+  const [materialsByPlan, setMaterialsByPlan] = useState<Record<string, {name: string; category: string}[]>>({})
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
+  const [showConcreteSummary, setShowConcreteSummary] = useState(false)
+  const [jobsToConfirm, setJobsToConfirm] = useState<Job[] | null>(null)
+  const [concreteSent, setConcreteSent] = useState(false)
+  const [concreteRoundsReceived, setConcreteRoundsReceived] = useState(0)
+  const [activeConcreteOrders, setActiveConcreteOrders] = useState<{
+    id: string; job_order_id: string; bed: string | null; qty_requested: number; round_count: number; requested_at: string;
+    notes?: string | null;
+    job_order?: { 
+      bed: string; 
+      status: string; 
+      production_order?: { status: string } | null;
+      plan_item?: { product?: { name: string } | null } | null 
+    } | null
+    rounds: { id: string; round_number: number; qty_per_round: number; status: string; supplied_at: string | null }[]
+  }[]>([])
+  const [concreteLoading, setConcreteLoading] = useState(false)
 
+  // Memoized Selectors
   const jobsByBed = React.useMemo(() => {
     const groups: Record<string, Job[]> = {}
     selectedJobs.forEach(job => {
@@ -78,49 +118,85 @@ export default function WorkerClient({
     return Object.keys(groups).sort().map(bed => ({ bed, jobs: groups[bed] }))
   }, [jobOrders])
 
-  // Data
-  const [phase1Checks, setPhase1Checks] = useState({ clean: false, wip: false })
-  const [photos, setPhotos] = useState<Record<string, { file: File, preview: string }>>({})
-  const [demoldingData, setDemoldingData] = useState<Record<string, { good: number, defect: number, reason: string }>>({})
-  const [saving, setSaving] = useState(false)
-  const [userProfile, setUserProfile] = useState<{full_name: string, role: string, avatar_url: string | null} | null>(null)
+  const jobsByProductionOrder = React.useMemo(() => {
+    const groups: Record<string, Job[]> = {}
+    jobOrders.forEach(job => {
+      const orderNumber = job.production_order?.order_number || 'ไม่มีใบสั่งผลิต'
+      if (!groups[orderNumber]) groups[orderNumber] = []
+      groups[orderNumber].push(job)
+    })
+    return Object.keys(groups).sort().map(orderNumber => {
+      const jobs = groups[orderNumber]
+      const pendingJobs = jobs.filter(j => j.status === 'pending')
+      const readyJobs = pendingJobs.filter(j => {
+        const checks = jobItemChecks[j.id] || { clean: false, wip: false }
+        const photo = jobItemPhotos[j.id]
+        return checks.clean && checks.wip && !!photo
+      })
+      const totalConcrete = readyJobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0)
+      const totalRoundsCount = calculateConcreteRounds(totalConcrete).length
+      const groupAllReady = pendingJobs.length > 0 && readyJobs.length === pendingJobs.length
 
-  // Concrete Confirm Modal states
-  const [showConcreteConfirmModal, setShowConcreteConfirmModal] = useState(false)
-  const [orderMoreMode, setOrderMoreMode] = useState<'system' | 'custom'>('system')
-  const [customConcreteQty, setCustomConcreteQty] = useState<string>('')
-  const [confirmingBedIndex, setConfirmingBedIndex] = useState<number>(0)
+      return {
+        orderNumber,
+        jobs,
+        pendingJobs,
+        readyJobs,
+        totalConcrete,
+        totalRoundsCount,
+        groupAllReady
+      }
+    })
+  }, [jobOrders, jobItemChecks, jobItemPhotos])
 
-  // Final Round Confirmation Modal states
-  const [showFinalRoundConfirmModal, setShowFinalRoundConfirmModal] = useState(false)
-  const [currentRoundToReceive, setCurrentRoundToReceive] = useState<{ id: string, round_number: number, qty_per_round: number } | null>(null)
-  const [lastRoundToAdjust, setLastRoundToAdjust] = useState<{ id: string, round_number: number, qty_per_round: number } | null>(null)
-  const [finalRoundMode, setFinalRoundMode] = useState<'system' | 'custom'>('system')
-  const [finalRoundCustomQty, setFinalRoundCustomQty] = useState<string>('')
-  const [updatingFinalRound, setUpdatingFinalRound] = useState(false)
+  const confirmJobsByBed = React.useMemo(() => {
+    if (!jobsToConfirm) return []
+    const groups: Record<string, Job[]> = {}
+    jobsToConfirm.forEach(job => {
+      if (!groups[job.bed]) groups[job.bed] = []
+      groups[job.bed].push(job)
+    })
+    return Object.keys(groups).sort().map(bed => ({ bed, jobs: groups[bed] }))
+  }, [jobsToConfirm])
 
-  // Daily Jobs — per-item checklist, photo, expand state
-  const [jobItemChecks, setJobItemChecks] = useState<Record<string, { clean: boolean; wip: boolean }>>({ })
-  const [jobItemPhotos, setJobItemPhotos] = useState<Record<string, { file: File; preview: string }>>({ })
-  const [materialsByPlan, setMaterialsByPlan] = useState<Record<string, {name: string; category: string}[]>>({})
-  const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
-  const [showConcreteSummary, setShowConcreteSummary] = useState(false)
+  const { confirmConcreteQty, confirmRounds } = React.useMemo(() => {
+    if (!jobsToConfirm) return { confirmConcreteQty: 0, confirmRounds: 0 }
+    let tQty = 0
+    let tRounds = 0
+    const groups: Record<string, Job[]> = {}
+    jobsToConfirm.forEach(job => {
+      if (!groups[job.bed]) groups[job.bed] = []
+      groups[job.bed].push(job)
+    })
+    Object.keys(groups).forEach(bed => {
+      const bedJobs = groups[bed]
+      const bedQty = bedJobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0)
+      tQty += bedQty
+      tRounds += calculateConcreteRounds(bedQty).length
+    })
+    return { confirmConcreteQty: tQty, confirmRounds: tRounds }
+  }, [jobsToConfirm])
 
-  // Receive Concrete — DB-driven
-  const [concreteSent, setConcreteSent] = useState(false)
-  const [concreteRoundsReceived, setConcreteRoundsReceived] = useState(0)
-  const [activeConcreteOrders, setActiveConcreteOrders] = useState<{
-    id: string; job_order_id: string; bed: string | null; qty_requested: number; round_count: number; requested_at: string;
-    notes?: string | null;
-    job_order?: { 
-      bed: string; 
-      status: string; 
-      production_order?: { status: string } | null;
-      plan_item?: { product?: { name: string } | null } | null 
-    } | null
-    rounds: { id: string; round_number: number; qty_per_round: number; status: string; supplied_at: string | null }[]
-  }[]>([])
-  const [concreteLoading, setConcreteLoading] = useState(false)
+  const { activeRoundsTotal, activeRoundsReceived } = React.useMemo(() => {
+    let total = 0
+    let received = 0
+    activeConcreteOrders.forEach(o => {
+      total += o.round_count
+      received += o.rounds.filter(r => r.status === 'received').length
+    })
+    return { activeRoundsTotal: total, activeRoundsReceived: received }
+  }, [activeConcreteOrders])
+
+  const orderedProductionOrders = React.useMemo(() => {
+    return Array.from(
+      new Set(
+        jobOrders
+          .filter(j => j.status === 'concrete_ordered')
+          .map(j => j.production_order?.order_number)
+          .filter(Boolean)
+      )
+    ) as string[]
+  }, [jobOrders])
 
   const planIdsString = JSON.stringify(
     Array.from(new Set(jobOrders.map(j => j.plan_item?.plan_id || (j.plan_item_id && planItemToPlanMap ? planItemToPlanMap[j.plan_item_id] : null)).filter(Boolean)))
@@ -207,14 +283,14 @@ export default function WorkerClient({
     setJobItemPhotos(prev => ({ ...prev, [jobId]: { file, preview } }))
   }
 
-  const handleOrderConcrete = async () => {
+  const handleOrderConcrete = async (jobsToOrder: Job[]) => {
     setSaving(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
       const groups: Record<string, Job[]> = {}
-      jobOrders.forEach(job => {
+      jobsToOrder.forEach(job => {
         if (!groups[job.bed]) groups[job.bed] = []
         groups[job.bed].push(job)
       })
@@ -242,8 +318,11 @@ export default function WorkerClient({
         const bedRounds = roundsData.length
 
         if (bedRounds > 0) {
+          const productionOrderId = bedJobs[0]?.order_id || null
           const { data: order } = await supabase.from('concrete_orders').insert({
             bed,
+            job_order_id: bedJobs[0]?.id || null,
+            production_order_id: productionOrderId,
             requested_by: user.id,
             qty_requested: totalConcreteQty,
             round_count: bedRounds,
@@ -404,8 +483,11 @@ export default function WorkerClient({
           roundsData[roundsData.length - 1] = Number((roundsData[roundsData.length - 1] + excess).toFixed(2))
         }
 
+        const productionOrderId = bedJobs[0]?.order_id || null
         const { data: order } = await supabase.from('concrete_orders').insert({
           bed,
+          job_order_id: bedJobs[0]?.id || null,
+          production_order_id: productionOrderId,
           requested_by: user!.id,
           qty_requested: finalQty,
           total_qty_requested: finalQty,
@@ -878,179 +960,203 @@ export default function WorkerClient({
                 </div>
               ) : (
                 <>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {jobOrders.map(j => {
-                    const isExpanded = expandedJobId === j.id
-                    const checks = jobItemChecks[j.id] || { clean: false, wip: false }
-                    const photo = jobItemPhotos[j.id]
-                    const isJobReady = checks.clean && checks.wip && !!photo
-                    
-                    const planId = j.plan_item?.plan_id || (j.plan_item_id && planItemToPlanMap ? planItemToPlanMap[j.plan_item_id] : null)
-                    const materials = planId ? materialsByPlan[planId] || [] : []
-                    
-                    const getStatusDisplay = () => {
-                      let effectiveStatus = j.status
-                      if (effectiveStatus === 'curing') {
-                        const expectedTime = j.expected_demold_at || (j.cast_at ? new Date(new Date(j.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
-                        if (expectedTime && new Date(expectedTime) <= new Date()) {
-                          effectiveStatus = 'ready_demold'
-                        }
-                      }
-
-                      if (effectiveStatus === 'pending') {
-                        return isJobReady 
-                          ? { label: 'ดำเนินการแล้ว', bg: '#DCFCE7', color: '#166534', border: '#86EFAC' }
-                          : { label: 'รอดำเนินการ', bg: '#F1F5F9', color: '#475569', border: '#CBD5E1' }
-                      }
-                      const statusMap: Record<string, { label: string; bg: string; color: string; border: string }> = {
-                        concrete_ordered: { label: 'รอรับคอนกรีต', bg: '#FEF3C7', color: '#D97706', border: '#FDE68A' },
-                        casting:      { label: 'รอเทคอนกรีต',  bg: '#DBEAFE', color: '#1E40AF', border: '#93C5FD' },
-                        curing:       { label: 'กำลังบ่ม',    bg: '#EFF6FF', color: '#2563EB', border: '#BFDBFE' },
-                        ready_demold: { label: 'พร้อมถอดแบบ', bg: '#F0FDF4', color: '#059669', border: '#A7F3D0' },
-                        demolded:     { label: 'เสร็จสิ้น',   bg: '#F8FAFC', color: '#64748B', border: '#E2E8F0' },
-                      }
-                      return statusMap[effectiveStatus] || statusMap['demolded']
-                    }
-                    const s = getStatusDisplay()
-                    return (
-                      <div key={j.id} style={{ borderRadius: '20px', overflow: 'hidden', border: isJobReady ? '2px solid #34D399' : '1px solid rgba(0,0,0,0.06)', boxShadow: isJobReady ? '0 4px 20px rgba(16,185,129,0.12)' : '0 4px 12px rgba(0,0,0,0.04)', backgroundColor: '#ffffff' }}>
-                        {/* Card Header */}
-                        <div onClick={() => setExpandedJobId(isExpanded ? null : j.id)}
-                          style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', gap: '12px' }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                              {isJobReady && <div style={{ width: '8px', height: '8px', borderRadius: '99px', backgroundColor: '#10B981', flexShrink: 0 }} />}
-                              <h4 style={{ fontSize: '16px', fontWeight: 800, color: '#1E293B', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.plan_item?.product?.name}</h4>
-                            </div>
-                            {j.plan_item?.product?.size && <div style={{ fontSize: '14px', color: '#64748B', fontWeight: 700, marginBottom: '6px' }}>ขนาด: {j.plan_item?.product?.size}</div>}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '14px', color: '#475569', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <i className="fas fa-map-marker-alt" style={{ color: '#3B82F6' }}></i> โรงผลิต {j.bed}
-                              </span>
-                              <span style={{ fontSize: '14px', color: '#475569', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <i className="fas fa-bullseye" style={{ color: '#10B981' }}></i> เป้า: {j.qty_target} {j.plan_item?.product?.unit}
-                              </span>
-                            </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                    {jobsByProductionOrder.map(group => {
+                      return (
+                        <div key={group.orderNumber} style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', backgroundColor: 'rgba(255, 255, 255, 0.45)', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.02)' }}>
+                          {/* Group Header */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #E2E8F0', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '14px', fontWeight: 800, color: '#1E3A8A' }}>
+                              <i className="fas fa-file-invoice" style={{ marginRight: '6px', color: '#3B82F6' }}></i>
+                              ใบสั่งผลิต: {group.orderNumber}
+                            </span>
+                            <span style={{ fontSize: '11px', fontWeight: 700, backgroundColor: group.groupAllReady ? '#DCFCE7' : '#F1F5F9', color: group.groupAllReady ? '#166534' : '#475569', padding: '3px 10px', borderRadius: '99px' }}>
+                              {group.readyJobs.length}/{group.pendingJobs.length} พร้อม
+                            </span>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '10px', fontWeight: 800, padding: '5px 10px', borderRadius: '10px', backgroundColor: s.bg, color: s.color, border: `1px solid ${s.border}`, whiteSpace: 'nowrap' }}>{s.label}</span>
-                            <i className={`fas fa-chevron-${isExpanded ? 'up' : 'down'}`} style={{ color: '#94A3B8', fontSize: '12px', flexShrink: 0 }}></i>
-                          </div>
-                        </div>
+                          
+                          {/* Group Jobs */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {group.jobs.map(j => {
+                              const isExpanded = expandedJobId === j.id
+                              const checks = jobItemChecks[j.id] || { clean: false, wip: false }
+                              const photo = jobItemPhotos[j.id]
+                              const isJobReady = checks.clean && checks.wip && !!photo
+                              
+                              const planId = j.plan_item?.plan_id || (j.plan_item_id && planItemToPlanMap ? planItemToPlanMap[j.plan_item_id] : null)
+                              const materials = planId ? materialsByPlan[planId] || [] : []
+                              
+                              const getStatusDisplay = () => {
+                                let effectiveStatus = j.status
+                                if (effectiveStatus === 'curing') {
+                                  const expectedTime = j.expected_demold_at || (j.cast_at ? new Date(new Date(j.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
+                                  if (expectedTime && new Date(expectedTime) <= new Date()) {
+                                    effectiveStatus = 'ready_demold'
+                                  }
+                                }
 
-                        {/* Expandable Detail */}
-                        {isExpanded && (
-                          <div style={{ padding: '0 20px 20px', borderTop: '1px solid #F1F5F9' }}>
-                            <p style={{ fontSize: '11px', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px' }}>ตรวจสอบความพร้อม</p>
-                            <div style={{ backgroundColor: '#F8FAFC', borderRadius: '16px', padding: '8px', marginBottom: '14px' }}>
-                              <label style={{ display: 'flex', alignItems: 'flex-start', padding: '14px', borderRadius: '12px', cursor: 'pointer', borderBottom: '1px solid #F1F5F9' }}>
-                                <input type="checkbox" style={{ marginTop: '3px', marginRight: '14px', width: '18px', height: '18px', accentColor: '#2563EB', flexShrink: 0 }}
-                                  checked={checks.clean}
-                                  onChange={e => setJobItemChecks(p => ({ ...p, [j.id]: { ...( p[j.id] || { clean: false, wip: false }), clean: e.target.checked } }))} />
-                                <div>
-                                  <p style={{ fontWeight: 800, color: '#1E293B', fontSize: '14px', margin: 0 }}>ทำความสะอาดและทาน้ำยาแม่พิมพ์</p>
-                                  <p style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 500, marginTop: '2px' }}>ตรวจสอบความสะอาดของโรงผลิตก่อนเริ่มงาน</p>
-                                </div>
-                              </label>
-                              <label style={{ display: 'flex', alignItems: 'flex-start', padding: '14px', borderRadius: '12px', cursor: 'pointer' }}>
-                                <input type="checkbox" style={{ marginTop: '3px', marginRight: '14px', width: '18px', height: '18px', accentColor: '#2563EB', flexShrink: 0 }}
-                                  checked={checks.wip}
-                                  onChange={e => setJobItemChecks(p => ({ ...p, [j.id]: { ...(p[j.id] || { clean: false, wip: false }), wip: e.target.checked } }))} />
-                                <div>
-                                  <p style={{ fontWeight: 800, color: '#1E293B', fontSize: '14px', margin: 0 }}>จัดวางโครงเหล็กครบถ้วน</p>
-                                  <p style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 500, marginTop: '2px', marginBottom: '8px' }}>ตรวจสอบรหัสและจำนวนโครงเหล็กให้ตรงตามแผน</p>
-                                  {(() => {
-                                    const product = j.plan_item?.product
-                                    if (!product) return null
-                                    
-                                    const hasWire = product.wire_per_unit && product.wire_per_unit > 0
-                                    const hasMesh = product.mesh_per_unit && product.mesh_per_unit > 0
-                                    const hasRebar = product.rebar_per_unit && product.rebar_per_unit > 0
-
-                                    const productName = product.name || ''
-                                    const isFence = productName.includes('ผนังรั้ว') || productName.includes('รั้ว')
-                                    const isFloor = productName.includes('แผ่นพื้น')
-
-                                    const filtered = materials.filter((m: any) => {
-                                      const isWire = m.category === 'ลวด' || m.name.includes('ลวด') || m.name.toLowerCase().includes('wire')
-                                      const isMesh = m.category === 'เมช' || m.name.includes('ตะแกรง') || m.name.toLowerCase().includes('mesh')
-                                      const isRebar = m.category === 'เหล็กเส้น' || m.name.includes('เหล็กเส้น') || m.name.includes('RB') || m.name.includes('DB')
-
-                                      if (hasWire && isWire) return true
-                                      if (hasMesh && isMesh) return true
-                                      if (hasRebar && isRebar) return true
-
-                                      if (isFence && isMesh) return true
-                                      if (isFloor && isWire) return true
-
-                                      return false
-                                    })
-
-                                    if (filtered.length === 0) return null
-
-                                    return (
-                                      <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', marginTop: '6px' }}>
-                                        {filtered.map((m: any, idx) => (
-                                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderBottom: idx < filtered.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
-                                            <i className="fas fa-check-circle" style={{ color: '#10B981', fontSize: '10px' }}></i>
-                                            <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>{m.name}</span>
-                                          </div>
-                                        ))}
+                                if (effectiveStatus === 'pending') {
+                                  return isJobReady 
+                                    ? { label: 'ดำเนินการแล้ว', bg: '#DCFCE7', color: '#166534', border: '#86EFAC' }
+                                    : { label: 'รอดำเนินการ', bg: '#F1F5F9', color: '#475569', border: '#CBD5E1' }
+                                }
+                                const statusMap: Record<string, { label: string; bg: string; color: string; border: string }> = {
+                                  concrete_ordered: { label: 'รอรับคอนกรีต', bg: '#FEF3C7', color: '#D97706', border: '#FDE68A' },
+                                  casting:      { label: 'รอเทคอนกรีต',  bg: '#DBEAFE', color: '#1E40AF', border: '#93C5FD' },
+                                  curing:       { label: 'กำลังบ่ม',    bg: '#EFF6FF', color: '#2563EB', border: '#BFDBFE' },
+                                  ready_demold: { label: 'พร้อมถอดแบบ', bg: '#F0FDF4', color: '#059669', border: '#A7F3D0' },
+                                  demolded:     { label: 'เสร็จสิ้น',   bg: '#F8FAFC', color: '#64748B', border: '#E2E8F0' },
+                                }
+                                return statusMap[effectiveStatus] || statusMap['demolded']
+                              }
+                              const s = getStatusDisplay()
+                              
+                              return (
+                                <div key={j.id} style={{ borderRadius: '20px', overflow: 'hidden', border: isJobReady ? '2px solid #34D399' : '1px solid rgba(0,0,0,0.06)', boxShadow: isJobReady ? '0 4px 20px rgba(16,185,129,0.12)' : '0 4px 12px rgba(0,0,0,0.04)', backgroundColor: '#ffffff' }}>
+                                  {/* Card Header */}
+                                  <div onClick={() => setExpandedJobId(isExpanded ? null : j.id)}
+                                    style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', gap: '12px' }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                        {isJobReady && <div style={{ width: '8px', height: '8px', borderRadius: '99px', backgroundColor: '#10B981', flexShrink: 0 }} />}
+                                        <h4 style={{ fontSize: '16px', fontWeight: 800, color: '#1E293B', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.plan_item?.product?.name}</h4>
                                       </div>
-                                    )
-                                  })()}
-                                </div>
-                              </label>
-                            </div>
-                            <p style={{ fontSize: '11px', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px' }}>ถ่ายภาพยืนยัน <span style={{ color: '#EF4444' }}>*</span></p>
-                            <div style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', border: photo ? '2px solid #34D399' : '2px dashed #CBD5E1', height: '120px', backgroundColor: '#F8FAFC', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94A3B8' }}>
-                              {!photo && <input type="file" accept="image/*" capture="environment" style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10, width: '100%', height: '100%' }} onChange={e => handleJobItemPhotoSelect(e, j.id)} />}
-                              {photo ? (
-                                <>
-                                  <img src={photo.preview} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                                  <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <button onClick={e => { e.stopPropagation(); setJobItemPhotos(p => { const n={...p}; delete n[j.id]; return n }) }}
-                                      style={{ position: 'absolute', top: '10px', right: '10px', width: '36px', height: '36px', backgroundColor: 'rgba(239,68,68,0.95)', borderRadius: '50%', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20 }}>
-                                      <i className="fas fa-trash" style={{ color: '#fff', fontSize: '14px' }}></i>
-                                    </button>
-                                    <i className="fas fa-check-circle" style={{ color: '#fff', fontSize: '36px' }}></i>
+                                      {j.plan_item?.product?.size && <div style={{ fontSize: '14px', color: '#64748B', fontWeight: 700, marginBottom: '6px' }}>ขนาด: {j.plan_item?.product?.size}</div>}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: '14px', color: '#475569', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <i className="fas fa-map-marker-alt" style={{ color: '#3B82F6' }}></i> โรงผลิต {j.bed}
+                                        </span>
+                                        <span style={{ fontSize: '14px', color: '#475569', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <i className="fas fa-bullseye" style={{ color: '#10B981' }}></i> เป้า: {j.qty_target} {j.plan_item?.product?.unit}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <span style={{ fontSize: '10px', fontWeight: 800, padding: '5px 10px', borderRadius: '10px', backgroundColor: s.bg, color: s.color, border: `1px solid ${s.border}`, whiteSpace: 'nowrap' }}>{s.label}</span>
+                                      <i className={`fas fa-chevron-${isExpanded ? 'up' : 'down'}`} style={{ color: '#94A3B8', fontSize: '12px', flexShrink: 0 }}></i>
+                                    </div>
                                   </div>
-                                </>
-                              ) : (
-                                <><i className="fas fa-camera" style={{ fontSize: '28px', marginBottom: '8px' }}></i><span style={{ fontSize: '11px', fontWeight: 800 }}>แตะเพื่อถ่ายภาพยืนยัน</span></>
-                              )}
-                            </div>
-                            {isJobReady && (
-                              <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                                <i className="fas fa-check-circle" style={{ color: '#10B981' }}></i>
-                                <span style={{ fontSize: '13px', fontWeight: 800, color: '#10B981' }}>รายการนี้พร้อมแล้ว</span>
-                              </div>
-                            )}
+
+                                  {/* Expandable Detail */}
+                                  {isExpanded && (
+                                    <div style={{ padding: '0 20px 20px', borderTop: '1px solid #F1F5F9' }}>
+                                      <p style={{ fontSize: '11px', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px' }}>ตรวจสอบความพร้อม</p>
+                                      <div style={{ backgroundColor: '#F8FAFC', borderRadius: '16px', padding: '8px', marginBottom: '14px' }}>
+                                        <label style={{ display: 'flex', alignItems: 'flex-start', padding: '14px', borderRadius: '12px', cursor: 'pointer', borderBottom: '1px solid #F1F5F9' }}>
+                                          <input type="checkbox" style={{ marginTop: '3px', marginRight: '14px', width: '18px', height: '18px', accentColor: '#2563EB', flexShrink: 0 }}
+                                            checked={checks.clean}
+                                            onChange={e => setJobItemChecks(p => ({ ...p, [j.id]: { ...( p[j.id] || { clean: false, wip: false }), clean: e.target.checked } }))} />
+                                          <div>
+                                            <p style={{ fontWeight: 800, color: '#1E293B', fontSize: '14px', margin: 0 }}>ทำความสะอาดและทาน้ำยาแม่พิมพ์</p>
+                                            <p style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 500, marginTop: '2px' }}>ตรวจสอบความสะอาดของโรงผลิตก่อนเริ่มงาน</p>
+                                          </div>
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'flex-start', padding: '14px', borderRadius: '12px', cursor: 'pointer' }}>
+                                          <input type="checkbox" style={{ marginTop: '3px', marginRight: '14px', width: '18px', height: '18px', accentColor: '#2563EB', flexShrink: 0 }}
+                                            checked={checks.wip}
+                                            onChange={e => setJobItemChecks(p => ({ ...p, [j.id]: { ...(p[j.id] || { clean: false, wip: false }), wip: e.target.checked } }))} />
+                                          <div>
+                                            <p style={{ fontWeight: 800, color: '#1E293B', fontSize: '14px', margin: 0 }}>จัดวางโครงเหล็กครบถ้วน</p>
+                                            <p style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 500, marginTop: '2px', marginBottom: '8px' }}>ตรวจสอบรหัสและจำนวนโครงเหล็กให้ตรงตามแผน</p>
+                                            {(() => {
+                                              const product = j.plan_item?.product
+                                              if (!product) return null
+                                              
+                                              const hasWire = product.wire_per_unit && product.wire_per_unit > 0
+                                              const hasMesh = product.mesh_per_unit && product.mesh_per_unit > 0
+                                              const hasRebar = product.rebar_per_unit && product.rebar_per_unit > 0
+
+                                              const productName = product.name || ''
+                                              const isFence = productName.includes('ผนังรั้ว') || productName.includes('รั้ว')
+                                              const isFloor = productName.includes('แผ่นพื้น')
+
+                                              const filtered = materials.filter((m: any) => {
+                                                const isWire = m.category === 'ลวด' || m.name.includes('ลวด') || m.name.toLowerCase().includes('wire')
+                                                const isMesh = m.category === 'เมช' || m.name.includes('ตะแกรง') || m.name.toLowerCase().includes('mesh')
+                                                const isRebar = m.category === 'เหล็กเส้น' || m.name.includes('เหล็กเส้น') || m.name.includes('RB') || m.name.includes('DB')
+
+                                                if (hasWire && isWire) return true
+                                                if (hasMesh && isMesh) return true
+                                                if (hasRebar && isRebar) return true
+
+                                                if (isFence && isMesh) return true
+                                                if (isFloor && isWire) return true
+
+                                                return false
+                                              })
+
+                                              if (filtered.length === 0) return null
+
+                                              return (
+                                                <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', marginTop: '6px' }}>
+                                                  {filtered.map((m: any, idx) => (
+                                                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderBottom: idx < filtered.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
+                                                      <i className="fas fa-check-circle" style={{ color: '#10B981', fontSize: '10px' }}></i>
+                                                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>{m.name}</span>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              )
+                                            })()}
+                                          </div>
+                                        </label>
+                                      </div>
+                                      <p style={{ fontSize: '11px', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px' }}>ถ่ายภาพยืนยัน <span style={{ color: '#EF4444' }}>*</span></p>
+                                      <div style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', border: photo ? '2px solid #34D399' : '2px dashed #CBD5E1', height: '120px', backgroundColor: '#F8FAFC', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94A3B8' }}>
+                                        {!photo && <input type="file" accept="image/*" capture="environment" style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10, width: '100%', height: '100%' }} onChange={e => handleJobItemPhotoSelect(e, j.id)} />}
+                                        {photo ? (
+                                          <>
+                                            <img src={photo.preview} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                              <button onClick={e => { e.stopPropagation(); setJobItemPhotos(p => { const n={...p}; delete n[j.id]; return n }) }}
+                                                style={{ position: 'absolute', top: '10px', right: '10px', width: '36px', height: '36px', backgroundColor: 'rgba(239,68,68,0.95)', borderRadius: '50%', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20 }}>
+                                                <i className="fas fa-trash" style={{ color: '#fff', fontSize: '14px' }}></i>
+                                              </button>
+                                              <i className="fas fa-check-circle" style={{ color: '#fff', fontSize: '36px' }}></i>
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <><i className="fas fa-camera" style={{ fontSize: '28px', marginBottom: '8px' }}></i><span style={{ fontSize: '11px', fontWeight: 800 }}>แตะเพื่อถ่ายภาพยืนยัน</span></>
+                                        )}
+                                      </div>
+                                      {isJobReady && (
+                                        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                                          <i className="fas fa-check-circle" style={{ color: '#10B981' }}></i>
+                                          <span style={{ fontSize: '13px', fontWeight: 800, color: '#10B981' }}>รายการนี้พร้อมแล้ว</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
                           </div>
-                        )}
-                      </div>
-                    )
-                  })}
+
+                          {/* Group-specific concrete order button */}
+                          {group.groupAllReady && (
+                            <div style={{ marginTop: '8px', padding: '16px', backgroundColor: '#0F172A', borderRadius: '18px', boxShadow: '0 10px 25px -5px rgba(15,23,42,0.3)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                <div>
+                                  <p style={{ fontSize: '10px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>พร้อมสั่งคอนกรีตเฉพาะกลุ่มนี้</p>
+                                  <p style={{ fontSize: '18px', fontWeight: 900, color: '#60A5FA', margin: 0 }}>{group.totalConcrete.toFixed(1)} <span style={{ fontSize: '12px', color: '#64748B' }}>คิว ({group.totalRoundsCount} รอบ)</span></p>
+                                </div>
+                                <i className="fas fa-truck-monster" style={{ fontSize: '24px', color: '#3B82F6', opacity: 0.6 }}></i>
+                              </div>
+                              <button disabled={saving} onClick={() => {
+                                setJobsToConfirm(group.readyJobs)
+                                setShowConcreteSummary(true)
+                              }}
+                                style={{ width: '100%', padding: '12px', backgroundColor: '#2563EB', color: '#ffffff', borderRadius: '99px', border: 'none', fontSize: '14px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 6px 16px -4px rgba(37,99,235,0.5)' }}>
+                                {saving ? <i className="fas fa-spinner fa-spin"></i> : <><i className="fas fa-paper-plane"></i> สั่งคอนกรีตเฉพาะกลุ่มนี้</>}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
 
-                {/* Order Concrete Button */}
-                {allJobsReady && !concreteSent && jobOrders.some(j => j.status === 'pending') && (
-                  <div style={{ marginTop: '20px', padding: '20px', backgroundColor: '#0F172A', borderRadius: '24px', boxShadow: '0 15px 35px -5px rgba(15,23,42,0.4)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                      <div>
-                        <p style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>พร้อมสั่งคอนกรีต</p>
-                        <p style={{ fontSize: '22px', fontWeight: 900, color: '#60A5FA', margin: 0 }}>{totalConcreteQty.toFixed(1)} <span style={{ fontSize: '14px', color: '#64748B' }}>คิว ({totalRounds} รอบ)</span></p>
-                      </div>
-                      <i className="fas fa-truck-monster" style={{ fontSize: '32px', color: '#3B82F6', opacity: 0.6 }}></i>
-                    </div>
-                    <button disabled={saving} onClick={() => setShowConcreteSummary(true)}
-                      style={{ width: '100%', padding: '16px', backgroundColor: '#2563EB', color: '#ffffff', borderRadius: '99px', border: 'none', fontSize: '16px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', boxShadow: '0 8px 24px -4px rgba(37,99,235,0.6)' }}>
-                      {saving ? <i className="fas fa-spinner fa-spin"></i> : <><i className="fas fa-paper-plane"></i> สั่งคอนกรีต</>}
-                    </button>
-                  </div>
-                )}
-
-                {showConcreteSummary && (
+                {showConcreteSummary && jobsToConfirm && (
                   <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#E8ECF1', zIndex: 100, padding: '24px 20px', overflowY: 'auto' }}>
                     <div style={{ maxWidth: '480px', margin: '0 auto' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
@@ -1060,7 +1166,7 @@ export default function WorkerClient({
                         <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: '#0F172A' }}>ตรวจสอบใบสั่งคอนกรีต</h2>
                       </div>
 
-                      {allJobsByBed.map((group) => {
+                      {confirmJobsByBed.map((group) => {
                         const bedTotalConcrete = group.jobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0);
                         const bedRounds = calculateConcreteRounds(bedTotalConcrete).length;
                         return (
@@ -1113,13 +1219,13 @@ export default function WorkerClient({
                         <div>
                           <span style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ปริมาณรวมทั้งหมด</span>
                           <div style={{ fontSize: '28px', fontWeight: 900, color: '#60A5FA', marginTop: 4 }}>
-                            {totalConcreteQty.toFixed(2)} <span style={{ fontSize: '14px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', marginLeft: '2px' }}>คิว</span>
+                            {confirmConcreteQty.toFixed(2)} <span style={{ fontSize: '14px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', marginLeft: '2px' }}>คิว</span>
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <span style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>จำนวนรอบส่ง</span>
                           <div style={{ fontSize: '28px', fontWeight: 900, color: '#F8FAFC', marginTop: 4 }}>
-                            {totalRounds} <span style={{ fontSize: '14px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', marginLeft: '2px' }}>รอบ</span>
+                            {confirmRounds} <span style={{ fontSize: '14px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', marginLeft: '2px' }}>รอบ</span>
                           </div>
                         </div>
                       </div>
@@ -1130,7 +1236,7 @@ export default function WorkerClient({
                         </button>
                         <button onClick={() => {
                           setShowConcreteSummary(false)
-                          handleOrderConcrete()
+                          handleOrderConcrete(jobsToConfirm)
                         }} disabled={saving} style={{ flex: 2, padding: '16px', backgroundColor: '#2563EB', color: '#fff', border: 'none', borderRadius: '99px', fontSize: '16px', fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 8px 24px -4px rgba(37,99,235,0.6)', cursor: 'pointer' }}>
                           <i className="fas fa-check-circle"></i> ยืนยันสั่งคอนกรีต
                         </button>
@@ -1138,11 +1244,13 @@ export default function WorkerClient({
                     </div>
                   </div>
                 )}
-                {concreteSent && (
+                {orderedProductionOrders.length > 0 && (
                   <div style={{ marginTop: '20px', padding: '18px 20px', backgroundColor: '#F0FDF4', borderRadius: '20px', border: '1px solid #A7F3D0', display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <i className="fas fa-check-circle" style={{ fontSize: '24px', color: '#10B981' }}></i>
                     <div>
-                      <p style={{ fontWeight: 800, color: '#047857', margin: 0 }}>ส่งคำสั่งคอนกรีตแล้ว</p>
+                      <p style={{ fontWeight: 800, color: '#047857', margin: 0 }}>
+                        ส่งคำสั่งคอนกรีตแล้ว ({orderedProductionOrders.map(po => `ใบสั่งผลิต: ${po}`).join(', ')})
+                      </p>
                       <p style={{ fontSize: '12px', color: '#6EE7B7', margin: 0 }}>ไปที่แถบ &ldquo;รับคอนกรีต&rdquo; เพื่อติดตาม</p>
                     </div>
                   </div>

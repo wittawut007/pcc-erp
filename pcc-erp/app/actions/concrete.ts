@@ -208,6 +208,7 @@ export async function getPendingConcreteOrders() {
     .select(`
       *,
       bed,
+      production_order_id,
       requested_by_profile:profiles!concrete_orders_requested_by_fkey(full_name, employee_code),
       job_order:job_orders(
         id, bed, qty_target, order_id,
@@ -226,16 +227,69 @@ export async function getPendingConcreteOrders() {
 
   if (error) throw new Error(error.message)
 
+  // Fetch all jobs currently waiting for concrete to attach production details
+  const { data: jobOrders } = await supabase
+    .from('job_orders')
+    .select(`
+      id, bed, qty_target, status, order_id,
+      production_order:production_orders(order_number, status),
+      plan_item:production_plan_items(
+        product:products(id, name, code, size, unit)
+      )
+    `)
+    .eq('status', 'concrete_ordered')
+
+  // Group job orders by PO ID and Bed (primary key: production_order_id + bed)
+  const jobsByPoAndBed: Record<string, any[]> = {}
+  jobOrders?.forEach(job => {
+    if (job.order_id && job.bed) {
+      const key = `${job.order_id}-${job.bed}`
+      if (!jobsByPoAndBed[key]) jobsByPoAndBed[key] = []
+      jobsByPoAndBed[key].push(job)
+    }
+  })
+
+  // Group job orders by bed only (fallback for older orders with null production_order_id)
+  const jobsByBedOnly: Record<string, any[]> = {}
+  jobOrders?.forEach(job => {
+    if (job.bed) {
+      if (!jobsByBedOnly[job.bed]) jobsByBedOnly[job.bed] = []
+      jobsByBedOnly[job.bed].push(job)
+    }
+  })
+
   // Filter out orders where production_order.status is 'erp_synced'
   const activeOrders = (data ?? []).filter(order => {
     return (order.job_order as any)?.production_order?.status !== 'erp_synced'
   })
 
-  // Sort rounds by round_number
-  return activeOrders.map(order => ({
-    ...order,
-    rounds: (order.rounds ?? []).sort((a: { round_number: number }, b: { round_number: number }) => a.round_number - b.round_number),
-  }))
+  // Sort rounds by round_number and attach bed_jobs
+  return activeOrders.map(order => {
+    const concreteOrder = order as any
+    const jo = concreteOrder.job_order
+    let bedJobs: any[] = []
+
+    // Priority 1: use production_order_id stored directly in concrete_orders (new records)
+    if (concreteOrder.production_order_id && concreteOrder.bed) {
+      const key = `${concreteOrder.production_order_id}-${concreteOrder.bed}`
+      bedJobs = jobsByPoAndBed[key] || []
+    }
+    // Priority 2: use order_id from linked job_order (for records that have job_order_id but not production_order_id)
+    else if (jo?.order_id && concreteOrder.bed) {
+      const key = `${jo.order_id}-${concreteOrder.bed}`
+      bedJobs = jobsByPoAndBed[key] || []
+    }
+    // Fallback: bed only (for very old records)
+    else if (concreteOrder.bed) {
+      bedJobs = jobsByBedOnly[String(concreteOrder.bed)] || []
+    }
+
+    return {
+      ...order,
+      bed_jobs: bedJobs,
+      rounds: (order.rounds ?? []).sort((a: { round_number: number }, b: { round_number: number }) => a.round_number - b.round_number),
+    }
+  })
 }
 
 /**
