@@ -40,6 +40,7 @@ function getThaiCategoryDisplay(category: string): string {
   const CAT_STYLES = [
     { prefix: 'A13', short: 'แผ่นพื้น' },
     { prefix: 'A30', short: 'ผนังรั้วสำเร็จรูป' },
+    { prefix: 'A31', short: 'ผนังสำเร็จรูป/ผนังกันตก/FIN' },
     { prefix: 'A35', short: 'รั้วสำเร็จรูป' },
     { prefix: 'A36', short: 'เสา คาน บันได' },
     { prefix: 'A41', short: 'เสาเข็ม' },

@@ -516,3 +516,93 @@ export async function getSupabaseUsageAction(): Promise<{ data?: SupabaseUsageSu
     return { error: message }
   }
 }
+
+// ─── Purge Old Production Photos Server Action ──────────────────────────────
+
+export async function purgeOldPhotosAction(startDate: string, endDate: string): Promise<ResetResult> {
+  try {
+    // 1. ตรวจสอบสิทธิ์ผู้ดูแลระบบ (Admin)
+    const { supabase: clientSupabase, userId } = await getAdminClient()
+
+    // 2. ใช้ Admin Client ในการดึง metadata ของรูปภาพทั้งหมดที่จะลบ
+    const adminSupabase = createAdminClient()
+    const { data: photosMeta, error: fetchError } = await adminSupabase.rpc('get_production_photos_meta', {
+      start_date: startDate,
+      end_date: endDate
+    })
+
+    if (fetchError) {
+      console.error('Error fetching photos meta for purge:', fetchError)
+      throw new Error(`ล้มเหลวในการตรวจสอบรายการไฟล์รูปภาพ: ${fetchError.message}`)
+    }
+
+    const photos = photosMeta || []
+    
+    // 3. รวบรวม Storage Path ของไฟล์เพื่อสั่งลบใน Storage
+    const filePaths = photos
+      .map((p: any) => p.storage_path)
+      .filter((path: string) => path && path.trim() !== '')
+
+    let deletedFilesCount = 0
+
+    // 4. สั่งลบไฟล์จริงออกจาก bucket "job_photos" (ลบทีละชุดละ 100 ไฟล์เพื่อความสถียร)
+    if (filePaths.length > 0) {
+      const CHUNK_SIZE = 100
+      for (let i = 0; i < filePaths.length; i += CHUNK_SIZE) {
+        const chunk = filePaths.slice(i, i + CHUNK_SIZE)
+        const { error: removeError } = await adminSupabase.storage.from('job_photos').remove(chunk)
+        
+        if (removeError) {
+          console.error(`Error deleting storage files chunk starting at index ${i}:`, removeError)
+          // บันทึกความผิดพลาดแต่ให้ข้ามไปทำงานอื่นต่อเพื่อไม่ให้กระบวนการหลักค้าง
+        } else {
+          deletedFilesCount += chunk.length
+        }
+      }
+    }
+
+    // 5. เรียก RPC purge_production_photos เพื่ออัปเดตลิงก์รูปภาพในฐานข้อมูลให้เป็น NULL
+    const { data: purgeResult, error: dbPurgeError } = await adminSupabase.rpc('purge_production_photos', {
+      start_date: startDate,
+      end_date: endDate
+    })
+
+    if (dbPurgeError) {
+      console.error('Error clearing photo URLs in DB:', dbPurgeError)
+      throw new Error(`ลบไฟล์ใน Storage สำเร็จแล้ว แต่ล้มเหลวในการเคลียร์ลิงก์ข้อมูลใน DB: ${dbPurgeError.message}`)
+    }
+
+    const stats = purgeResult || {}
+
+    // 6. บันทึกประวัติลงใน Activity Log
+    await logResetEvent(
+      clientSupabase,
+      userId,
+      'STORAGE_PURGE',
+      `ลบไฟล์รูปภาพใน Storage ช่วงวันที่ ${startDate} ถึง ${endDate} (พบลิงก์ ${photos.length} รายการ, ลบสำเร็จ ${deletedFilesCount} ไฟล์)`
+    )
+
+    // 7. สั่งเคลียร์ cache หน้าที่เกี่ยวข้อง
+    revalidatePath('/settings')
+    revalidatePath('/job-orders')
+    revalidatePath('/qc')
+    revalidatePath('/demolding')
+
+    return {
+      success: true,
+      summary: {
+        'จำนวนไฟล์ที่พบลบ': photos.length,
+        'ลบสำเร็จใน Storage (ไฟล์)': deletedFilesCount,
+        'อัปเดตงานหล่อปูน (เตรียมแบบ)': stats.job_orders_ready_cleared ?? 0,
+        'อัปเดตงานหล่อปูน (เทปูน)': stats.job_orders_cast_cleared ?? 0,
+        'อัปเดตบันทึกถอดแบบ': stats.demold_records_cleared ?? 0,
+        'อัปเดตประวัติ QC': stats.qc_inspections_cleared ?? 0
+      }
+    }
+
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเคลียร์ข้อมูลรูปภาพ'
+    return { success: false, error: message }
+  }
+}
+

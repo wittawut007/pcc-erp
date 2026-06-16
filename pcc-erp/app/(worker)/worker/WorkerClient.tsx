@@ -27,7 +27,7 @@ interface Job {
     plan_id?: string
     product: { 
       id: string; code: string; name: string; size?: string; category: string; unit: string; 
-      concrete_per_unit?: number; wire_per_unit?: number; mesh_per_unit?: number; rebar_per_unit?: number;
+      concrete_per_unit?: number; wire_per_unit?: number; mesh_per_unit?: number; rebar_per_unit?: number; concrete_group?: string | null;
     } | null
   } | null
 }
@@ -89,11 +89,12 @@ export default function WorkerClient({
   const [activeConcreteOrders, setActiveConcreteOrders] = useState<{
     id: string; job_order_id: string; bed: string | null; qty_requested: number; round_count: number; requested_at: string;
     notes?: string | null;
+    concrete_group?: string | null;
     job_order?: { 
       bed: string; 
       status: string; 
       production_order?: { status: string } | null;
-      plan_item?: { product?: { name: string } | null } | null 
+      plan_item?: { product?: { name: string; concrete_group?: string | null } | null } | null 
     } | null
     rounds: { id: string; round_number: number; qty_per_round: number; status: string; supplied_at: string | null }[]
   }[]>([])
@@ -327,6 +328,7 @@ export default function WorkerClient({
             qty_requested: totalConcreteQty,
             round_count: bedRounds,
             status: 'requested',
+            concrete_group: bedJobs[0]?.plan_item?.product?.concrete_group || null,
           }).select('id').single()
 
           if (order?.id) {
@@ -359,11 +361,11 @@ export default function WorkerClient({
     try {
       const { data } = await supabase
         .from('concrete_orders')
-        .select(`id, job_order_id, bed, qty_requested, round_count, requested_at, notes,
+        .select(`id, job_order_id, bed, qty_requested, round_count, requested_at, notes, concrete_group,
           job_order:job_orders(
             id, bed, status,
             production_order:production_orders(status),
-            plan_item:production_plan_items(product:products(name))
+            plan_item:production_plan_items(product:products(name, concrete_group))
           ),
           rounds:concrete_rounds(id, round_number, qty_per_round, status, supplied_at)`)
         .in('status', ['requested', 'supplied'])
@@ -494,6 +496,7 @@ export default function WorkerClient({
           round_count: bedRounds,
           status: 'requested',
           notes: notes,
+          concrete_group: bedJobs[0]?.plan_item?.product?.concrete_group || null,
         }).select('id').single()
 
         if (order?.id) {
@@ -829,7 +832,7 @@ export default function WorkerClient({
                             {j.plan_item?.product?.size && <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748B', marginLeft: '6px' }}>(ขนาด: {j.plan_item?.product?.size})</span>}
                           </div>
                         </div>
-                        <div style={{ fontSize: '18px', fontWeight: 900, color: '#2563EB' }}>{((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target).toFixed(1)} <span style={{ fontSize: '12px', textTransform: 'uppercase', marginLeft: '2px', color: '#60A5FA', fontWeight: 800 }}>คิว</span></div>
+                        <div style={{ fontSize: '18px', fontWeight: 900, color: '#2563EB' }}>{((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target).toFixed(2)} <span style={{ fontSize: '12px', textTransform: 'uppercase', marginLeft: '2px', color: '#60A5FA', fontWeight: 800 }}>คิว</span></div>
                       </div>
                     ))}
                   </div>
@@ -837,7 +840,7 @@ export default function WorkerClient({
                   <div style={{ backgroundColor: '#0F172A', padding: '24px', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.4)' }}>
                     <span style={{ fontSize: '14px', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ปริมาณสั่งรวม</span>
                     <span style={{ fontSize: '36px', fontWeight: 900, color: '#60A5FA' }}>
-                      {jobsByBed[currentBedIndex].jobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0).toFixed(1)} <span style={{ fontSize: '16px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', marginLeft: '6px' }}>คิว</span>
+                      {jobsByBed[currentBedIndex].jobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0).toFixed(2)} <span style={{ fontSize: '16px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', marginLeft: '6px' }}>คิว</span>
                     </span>
                   </div>
                 </div>
@@ -851,7 +854,7 @@ export default function WorkerClient({
                   const calculatedQty = jobsByBed[currentBedIndex].jobs.reduce((sum, j) => sum + ((j.plan_item?.product?.concrete_per_unit || 0) * j.qty_target), 0)
                   setConfirmingBedIndex(currentBedIndex)
                   setOrderMoreMode('system')
-                  setCustomConcreteQty(calculatedQty.toFixed(1))
+                  setCustomConcreteQty(calculatedQty.toFixed(2))
                   setShowConcreteConfirmModal(true)
                 }} 
                   style={{ flex: 2, backgroundColor: '#2563EB', color: '#ffffff', padding: '16px', borderRadius: '16px', fontWeight: 900, fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: 'pointer', boxShadow: '0 10px 20px -5px rgba(37,99,235,0.4)', border: 'none' }}>
@@ -1138,7 +1141,7 @@ export default function WorkerClient({
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                                 <div>
                                   <p style={{ fontSize: '10px', color: '#94A3B8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>พร้อมสั่งคอนกรีตเฉพาะกลุ่มนี้</p>
-                                  <p style={{ fontSize: '18px', fontWeight: 900, color: '#60A5FA', margin: 0 }}>{group.totalConcrete.toFixed(1)} <span style={{ fontSize: '12px', color: '#64748B' }}>คิว ({group.totalRoundsCount} รอบ)</span></p>
+                                  <p style={{ fontSize: '18px', fontWeight: 900, color: '#60A5FA', margin: 0 }}>{group.totalConcrete.toFixed(2)} <span style={{ fontSize: '12px', color: '#64748B' }}>คิว ({group.totalRoundsCount} รอบ)</span></p>
                                 </div>
                                 <i className="fas fa-truck-monster" style={{ fontSize: '24px', color: '#3B82F6', opacity: 0.6 }}></i>
                               </div>
@@ -1179,6 +1182,14 @@ export default function WorkerClient({
                               </div>
                               <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#0F172A', margin: 0 }}>ใบสั่งคอนกรีต โรง {group.bed}</h2>
                               <p style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, marginTop: '4px', textTransform: 'uppercase' }}>Bed {group.bed} Order Summary</p>
+                              {group.jobs[0]?.plan_item?.product?.concrete_group && (
+                                <div style={{ marginTop: '8px' }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 20, background: '#DBEAFE', color: '#1D4ED8', fontSize: 12, fontWeight: 700 }}>
+                                    <i className="fas fa-fill-drip" style={{ fontSize: 10 }} />
+                                    ประเภทคอนกรีต: {group.jobs[0].plan_item.product.concrete_group}
+                                  </span>
+                                </div>
+                              )}
                             </div>
 
                             <div style={{ borderTop: '2px dashed #E2E8F0', borderBottom: '2px dashed #E2E8F0', padding: '16px 0', marginBottom: '20px' }}>
@@ -1186,9 +1197,17 @@ export default function WorkerClient({
                                 <div key={j.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '8px 0' }}>
                                   <div>
                                     <div style={{ fontSize: '14px', fontWeight: 800, color: '#1E293B' }}>{j.plan_item?.product?.name}</div>
-                                    <div style={{ fontSize: '12px', color: '#64748B', marginTop: 2 }}>
-                                      จำนวน: {j.qty_target} {j.plan_item?.product?.unit || 'ชิ้น'}
-                                      {j.plan_item?.product?.size && j.plan_item?.product?.size !== '-' && ` | ขนาด: ${j.plan_item?.product?.size}`}
+                                    <div style={{ fontSize: '12px', color: '#64748B', marginTop: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                      <div>
+                                        จำนวน: {j.qty_target} {j.plan_item?.product?.unit || 'ชิ้น'}
+                                        {j.plan_item?.product?.size && j.plan_item?.product?.size !== '-' && ` | ขนาด: ${j.plan_item?.product?.size}`}
+                                      </div>
+                                      {j.plan_item?.product?.concrete_group && (
+                                        <div style={{ color: '#2563EB', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                          <i className="fas fa-fill-drip" style={{ fontSize: 9 }} />
+                                          ประเภทคอนกรีต: {j.plan_item.product.concrete_group}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                   <div style={{ textAlign: 'right' }}>
@@ -1342,6 +1361,17 @@ export default function WorkerClient({
                         <p style={{ margin: 0, fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
                           สั่ง {new Date(order.requested_at).toLocaleString('th-TH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </p>
+                        {(() => {
+                          const concreteGroup = order.concrete_group || (order.job_order as any)?.plan_item?.product?.concrete_group;
+                          return concreteGroup ? (
+                            <div style={{ marginTop: 4 }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 12, background: '#DBEAFE', color: '#1D4ED8', fontSize: 10, fontWeight: 700 }}>
+                                <i className="fas fa-fill-drip" style={{ fontSize: 8 }} />
+                                {concreteGroup}
+                              </span>
+                            </div>
+                          ) : null;
+                        })()}
                         {order.notes && (
                           <div style={{ marginTop: 4, fontSize: 10, color: '#D97706', fontWeight: 700, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
                             <i className="fas fa-exclamation-circle" style={{ marginTop: 2, flexShrink: 0 }} />
@@ -1366,6 +1396,7 @@ export default function WorkerClient({
                         
                         const isSecondToLast = order.rounds.length >= 2 && idx === order.rounds.length - 2
                         const lastRound = order.rounds[order.rounds.length - 1]
+                        const concreteGroup = order.concrete_group || (order.job_order as any)?.plan_item?.product?.concrete_group
 
                         return (
                           <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', borderBottom: idx < order.rounds.length - 1 ? '1px solid #F8FAFC' : 'none', background: isReceived ? '#F0FDF4' : isSupplied ? '#FFFBEB' : 'transparent', opacity: isLocked ? 0.4 : 1 }}>
@@ -1373,8 +1404,17 @@ export default function WorkerClient({
                               {isReceived ? <i className="fas fa-check-double" style={{ fontSize: 10 }} /> : isSupplied ? <i className="fas fa-truck" style={{ fontSize: 10 }} /> : isLocked ? <i className="fas fa-lock" style={{ fontSize: 9 }} /> : r.round_number}
                             </div>
                             <div style={{ flex: 1 }}>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: isReceived ? '#047857' : isLocked ? '#9CA3AF' : '#1E293B' }}>รอบที่ {r.round_number}</span>
-                              <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 6 }}>{Number(r.qty_per_round).toFixed(2)} คิว</span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: isReceived ? '#047857' : isLocked ? '#9CA3AF' : '#1E293B' }}>
+                                รอบที่ {r.round_number}
+                                {concreteGroup && (
+                                  <span style={{ fontWeight: 600, color: isReceived ? '#059669' : isLocked ? '#9CA3AF' : '#4B5563', marginLeft: 4 }}>
+                                    ({concreteGroup})
+                                  </span>
+                                )}
+                              </span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: isReceived ? '#047857' : isLocked ? '#9CA3AF' : '#1E293B', marginLeft: 6 }}>
+                                {Number(r.qty_per_round).toFixed(2)} คิว
+                              </span>
                               {isReceived ? (
                                 <div style={{ fontSize: 10, color: '#10B981', fontWeight: 700, marginTop: 1 }}>รับเรียบร้อยแล้ว</div>
                               ) : isSupplied ? (
@@ -1538,14 +1578,14 @@ export default function WorkerClient({
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     <p style={{ margin: 0, fontSize: '14px', color: '#475569', lineHeight: 1.5, fontWeight: 500 }}>
-                      ระบบคำนวณปริมาณคอนกรีตที่ต้องใช้สำหรับงานบนโรงผลิตนี้รวมทั้งสิ้น <strong style={{ color: '#2563EB' }}>{calculatedQty.toFixed(1)} คิว</strong> ต้องการสั่งปูนตามจำนวนนี้หรือต้องการสั่งเพิ่ม?
+                      ระบบคำนวณปริมาณคอนกรีตที่ต้องใช้สำหรับงานบนโรงผลิตนี้รวมทั้งสิ้น <strong style={{ color: '#2563EB' }}>{calculatedQty.toFixed(2)} คิว</strong> ต้องการสั่งปูนตามจำนวนนี้หรือต้องการสั่งเพิ่ม?
                     </p>
 
                     {/* Option 1: System Qty */}
                     <div 
                       onClick={() => {
                         setOrderMoreMode('system')
-                        setCustomConcreteQty(calculatedQty.toFixed(1))
+                        setCustomConcreteQty(calculatedQty.toFixed(2))
                       }}
                       style={{
                         padding: '16px 20px',
@@ -1564,7 +1604,7 @@ export default function WorkerClient({
                         <span style={{ fontSize: '11px', color: orderMoreMode === 'system' ? '#60A5FA' : '#94A3B8', fontWeight: 600 }}>ปริมาณพอดีตามเป้าหมายแผนผลิต</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '18px', fontWeight: 900, color: orderMoreMode === 'system' ? '#2563EB' : '#475569' }}>{calculatedQty.toFixed(1)} <span style={{ fontSize: '12px', fontWeight: 700 }}>คิว</span></span>
+                        <span style={{ fontSize: '18px', fontWeight: 900, color: orderMoreMode === 'system' ? '#2563EB' : '#475569' }}>{calculatedQty.toFixed(2)} <span style={{ fontSize: '12px', fontWeight: 700 }}>คิว</span></span>
                         <div style={{
                           width: '20px', height: '20px', borderRadius: '50%',
                           border: orderMoreMode === 'system' ? '5px solid #2563EB' : '2px solid #CBD5E1',
@@ -1612,7 +1652,7 @@ export default function WorkerClient({
                               value={customConcreteQty}
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => setCustomConcreteQty(e.target.value)}
-                              placeholder={`ขั้นต่ำ ${calculatedQty.toFixed(1)} คิว`}
+                              placeholder={`ขั้นต่ำ ${calculatedQty.toFixed(2)} คิว`}
                               style={{
                                 flex: 1,
                                 padding: '12px 16px',
@@ -1632,11 +1672,11 @@ export default function WorkerClient({
                           {/* Extra feedback or error message */}
                           {isError ? (
                             <span style={{ fontSize: '11px', color: '#EF4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <i className="fas fa-exclamation-circle" /> จำนวนที่ระบุต้องไม่น้อยกว่ายอดคำนวณ {calculatedQty.toFixed(1)} คิว
+                              <i className="fas fa-exclamation-circle" /> จำนวนที่ระบุต้องไม่น้อยกว่ายอดคำนวณ {calculatedQty.toFixed(2)} คิว
                             </span>
                           ) : extraQty > 0 ? (
                             <span style={{ fontSize: '11px', color: '#059669', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <i className="fas fa-plus-circle" /> สั่งปูนเพิ่มพิเศษ +{extraQty.toFixed(1)} คิว (จะนำไปรวมที่รอบสุดท้าย)
+                              <i className="fas fa-plus-circle" /> สั่งปูนเพิ่มพิเศษ +{extraQty.toFixed(2)} คิว (จะนำไปรวมที่รอบสุดท้าย)
                             </span>
                           ) : null}
                         </div>

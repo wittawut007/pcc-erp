@@ -14,6 +14,7 @@ interface Product {
   size: string
   unit: string
   concrete_per_unit: number
+  concrete_group: string | null
   wire_per_unit?: number | null
   mesh_per_unit?: number | null
   rebar_per_unit?: number | null
@@ -67,6 +68,7 @@ interface FormBom {
 const CATEGORIES = [
   'A13 แผ่นพื้น',
   'A30 ผนังรั้วสำเร็จรูป',
+  'A31 ผนังสำเร็จรูป/ผนังกันตก/FIN',
   'A35 รั้วสำเร็จรูป',
   'A36 เสา คาน บันได',
   'A41 เสาเข็ม',
@@ -77,6 +79,7 @@ const CATEGORIES = [
 const CAT_STYLES = [
   { prefix: 'A13', short: 'แผ่นพื้น', icon: 'fa-layer-group', pillBg: '#FFF7ED', pillText: '#EA580C', colorCode: '#2563EB' },
   { prefix: 'A30', short: 'ผนังรั้วสำเร็จรูป', icon: 'fa-table-cells-large', pillBg: '#FDF4FF', pillText: '#9333EA', colorCode: '#2563EB' },
+  { prefix: 'A31', short: 'ผนังสำเร็จรูป/ผนังกันตก/FIN', icon: 'fa-building', pillBg: '#ECFDF5', pillText: '#047857', colorCode: '#2563EB' },
   { prefix: 'A35', short: 'รั้วสำเร็จรูป', icon: 'fa-bars', pillBg: '#F3F4F6', pillText: '#4B5563', colorCode: '#2563EB' },
   { prefix: 'A36', short: 'เสา คาน บันได', icon: 'fa-cube', pillBg: '#F3F4F6', pillText: '#4B5563', colorCode: '#2563EB' },
   { prefix: 'A41', short: 'เสาเข็ม', icon: 'fa-arrows-up-down', pillBg: '#EFF4FF', pillText: '#2563EB', colorCode: '#2563EB' },
@@ -121,6 +124,7 @@ const BOM_CATEGORY_CONFIG = {
 const EMPTY_BASE_FORM = {
   code: '', name: '', category: CATEGORIES[0], size: '',
   unit: 'ชิ้น', concrete_per_unit: '' as string | number, length: '' as string | number,
+  concrete_group: '' as string,
 }
 
 const EMPTY_BOM: FormBom = { wire: [], mesh: [], rebar: [] }
@@ -361,6 +365,7 @@ export default function ProductsClient({
       code: p.code, name: p.name, category: p.category, size: p.size,
       unit: p.unit, concrete_per_unit: p.concrete_per_unit,
       length: p.length ?? 0,
+      concrete_group: p.concrete_group ?? '',
     })
 
     // Build BOM from product_bom_items
@@ -388,9 +393,11 @@ export default function ProductsClient({
     if (!baseForm.code || !baseForm.name) { toast.error('กรุณากรอกรหัสและชื่อสินค้า'); return }
     setSaving(true)
     try {
+      const concreteGroupVal = (baseForm as any).concrete_group
       const payload = {
         ...baseForm,
         concrete_per_unit: parseFloat(baseForm.concrete_per_unit as string) || 0,
+        concrete_group: concreteGroupVal ? concreteGroupVal.trim() : null,
         bom_code: null, // deprecated — now using product_bom_items
         wip_code: null, // Always null since WIP is removed from the system
         length: baseForm.category.startsWith('A13') ? (parseFloat(baseForm.length as string) || null) : null,
@@ -693,7 +700,7 @@ export default function ProductsClient({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr>
-                {['รหัสสินค้า (ITEM CODE)', 'ชื่อสินค้า (PRODUCT NAME)', 'ขนาดสินค้า (DIMENSIONS)', 'หมวดหมู่', 'สถานะ (STATUS)', 'จัดการ'].map((h, i) => (
+                {['รหัสสินค้า (ITEM CODE)', 'ชื่อสินค้า (PRODUCT NAME)', 'ขนาดสินค้า (DIMENSIONS)', 'หมวดหมู่', 'กลุ่มคอนกรีต', 'สถานะ (STATUS)', 'จัดการ'].map((h, i) => (
                   <th key={h} style={{ padding: '10px 14px', textAlign: i >= 3 ? 'center' : 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>{h}</th>
                 ))}
               </tr>
@@ -727,6 +734,16 @@ export default function ProductsClient({
                       <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '3px 8px', fontSize: 10, fontWeight: 700, borderRadius: 4, background: catStyle.pillBg, color: catStyle.pillText, opacity: p.is_active ? 1 : 0.6 }}>
                         {prefix}
                       </span>
+                    </td>
+                    <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
+                      {p.concrete_group ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', fontSize: 10, fontWeight: 700, borderRadius: 4, background: '#E0F2FE', color: '#0369A1', whiteSpace: 'nowrap' }}>
+                          <i className="fas fa-fill-drip" style={{ fontSize: 9 }} />
+                          {p.concrete_group}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>—</span>
+                      )}
                     </td>
                     <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
                       {p.is_active ? (
@@ -942,22 +959,34 @@ export default function ProductsClient({
                   </div>
                   <span style={{ fontSize: 12, fontWeight: 700, color: '#1E293B' }}>คอนกรีต</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #BBF7D0', borderRadius: 10, padding: '10px 14px', background: '#F0FDF4' }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0 }}>ปริมาณคอนกรีต</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0.0000"
-                    value={baseForm.concrete_per_unit ?? ''}
-                    onChange={e => {
-                      const val = e.target.value;
-                      if (val === '' || /^[0-9.]*$/.test(val)) {
-                        setBaseForm(p => ({ ...p, concrete_per_unit: val }));
-                      }
-                    }}
-                    style={{ flex: 1, padding: '7px 10px', border: '1px solid #86EFAC', borderRadius: 7, fontSize: 12, outline: 'none', textAlign: 'right', background: 'white', boxSizing: 'border-box' }}
-                  />
-                  <span style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0 }}>ม.³ / หน่วย</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, border: '1px solid #BBF7D0', borderRadius: 10, padding: '10px 14px', background: '#F0FDF4' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>ปริมาณคอนกรีต</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0.0000"
+                      value={baseForm.concrete_per_unit ?? ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === '' || /^[0-9.]*$/.test(val)) {
+                          setBaseForm(p => ({ ...p, concrete_per_unit: val }));
+                        }
+                      }}
+                      style={{ flex: 1, padding: '7px 10px', border: '1px solid #86EFAC', borderRadius: 7, fontSize: 12, outline: 'none', textAlign: 'right', background: 'white', boxSizing: 'border-box' }}
+                    />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0 }}>ม.³ / หน่วย</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>กลุ่มคอนกรีต</label>
+                    <input
+                      type="text"
+                      placeholder="เช่น A41 เสาเข็มตัน, A35 เสารั้ว"
+                      value={(baseForm as any).concrete_group ?? ''}
+                      onChange={e => setBaseForm(p => ({ ...p, concrete_group: e.target.value }))}
+                      style={{ flex: 1, padding: '7px 10px', border: '1px solid #86EFAC', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white', boxSizing: 'border-box' }}
+                    />
+                  </div>
                 </div>
               </div>
 

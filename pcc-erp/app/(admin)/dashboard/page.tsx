@@ -53,6 +53,7 @@ function getThaiCategoryName(category: string): string {
   const cat = category.trim().toUpperCase()
   if (cat.startsWith('A13')) return 'แผ่นพื้น'
   if (cat.startsWith('A30')) return 'ผนังรั้วสำเร็จรูป'
+  if (cat.startsWith('A31')) return 'ผนังสำเร็จรูป/ผนังกันตก/FIN'
   if (cat.startsWith('A35')) return 'รั้วสำเร็จรูป'
   if (cat.startsWith('A36')) return 'เสา คาน บันได'
   if (cat.startsWith('A41')) return 'เสาเข็ม'

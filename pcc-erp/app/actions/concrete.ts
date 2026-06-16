@@ -214,7 +214,7 @@ export async function getPendingConcreteOrders() {
         id, bed, qty_target, order_id,
         production_order:production_orders(status),
         plan_item:production_plan_items(
-          product:products(name, code, concrete_per_unit)
+          product:products(name, code, concrete_per_unit, concrete_group)
         )
       ),
       rounds:concrete_rounds(
@@ -234,7 +234,7 @@ export async function getPendingConcreteOrders() {
       id, bed, qty_target, status, order_id,
       production_order:production_orders(order_number, status),
       plan_item:production_plan_items(
-        product:products(id, name, code, size, unit)
+        product:products(id, name, code, size, unit, concrete_group)
       )
     `)
     .eq('status', 'concrete_ordered')
@@ -310,7 +310,7 @@ export async function getConcreteHistoryByDate(date: string) {
       job_order:job_orders(
         bed,
         plan_item:production_plan_items(
-          product:products(name, concrete_per_unit)
+          product:products(name, concrete_per_unit, concrete_group)
         )
       ),
       rounds:concrete_rounds(

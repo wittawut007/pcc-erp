@@ -23,13 +23,14 @@ interface ConcreteOrder {
   requested_at: string
   supplied_at: string | null
   notes?: string | null
+  concrete_group?: string | null
   requested_by_profile?: { full_name: string; employee_code?: string | null } | null
   supplied_by_profile?: { full_name: string } | null
   job_order?: {
     id: string
     bed: string
     qty_target: number
-    plan_item?: { product?: { name: string; code: string; concrete_per_unit?: number } | null } | null
+    plan_item?: { product?: { name: string; code: string; concrete_per_unit?: number; concrete_group?: string | null } | null } | null
   } | null
   rounds?: RoundItem[]
   bed_jobs?: any[]
@@ -65,13 +66,14 @@ function fmtDateInput(iso: string) {
 
 // ── Round Card inside each order ──────────────────────────────────────────────
 function RoundRow({
-  round, onSupply, loading, isLocked, isNext,
+  round, onSupply, loading, isLocked, isNext, concreteGroup,
 }: {
   round: RoundItem
   onSupply: (id: string) => void
   loading: boolean
   isLocked: boolean
   isNext: boolean
+  concreteGroup?: string | null
 }) {
   const supplied = round.status === 'supplied' || round.status === 'received'
   const isReceived = round.status === 'received'
@@ -99,7 +101,14 @@ function RoundRow({
       </div>
 
       <div style={{ flex: 1 }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: isLocked ? '#9CA3AF' : '#374151' }}>รอบที่ {round.round_number}</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: isLocked ? '#9CA3AF' : '#374151' }}>
+          รอบที่ {round.round_number}
+          {concreteGroup && (
+            <span style={{ fontWeight: 600, color: isReceived ? '#059669' : isLocked ? '#9CA3AF' : '#4B5563', marginLeft: 4 }}>
+              ({concreteGroup})
+            </span>
+          )}
+        </span>
         <span style={{ fontSize: 16, fontWeight: 800, color: isLocked ? '#9CA3AF' : '#2563EB', marginLeft: 10 }}>
           ({round.qty_per_round.toFixed(2)} คิว)
         </span>
@@ -202,6 +211,15 @@ function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
               <span>{order.notes}</span>
             </div>
           )}
+          {/* Concrete Group Badge */}
+          {(order.concrete_group || product?.concrete_group || order.bed_jobs?.[0]?.plan_item?.product?.concrete_group) && (
+            <div style={{ marginTop: 6 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, background: '#DBEAFE', color: '#1D4ED8', fontSize: 11, fontWeight: 700 }}>
+                <i className="fas fa-fill-drip" style={{ fontSize: 9 }} />
+                {order.concrete_group || product?.concrete_group || order.bed_jobs?.[0]?.plan_item?.product?.concrete_group}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Volume & Progress */}
@@ -247,6 +265,7 @@ function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
             const isSupplied = r.status === 'supplied' || r.status === 'received'
             const isNext = !isSupplied && (idx === 0 || rounds[idx - 1]?.status === 'received')
             const isLocked = !isSupplied && !isNext
+            const concreteGroup = order.concrete_group || product?.concrete_group || order.bed_jobs?.[0]?.plan_item?.product?.concrete_group
             return (
               <RoundRow
                 key={r.id}
@@ -255,6 +274,7 @@ function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
                 loading={loadingRoundId === r.id}
                 isLocked={isLocked}
                 isNext={isNext}
+                concreteGroup={concreteGroup}
               />
             )
           })}

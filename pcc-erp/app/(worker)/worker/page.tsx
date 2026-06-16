@@ -54,7 +54,7 @@ export default async function WorkerPage() {
       production_order:production_orders(order_number, status),
       plan_item:production_plan_items(
         id, plan_id,
-        product:products(id, code, name, category, size, unit, concrete_per_unit, wire_per_unit, mesh_per_unit, rebar_per_unit)
+        product:products(id, code, name, category, size, unit, concrete_per_unit, wire_per_unit, mesh_per_unit, rebar_per_unit, concrete_group)
       )
     `)
     .eq('status', 'pending')
