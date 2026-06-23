@@ -23,6 +23,9 @@ interface Product {
   length: number | null
   is_active: boolean
   created_at: string
+  is_two_phase?: boolean
+  concrete_counterfort?: number
+  concrete_stem?: number
 }
 
 interface RawMaterial {
@@ -125,6 +128,9 @@ const EMPTY_BASE_FORM = {
   code: '', name: '', category: CATEGORIES[0], size: '',
   unit: 'ชิ้น', concrete_per_unit: '' as string | number, length: '' as string | number,
   concrete_group: '' as string,
+  is_two_phase: false,
+  concrete_counterfort: '' as string | number,
+  concrete_stem: '' as string | number,
 }
 
 const EMPTY_BOM: FormBom = { wire: [], mesh: [], rebar: [] }
@@ -366,6 +372,9 @@ export default function ProductsClient({
       unit: p.unit, concrete_per_unit: p.concrete_per_unit,
       length: p.length ?? 0,
       concrete_group: p.concrete_group ?? '',
+      is_two_phase: !!p.is_two_phase,
+      concrete_counterfort: p.concrete_counterfort ?? '',
+      concrete_stem: p.concrete_stem ?? '',
     })
 
     // Build BOM from product_bom_items
@@ -394,13 +403,25 @@ export default function ProductsClient({
     setSaving(true)
     try {
       const concreteGroupVal = (baseForm as any).concrete_group
+      const isTwoPhase = !!(baseForm as any).is_two_phase
+      const concreteCounterfort = isTwoPhase ? (parseFloat((baseForm as any).concrete_counterfort as string) || 0) : 0
+      const concreteStem = isTwoPhase ? (parseFloat((baseForm as any).concrete_stem as string) || 0) : 0
+      const concretePerUnit = isTwoPhase ? (concreteCounterfort + concreteStem) : (parseFloat(baseForm.concrete_per_unit as string) || 0)
+
       const payload = {
-        ...baseForm,
-        concrete_per_unit: parseFloat(baseForm.concrete_per_unit as string) || 0,
+        code: baseForm.code,
+        name: baseForm.name,
+        category: baseForm.category,
+        size: baseForm.size,
+        unit: baseForm.unit,
+        concrete_per_unit: concretePerUnit,
         concrete_group: concreteGroupVal ? concreteGroupVal.trim() : null,
         bom_code: null, // deprecated — now using product_bom_items
         wip_code: null, // Always null since WIP is removed from the system
         length: baseForm.category.startsWith('A13') ? (parseFloat(baseForm.length as string) || null) : null,
+        is_two_phase: isTwoPhase,
+        concrete_counterfort: concreteCounterfort,
+        concrete_stem: concreteStem,
         // Keep legacy columns for backward compatibility (sum of qty)
         wire_per_unit: bomForm.wire.reduce((s, r) => s + (parseFloat(r.qty_per_unit as string) || 0), 0) || null,
         mesh_per_unit: bomForm.mesh.reduce((s, r) => s + (parseFloat(r.qty_per_unit as string) || 0), 0) || null,
@@ -960,23 +981,81 @@ export default function ProductsClient({
                   <span style={{ fontSize: 12, fontWeight: 700, color: '#1E293B' }}>คอนกรีต</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, border: '1px solid #BBF7D0', borderRadius: 10, padding: '10px 14px', background: '#F0FDF4' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>ปริมาณคอนกรีต</label>
+                  
+                  {/* Two-phase Checkbox */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0.0000"
-                      value={baseForm.concrete_per_unit ?? ''}
-                      onChange={e => {
-                        const val = e.target.value;
-                        if (val === '' || /^[0-9.]*$/.test(val)) {
-                          setBaseForm(p => ({ ...p, concrete_per_unit: val }));
-                        }
-                      }}
-                      style={{ flex: 1, padding: '7px 10px', border: '1px solid #86EFAC', borderRadius: 7, fontSize: 12, outline: 'none', textAlign: 'right', background: 'white', boxSizing: 'border-box' }}
+                      type="checkbox"
+                      id="is_two_phase"
+                      checked={!!(baseForm as any).is_two_phase}
+                      onChange={e => setBaseForm(p => ({ ...p, is_two_phase: e.target.checked }))}
+                      style={{ width: 14, height: 14, cursor: 'pointer' }}
                     />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0 }}>ม.³ / หน่วย</span>
+                    <label htmlFor="is_two_phase" style={{ fontSize: 11, fontWeight: 700, color: '#166534', cursor: 'pointer' }}>
+                      ผลิตแบบ 2 เฟส (เช่น L-Wall / Retaining Wall)
+                    </label>
                   </div>
+
+                  {!(baseForm as any).is_two_phase ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>ปริมาณคอนกรีต</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0.0000"
+                        value={baseForm.concrete_per_unit ?? ''}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === '' || /^[0-9.]*$/.test(val)) {
+                            setBaseForm(p => ({ ...p, concrete_per_unit: val }));
+                          }
+                        }}
+                        style={{ flex: 1, padding: '7px 10px', border: '1px solid #86EFAC', borderRadius: 7, fontSize: 12, outline: 'none', textAlign: 'right', background: 'white', boxSizing: 'border-box' }}
+                      />
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0 }}>ม.³ / หน่วย</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>คอนกรีต COUNTERFORT</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0.0000"
+                          value={(baseForm as any).concrete_counterfort ?? ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val === '' || /^[0-9.]*$/.test(val)) {
+                              setBaseForm(p => ({ ...p, concrete_counterfort: val }));
+                            }
+                          }}
+                          style={{ flex: 1, padding: '7px 10px', border: '1px solid #86EFAC', borderRadius: 7, fontSize: 12, outline: 'none', textAlign: 'right', background: 'white', boxSizing: 'border-box' }}
+                        />
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0 }}>ม.³ / หน่วย</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>คอนกรีต STEM</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0.0000"
+                          value={(baseForm as any).concrete_stem ?? ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val === '' || /^[0-9.]*$/.test(val)) {
+                              setBaseForm(p => ({ ...p, concrete_stem: val }));
+                            }
+                          }}
+                          style={{ flex: 1, padding: '7px 10px', border: '1px solid #86EFAC', borderRadius: 7, fontSize: 12, outline: 'none', textAlign: 'right', background: 'white', boxSizing: 'border-box' }}
+                        />
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0 }}>ม.³ / หน่วย</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 700, color: '#15803d', paddingLeft: 128 }}>
+                        ปริมาณรวม: {((parseFloat((baseForm as any).concrete_counterfort) || 0) + (parseFloat((baseForm as any).concrete_stem) || 0)).toFixed(4)} ม.³
+                      </div>
+                    </>
+                  )}
+                  
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>กลุ่มคอนกรีต</label>
                     <input

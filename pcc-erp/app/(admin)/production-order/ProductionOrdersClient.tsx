@@ -134,7 +134,7 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
     return plans.filter(p => {
       const matchStatus = activeStatus === 'all' || getStatus(p.status) === activeStatus
       const po = Array.isArray(p.production_orders) ? p.production_orders[0] : null
-      const orderNumber = po?.order_number || `PO-${p.plan_date.replace(/-/g, '')}-001`
+      const orderNumber = po?.order_number || `ไม่มี PO (#${p.id.slice(0, 8).toUpperCase()})`
       const profile = getProfile(p.profile)
       const matchSearch = !search.trim() ||
         orderNumber.toLowerCase().includes(search.toLowerCase()) ||
@@ -267,7 +267,7 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
               <tbody>
                 {filtered.map((plan, idx) => {
                   const po = Array.isArray(plan.production_orders) ? plan.production_orders[0] : null
-                  const orderNumber = po?.order_number || `PO-${plan.plan_date.replace(/-/g, '')}-001`
+                  const orderNumber = po?.order_number || `ไม่มี PO (#${plan.id.slice(0, 8).toUpperCase()})`
                   const statusKey = getStatus(plan.status)
                   const cfg = STATUS_CONFIG[statusKey]
                   const itemCount = (plan.items ?? []).length

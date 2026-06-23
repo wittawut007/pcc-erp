@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
     '192.168.1.142',
     'arizona-positive-vault-discharge.trycloudflare.com',
     'localhost',
+    '127.0.0.1',
   ],
 } as NextConfig; // Type casting as Next.js types might complain if it's new
 

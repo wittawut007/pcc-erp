@@ -47,22 +47,55 @@ export default async function WorkerPage() {
   planItems?.forEach((i: any) => { planItemToPlanMap[i.id] = i.plan_id })
 
   // Fetch active job orders for plans with fully dispensed materials
+  // รวม counterfort_curing เพื่อให้ Worker เห็นปุ่มสั่งคอนกรีต STEM ได้
   const { data: jobOrders } = await supabase
     .from('job_orders')
     .select(`
       id, bed, status, qty_target, qty_cast, expected_demold_at, plan_item_id, order_id,
+      cast_at,
+      counterfort_cast_at, counterfort_cured_at,
+      stem_cast_at, stem_cured_at,
       production_order:production_orders(order_number, status),
       plan_item:production_plan_items(
         id, plan_id,
-        product:products(id, code, name, category, size, unit, concrete_per_unit, wire_per_unit, mesh_per_unit, rebar_per_unit, concrete_group)
+        product:products(
+          id, code, name, category, size, unit,
+          concrete_per_unit, wire_per_unit, mesh_per_unit, rebar_per_unit, concrete_group,
+          is_two_phase, concrete_counterfort, concrete_stem
+        )
       )
     `)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'counterfort_curing'])
     .in('plan_item_id', planItemIds.length > 0 ? planItemIds : ['dummy'])
 
   const activeJobOrders = (jobOrders as any)?.filter(
     (j: any) => j.production_order?.status !== 'erp_synced'
   ) || []
+
+  // Fetch BOM items for all products (including two-phase) with phase column
+  const productIds = Array.from(new Set(
+    activeJobOrders
+      .map((j: any) => j.plan_item?.product?.id)
+      .filter(Boolean)
+  )) as string[]
+
+  // Build productId -> BOM items with phase info
+  const productBomByPhase: Record<string, { name: string; phase: string; qty_per_unit: number }[]> = {}
+  if (productIds.length > 0) {
+    const { data: bomItems } = await supabase
+      .from('product_bom_items')
+      .select('product_id, phase, qty_per_unit, raw_material:raw_materials(name, category, unit)')
+      .in('product_id', productIds)
+
+    bomItems?.forEach((b: any) => {
+      if (!productBomByPhase[b.product_id]) productBomByPhase[b.product_id] = []
+      productBomByPhase[b.product_id].push({
+        name: b.raw_material?.name || '',
+        phase: b.phase || 'all',
+        qty_per_unit: Number(b.qty_per_unit) || 0,
+      })
+    })
+  }
   
   return (
     <div className="min-h-screen bg-slate-50 flex justify-center w-full">
@@ -71,6 +104,7 @@ export default async function WorkerPage() {
           jobOrders={activeJobOrders}
           planMaterialsMap={planMaterialsMap}
           planItemToPlanMap={planItemToPlanMap}
+          productBomByPhase={productBomByPhase}
         />
       </div>
     </div>

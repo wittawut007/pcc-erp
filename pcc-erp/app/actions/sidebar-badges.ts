@@ -70,11 +70,11 @@ export async function getSidebarBadgeCounts(): Promise<SidebarBadgeCounts> {
         .in('status', ['ready_demold', 'curing']),
 
       // 4. เบิกจ่ายวัตถุดิบ
-      // นับ distinct PO ผ่าน production_plans ที่มี plan_materials ค้างอยู่
-      // plan_materials → plan_id → production_plans → production_orders
+      // นับจำนวนแผนการผลิตที่มี plan_materials ค้างอยู่ (สถานะ pending หรือ partial)
+      // plan_materials → plan_id → production_plans
       supabase
         .from('plan_materials')
-        .select('plan:production_plans!inner(id, status, production_orders(id, status))')
+        .select('plan_id, plan:production_plans!inner(id, status)')
         .in('status', ['pending', 'partial']),
 
       // 5. คิวผสมคอนกรีต
@@ -113,22 +113,17 @@ export async function getSidebarBadgeCounts(): Promise<SidebarBadgeCounts> {
       demoldingFiltered.map((j: any) => ({ order_id: j.order_id }))
     )
 
-    // ── 4. เบิกจ่ายวัตถุดิบ — distinct PO ผ่าน plan ที่มีวัตถุดิบค้าง ──
+    // ── 4. เบิกจ่ายวัตถุดิบ — จำนวนแผนการผลิตที่มีวัตถุดิบค้าง (status เป็น confirmed หรือ completed) ──
     const materialData = materialRes.data ?? []
-    const materialPoIds = new Set<string>()
+    const materialPlanIds = new Set<string>()
     for (const row of materialData) {
       const plan = (row as any).plan
       if (!plan) continue
       // เฉพาะ plan ที่ confirmed หรือ completed
       if (plan.status !== 'confirmed' && plan.status !== 'completed') continue
-      const orders: Array<{ id: string; status: string }> = plan.production_orders ?? []
-      for (const po of orders) {
-        if (po.status !== 'erp_synced') {
-          materialPoIds.add(po.id)
-        }
-      }
+      materialPlanIds.add(plan.id)
     }
-    const materialCount = materialPoIds.size
+    const materialCount = materialPlanIds.size
 
     // ── 5. คิวผสมคอนกรีต — นับจำนวนรอบคอนกรีตที่ยังค้างอยู่ (status = 'pending') ──
     const concreteOrders = concreteRes.data ?? []

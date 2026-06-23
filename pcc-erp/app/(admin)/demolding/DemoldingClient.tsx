@@ -5,8 +5,10 @@ import { useState, useMemo } from 'react'
 interface Job {
   id: string; bed: string; qty_cast: number; qty_target: number
   status: string; cast_at: string | null; expected_demold_at: string | null
+  counterfort_cast_at?: string | null
+  stem_cast_at?: string | null
   plan_item: {
-    product: { id: string; code?: string; name: string; category: string; unit: string; concrete_per_unit?: number | null } | null
+    product: { id: string; code?: string; name: string; category: string; unit: string; concrete_per_unit?: number | null; is_two_phase?: boolean } | null
     plan?: { id: string; plan_date: string } | null
   } | null
   worker: { full_name: string } | null
@@ -96,10 +98,24 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
   const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set())
   const [viewingPhotoUrl, setViewingPhotoUrl] = useState<string | null>(null)
 
+  const getJobCastAt = (job: Job) => {
+    if (job.plan_item?.product?.is_two_phase) {
+      if (job.status === 'counterfort_curing') {
+        return job.counterfort_cast_at
+      } else if (job.status === 'stem_curing') {
+        return job.stem_cast_at
+      } else {
+        return job.stem_cast_at || job.counterfort_cast_at || job.cast_at
+      }
+    }
+    return job.cast_at
+  }
+
   const isReady = (job: Job) => {
     if (job.status === 'ready_demold') return true;
-    if (job.status === 'curing') {
-      const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null);
+    if (job.status === 'curing' || job.status === 'stem_curing') {
+      const castAt = getJobCastAt(job)
+      const expectedTime = job.expected_demold_at || (castAt ? new Date(new Date(castAt).getTime() + 20 * 60 * 60 * 1000).toISOString() : null);
       return expectedTime && new Date(expectedTime) <= new Date();
     }
     return false;
@@ -464,7 +480,8 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
                                     </td>
                                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                                       {(() => {
-                                        const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
+                                         const castAt = getJobCastAt(job)
+                                         const expectedTime = job.expected_demold_at || (castAt ? new Date(new Date(castAt).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
                                         if (expectedTime) {
                                           return (
                                             <div style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>
@@ -477,12 +494,41 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
                                       })()}
                                     </td>
                                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                                      <span style={{
-                                        padding: '4px 12px', borderRadius: 50, fontSize: 11, fontWeight: 700,
-                                        background: ready ? '#D1FAE5' : '#FEF3C7', color: ready ? '#065F46' : '#B45309', border: `1px solid ${ready ? '#A7F3D0' : '#FDE68A'}`,
-                                      }}>
-                                        {ready ? <><i className="fas fa-check-circle" style={{ marginRight: 4 }} /> พร้อมถอดแบบ</> : <><i className="fas fa-hourglass-half" style={{ marginRight: 4 }} /> กำลังบ่ม</>}
-                                      </span>
+                                      {(() => {
+                                        if (job.plan_item?.product?.is_two_phase) {
+                                          if (job.status === 'counterfort_curing') {
+                                            return (
+                                              <span style={{
+                                                padding: '4px 12px', borderRadius: 50, fontSize: 11, fontWeight: 700,
+                                                background: '#FFF7ED', color: '#C2410C', border: '1px solid #FED7AA',
+                                                whiteSpace: 'nowrap'
+                                              }}>
+                                                🏗️ เฟส 1: กำลังบ่ม CF
+                                              </span>
+                                            )
+                                          }
+                                          if (job.status === 'stem_curing') {
+                                            return (
+                                              <span style={{
+                                                padding: '4px 12px', borderRadius: 50, fontSize: 11, fontWeight: 700,
+                                                background: ready ? '#D1FAE5' : '#F5F3FF', color: ready ? '#065F46' : '#7C3AED', border: `1px solid ${ready ? '#A7F3D0' : '#DDD6FE'}`,
+                                                whiteSpace: 'nowrap'
+                                              }}>
+                                                {ready ? <><i className="fas fa-check-circle" style={{ marginRight: 4 }} /> 🧱 พร้อมถอดแบบ (STEM)</> : <>🧱 เฟส 2: กำลังบ่ม STEM</>}
+                                              </span>
+                                            )
+                                          }
+                                        }
+                                        return (
+                                          <span style={{
+                                            padding: '4px 12px', borderRadius: 50, fontSize: 11, fontWeight: 700,
+                                            background: ready ? '#D1FAE5' : '#FEF3C7', color: ready ? '#065F46' : '#B45309', border: `1px solid ${ready ? '#A7F3D0' : '#FDE68A'}`,
+                                            whiteSpace: 'nowrap'
+                                          }}>
+                                            {ready ? <><i className="fas fa-check-circle" style={{ marginRight: 4 }} /> พร้อมถอดแบบ</> : <><i className="fas fa-hourglass-half" style={{ marginRight: 4 }} /> กำลังบ่ม</>}
+                                          </span>
+                                        )
+                                      })()}
                                     </td>
                                     <td style={{ padding: '12px 16px', color: '#6B7280', fontSize: 12 }}>
                                       {job.worker?.full_name ? (

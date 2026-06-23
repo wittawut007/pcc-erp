@@ -57,8 +57,8 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
     setJobs(initialData)
   }, [initialData])
 
-  const castingJobs = jobs.filter(j => j.status === 'concrete_ordered')
-  const demoldingJobs = jobs.filter(j => ['curing', 'ready_demold'].includes(j.status))
+  const castingJobs = jobs.filter(j => ['concrete_ordered', 'counterfort_ordered', 'stem_ordered'].includes(j.status))
+  const demoldingJobs = jobs.filter(j => ['curing', 'ready_demold', 'counterfort_curing', 'stem_curing'].includes(j.status))
 
   const groupedCastingJobs = useMemo(() => {
     const groups: Record<string, any[]> = {}
@@ -116,6 +116,14 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
   }
 
   const handleStartCuring = async (jobId: string) => {
+    const job = jobs.find(j => j.id === jobId)
+    const isTwoPhase = job?.plan_item?.product?.is_two_phase ?? false
+    let phase: 'main' | 'counterfort' | 'stem' = 'main'
+    if (isTwoPhase) {
+      if (job?.status === 'counterfort_ordered') phase = 'counterfort'
+      else if (job?.status === 'stem_ordered') phase = 'stem'
+    }
+
     const photo = photos[`casting-${jobId}`]
     if (!photo) {
       toast.error('กรุณาถ่ายภาพยืนยันก่อนเริ่มบ่ม')
@@ -124,10 +132,22 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
     setSaving(true)
     try {
       const photoUrl = await uploadPhoto(photo.file, 'casting')
-      await startCuring(jobId, photoUrl)
+      await startCuring(jobId, photoUrl, phase)
       setExpandedJobId(null)
       // Optimistic update
-      setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'curing', cast_at: new Date().toISOString() } : j))
+      const nowStr = new Date().toISOString()
+      setJobs(prev => prev.map(j => {
+        if (j.id === jobId) {
+          if (phase === 'counterfort') {
+            return { ...j, status: 'counterfort_curing', counterfort_cast_at: nowStr }
+          } else if (phase === 'stem') {
+            return { ...j, status: 'stem_curing', stem_cast_at: nowStr }
+          } else {
+            return { ...j, status: 'curing', cast_at: nowStr }
+          }
+        }
+        return j
+      }))
       setPhotos(p => { const newP = {...p}; delete newP[`casting-${jobId}`]; return newP; })
     } catch (e: any) {
       toast.error(e.message)
@@ -288,7 +308,20 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
   }
 
 
-  const getCuringTimeLeft = (castAt: string) => {
+  const getCuringTimeLeft = (job: any) => {
+    let castAt = job.cast_at
+    if (job.plan_item?.product?.is_two_phase) {
+      if (job.status === 'counterfort_curing') {
+        castAt = job.counterfort_cast_at
+      } else if (job.status === 'stem_curing') {
+        castAt = job.stem_cast_at
+      } else {
+        castAt = job.stem_cast_at || job.counterfort_cast_at || job.cast_at
+      }
+    }
+    
+    if (!castAt) return { ready: true, text: 'พร้อมถอดแบบ' }
+
     const castDate = new Date(castAt)
     const expected = new Date(castDate.getTime() + 20 * 60 * 60 * 1000)
     const diff = expected.getTime() - now.getTime()
@@ -437,15 +470,26 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
                               {job.plan_item?.product?.size && <span style={{ fontSize: '12px', fontWeight: 700, color: '#3B82F6', backgroundColor: '#EFF6FF', padding: '2px 8px', borderRadius: '6px', border: '1px solid #BFDBFE' }}>{job.plan_item?.product?.size}</span>}
                             </h3>
                             <p style={{ fontSize: '12px', color: '#64748B', margin: 0, fontWeight: 500 }}>เป้าหมาย: <span style={{ color: '#0F172A', fontWeight: 800 }}>{job.qty_target} {job.plan_item?.product?.unit || 'ชิ้น'}</span></p>
-                            {job.cast_at && (
+                            {job.status === 'stem_ordered' && job.counterfort_cast_at && (
+                              <p style={{ fontSize: '11px', color: '#64748B', marginTop: '6px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <i className="fas fa-clock" style={{ color: '#94A3B8' }}></i>
+                                เวลาเท CF: <span style={{ color: '#0F172A', fontWeight: 700 }}>{fmtDateTime(job.counterfort_cast_at)}</span>
+                              </p>
+                            )}
+                            {job.cast_at && job.status === 'concrete_ordered' && (
                               <p style={{ fontSize: '11px', color: '#64748B', marginTop: '6px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <i className="fas fa-clock" style={{ color: '#94A3B8' }}></i>
                                 เวลาเท: <span style={{ color: '#0F172A', fontWeight: 700 }}>{fmtDateTime(job.cast_at)}</span>
                               </p>
                             )}
                           </div>
-                          <span style={{ backgroundColor: '#FEF3C7', color: '#D97706', padding: '6px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 800, border: '1px solid #FDE68A' }}>
-                            รอตรวจการเทคอนกรีต
+                          <span style={{ 
+                            backgroundColor: job.status === 'stem_ordered' ? '#EDE9FE' : (job.status === 'counterfort_ordered' ? '#FFF7ED' : '#FEF3C7'), 
+                            color: job.status === 'stem_ordered' ? '#6D28D9' : (job.status === 'counterfort_ordered' ? '#C2410C' : '#D97706'), 
+                            padding: '6px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 800, 
+                            border: job.status === 'stem_ordered' ? '1px solid #C4B5FD' : (job.status === 'counterfort_ordered' ? '1px solid #FED7AA' : '1px solid #FDE68A') 
+                          }}>
+                            {job.status === 'counterfort_ordered' ? '🏗️ รอตรวจเท CF' : (job.status === 'stem_ordered' ? '🧱 รอตรวจเท STEM' : 'รอตรวจการเทคอนกรีต')}
                           </span>
                         </div>
 
@@ -481,7 +525,18 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
                                 border: 'none', cursor: photos[`casting-${job.id}`] ? 'pointer' : 'not-allowed',
                                 boxShadow: photos[`casting-${job.id}`] ? '0 10px 20px -5px rgba(59,130,246,0.4)' : 'none',
                               }}>
-                              {saving ? <i className="fas fa-spinner fa-spin" style={{ fontSize: '20px' }}></i> : <><i className="fas fa-play" style={{ fontSize: '14px' }}></i> ยืนยันการบ่มคอนกรีต</>}
+                              {saving ? (
+                                <i className="fas fa-spinner fa-spin" style={{ fontSize: '20px' }}></i>
+                              ) : (
+                                <>
+                                  <i className="fas fa-play" style={{ fontSize: '14px' }}></i>{' '}
+                                  {job.status === 'counterfort_ordered'
+                                    ? 'ยืนยันเริ่มบ่ม COUNTERFORT'
+                                    : job.status === 'stem_ordered'
+                                    ? 'ยืนยันเริ่มบ่ม STEM'
+                                    : 'ยืนยันการบ่มคอนกรีต'}
+                                </>
+                              )}
                             </button>
                           </div>
                         )}
@@ -509,9 +564,6 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
 
             {demoldingJobs.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 24px', backgroundColor: '#ffffff', borderRadius: '24px', border: '1px dashed #CBD5E1', marginTop: '20px' }}>
-                <div style={{ width: '64px', height: '64px', backgroundColor: '#F1F5F9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-                  <i className="fas fa-box-open" style={{ fontSize: '28px', color: '#94A3B8' }}></i>
-                </div>
                 <p style={{ fontSize: '15px', fontWeight: 800, color: '#475569', margin: '0 0 4px' }}>ไม่มีงานรอถอดแบบ</p>
               </div>
             ) : (
@@ -531,20 +583,21 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
                   {/* Group Jobs */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {group.jobs.map(job => {
-                      const timer = job.cast_at ? getCuringTimeLeft(job.cast_at) : { ready: true, text: 'พร้อมถอดแบบ' };
+                      const timer = getCuringTimeLeft(job);
                       const entry = demoldingData[job.id] || { good: 0, defects: [] };
                       const isExpanded = expandedJobId === job.id;
                       const totalDefect = (entry.defects || []).reduce((s, d) => s + d.qty, 0);
                       const isMaxedOut = entry.good + totalDefect >= job.qty_target;
+                      const isExpandable = timer.ready && job.status !== 'counterfort_curing';
 
                       return (
                         <div key={job.id} 
-                          onClick={() => { if (timer.ready) setExpandedJobId(isExpanded ? null : job.id) }}
+                          onClick={() => { if (isExpandable) setExpandedJobId(isExpanded ? null : job.id) }}
                           style={{ 
                             backgroundColor: '#ffffff', borderRadius: '20px', padding: '20px', 
                             boxShadow: isExpanded ? '0 10px 25px -5px rgba(0,0,0,0.1)' : '0 4px 6px -1px rgba(0,0,0,0.05)', 
                             border: isExpanded ? '2px solid #10B981' : '1px solid #E2E8F0',
-                            transition: 'all 0.2s', cursor: timer.ready ? 'pointer' : 'default',
+                            transition: 'all 0.2s', cursor: isExpandable ? 'pointer' : 'default',
                             opacity: timer.ready ? 1 : 0.8
                           }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -558,8 +611,14 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                               {timer.ready ? (
-                                <span style={{ backgroundColor: '#D1FAE5', color: '#047857', padding: '6px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 800, border: '1px solid #A7F3D0', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  <i className="fas fa-check-circle"></i> พร้อมถอดแบบ
+                                <span style={{ 
+                                  backgroundColor: job.status === 'counterfort_curing' ? '#EFF6FF' : '#D1FAE5', 
+                                  color: job.status === 'counterfort_curing' ? '#2563EB' : '#047857', 
+                                  padding: '6px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 800, 
+                                  border: job.status === 'counterfort_curing' ? '1px solid #BFDBFE' : '1px solid #A7F3D0', 
+                                  display: 'flex', alignItems: 'center', gap: '4px' 
+                                }}>
+                                  <i className="fas fa-check-circle"></i> {job.status === 'counterfort_curing' ? '🏗️ CF บ่มเสร็จ (รอสั่ง STEM)' : 'พร้อมถอดแบบ'}
                                 </span>
                               ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -596,8 +655,14 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
                                       <i className="fas fa-bolt"></i> เร่งเวลาบ่ม
                                     </button>
                                   )}
-                                  <span style={{ backgroundColor: '#FEF3C7', color: '#D97706', padding: '6px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 800, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <i className="fas fa-clock"></i> {timer.text}
+                                  <span style={{ 
+                                    backgroundColor: job.status === 'counterfort_curing' ? '#FFF7ED' : (job.status === 'stem_curing' ? '#F5F3FF' : '#FEF3C7'), 
+                                    color: job.status === 'counterfort_curing' ? '#C2410C' : (job.status === 'stem_curing' ? '#7C3AED' : '#D97706'), 
+                                    padding: '6px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 800, 
+                                    border: job.status === 'counterfort_curing' ? '1px solid #FED7AA' : (job.status === 'stem_curing' ? '1px solid #DDD6FE' : '1px solid #FDE68A'), 
+                                    display: 'flex', alignItems: 'center', gap: '4px' 
+                                  }}>
+                                    <i className="fas fa-clock"></i> {job.status === 'counterfort_curing' ? '🏗️ CF ' : (job.status === 'stem_curing' ? '🧱 STEM ' : '')}{timer.text}
                                   </span>
                                 </div>
                               )}

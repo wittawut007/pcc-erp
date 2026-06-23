@@ -24,6 +24,7 @@ interface ConcreteOrder {
   supplied_at: string | null
   notes?: string | null
   concrete_group?: string | null
+  phase?: string | null
   requested_by_profile?: { full_name: string; employee_code?: string | null } | null
   supplied_by_profile?: { full_name: string } | null
   job_order?: {
@@ -209,6 +210,25 @@ function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
             <div style={{ marginTop: 4, fontSize: 11, color: '#D97706', fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
               <i className="fas fa-exclamation-circle" style={{ marginTop: 3, flexShrink: 0 }} />
               <span>{order.notes}</span>
+            </div>
+          )}
+          {/* Phase Badge */}
+          {order.phase && order.phase !== 'main' && (
+            <div style={{ marginTop: 6 }}>
+              <span style={{ 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                gap: 5, 
+                padding: '3px 10px', 
+                borderRadius: 20, 
+                background: order.phase === 'counterfort' ? '#FFF7ED' : '#F5F3FF', 
+                color: order.phase === 'counterfort' ? '#C2410C' : '#7C3AED', 
+                fontSize: 11, 
+                fontWeight: 700,
+                border: `1px solid ${order.phase === 'counterfort' ? '#FED7AA' : '#DDD6FE'}`
+              }}>
+                {order.phase === 'counterfort' ? '🏗️ เฟส 1: CF (ฐานเกือก)' : '🧱 เฟส 2: STEM (ผนัง L-Wall)'}
+              </span>
             </div>
           )}
           {/* Concrete Group Badge */}

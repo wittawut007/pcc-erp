@@ -24,11 +24,19 @@ interface JobOrder {
   demolded_at: string | null
   created_at: string
   concrete_requested_at: string | null
+  // Two-phase fields (A42 L-Wall)
+  counterfort_cast_at?: string | null
+  counterfort_cured_at?: string | null
+  stem_cast_at?: string | null
+  stem_cured_at?: string | null
   plan_item: {
     id?: string
     qty_target: number
     bed: string
-    product: { id: string; code: string; name: string; category: string; unit: string }
+    product: {
+      id: string; code: string; name: string; category: string; unit: string;
+      is_two_phase?: boolean; concrete_counterfort?: number; concrete_stem?: number
+    }
     plan?: { id: string; plan_date: string; created_at: string; status: string }
   } | null
   production_order?: { order_number: string; status?: string } | null
@@ -47,6 +55,7 @@ interface Worker {
 
 // ── Derive effective display status from QC state ──
 type DisplayStatus = 'pending' | 'concrete_ordered' | 'casting' | 'curing' | 'ready_demold' | 'demolded' | 'qc_passed' | 'cancelled'
+  | 'counterfort_ordered' | 'counterfort_curing' | 'stem_ordered' | 'stem_curing'
 
 function getDisplayStatus(job: JobOrder): DisplayStatus {
   if (job.status === 'pending') return 'pending'
@@ -54,6 +63,18 @@ function getDisplayStatus(job: JobOrder): DisplayStatus {
   if (job.status === 'qc_passed') return 'qc_passed'
   if (job.status === 'demolded') return 'demolded'
   if (job.status === 'ready_demold') return 'ready_demold'
+  // Two-phase statuses — pass through directly
+  if (job.status === 'counterfort_ordered') return 'counterfort_ordered'
+  if (job.status === 'counterfort_curing') return 'counterfort_curing'
+  if (job.status === 'stem_ordered') return 'stem_ordered'
+  if (job.status === 'stem_curing') {
+    const stemCastAt = job.stem_cast_at
+    if (stemCastAt) {
+      const expectedTime = new Date(new Date(stemCastAt).getTime() + 20 * 60 * 60 * 1000).toISOString()
+      if (new Date(expectedTime) <= new Date()) return 'ready_demold'
+    }
+    return 'stem_curing'
+  }
   if (job.status === 'curing') {
     const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
     if (expectedTime && new Date(expectedTime) <= new Date()) {
@@ -79,19 +100,28 @@ function getProgressPct(displayStatus: DisplayStatus): number {
     demolded: 100,
     qc_passed: 100,
     cancelled: 0,
+    counterfort_ordered: 20,
+    counterfort_curing: 50,
+    stem_ordered: 75,
+    stem_curing: 90,
   }
   return map[displayStatus] ?? 0
 }
 
 const STATUS_CFG: Record<DisplayStatus, { label: string; icon: string; badgeBg: string; badgeBorder: string; badgeText: string; kpiBg: string; kpiBorder: string; kpiText: string; ring: string }> = {
-  pending:          { label: 'รอเริ่ม',           icon: 'fa-clock',         badgeBg: '#F3F4F6', badgeBorder: '#E5E7EB', badgeText: '#6B7280', kpiBg: '#F9FAFB', kpiBorder: '#E5E7EB', kpiText: '#6B7280', ring: 'rgba(107,114,128,0.2)' },
-  concrete_ordered: { label: 'สั่งคอนกรีต',      icon: 'fa-truck-loading', badgeBg: '#DBEAFE', badgeBorder: '#BFDBFE', badgeText: '#1D4ED8', kpiBg: '#EFF6FF', kpiBorder: '#BFDBFE', kpiText: '#2563EB', ring: 'rgba(37,99,235,0.2)' },
-  casting:          { label: 'เทคอนกรีต',        icon: 'fa-fill-drip',     badgeBg: '#EDE9FE', badgeBorder: '#C4B5FD', badgeText: '#5B21B6', kpiBg: '#F5F3FF', kpiBorder: '#C4B5FD', kpiText: '#7C3AED', ring: 'rgba(124,58,237,0.2)' },
-  curing:           { label: 'กำลังบ่ม',          icon: 'fa-hourglass-half',badgeBg: '#FEF3C7', badgeBorder: '#FDE68A', badgeText: '#B45309', kpiBg: '#FFFBEB', kpiBorder: '#FDE68A', kpiText: '#D97706', ring: 'rgba(217,119,6,0.2)' },
-  ready_demold:     { label: 'พร้อมถอดแบบ',       icon: 'fa-check-circle',  badgeBg: '#D1FAE5', badgeBorder: '#A7F3D0', badgeText: '#065F46', kpiBg: '#ECFDF5', kpiBorder: '#A7F3D0', kpiText: '#059669', ring: 'rgba(5,150,105,0.2)' },
-  demolded:         { label: 'ถอดแบบแล้ว',         icon: 'fa-cubes',         badgeBg: '#ECFDF5', badgeBorder: '#6EE7B7', badgeText: '#065F46', kpiBg: '#F0FDF4', kpiBorder: '#86EFAC', kpiText: '#16A34A', ring: 'rgba(22,163,74,0.2)' },
-  qc_passed:        { label: 'QC ตรวจสอบแล้ว',    icon: 'fa-check-double',  badgeBg: '#EFF4FF', badgeBorder: '#DBEAFE', badgeText: '#2563EB', kpiBg: '#EFF4FF', kpiBorder: '#DBEAFE', kpiText: '#2563EB', ring: 'rgba(37,99,235,0.2)' },
-  cancelled:        { label: 'ยกเลิก',             icon: 'fa-times-circle',  badgeBg: '#FEE2E2', badgeBorder: '#FECACA', badgeText: '#991B1B', kpiBg: '#FEF2F2', kpiBorder: '#FECACA', kpiText: '#DC2626', ring: 'rgba(220,38,38,0.2)' },
+  pending:             { label: 'รอเริ่ม',              icon: 'fa-clock',          badgeBg: '#F3F4F6', badgeBorder: '#E5E7EB', badgeText: '#6B7280', kpiBg: '#F9FAFB', kpiBorder: '#E5E7EB', kpiText: '#6B7280', ring: 'rgba(107,114,128,0.2)' },
+  concrete_ordered:    { label: 'สั่งคอนกรีต',         icon: 'fa-truck-loading',  badgeBg: '#DBEAFE', badgeBorder: '#BFDBFE', badgeText: '#1D4ED8', kpiBg: '#EFF6FF', kpiBorder: '#BFDBFE', kpiText: '#2563EB', ring: 'rgba(37,99,235,0.2)' },
+  casting:             { label: 'เทคอนกรีต',           icon: 'fa-fill-drip',      badgeBg: '#EDE9FE', badgeBorder: '#C4B5FD', badgeText: '#5B21B6', kpiBg: '#F5F3FF', kpiBorder: '#C4B5FD', kpiText: '#7C3AED', ring: 'rgba(124,58,237,0.2)' },
+  curing:              { label: 'กำลังบ่ม',             icon: 'fa-hourglass-half', badgeBg: '#FEF3C7', badgeBorder: '#FDE68A', badgeText: '#B45309', kpiBg: '#FFFBEB', kpiBorder: '#FDE68A', kpiText: '#D97706', ring: 'rgba(217,119,6,0.2)' },
+  ready_demold:        { label: 'พร้อมถอดแบบ',          icon: 'fa-check-circle',   badgeBg: '#D1FAE5', badgeBorder: '#A7F3D0', badgeText: '#065F46', kpiBg: '#ECFDF5', kpiBorder: '#A7F3D0', kpiText: '#059669', ring: 'rgba(5,150,105,0.2)' },
+  demolded:            { label: 'ถอดแบบแล้ว',            icon: 'fa-cubes',          badgeBg: '#ECFDF5', badgeBorder: '#6EE7B7', badgeText: '#065F46', kpiBg: '#F0FDF4', kpiBorder: '#86EFAC', kpiText: '#16A34A', ring: 'rgba(22,163,74,0.2)' },
+  qc_passed:           { label: 'QC ตรวจสอบแล้ว',       icon: 'fa-check-double',   badgeBg: '#EFF4FF', badgeBorder: '#DBEAFE', badgeText: '#2563EB', kpiBg: '#EFF4FF', kpiBorder: '#DBEAFE', kpiText: '#2563EB', ring: 'rgba(37,99,235,0.2)' },
+  cancelled:           { label: 'ยกเลิก',                icon: 'fa-times-circle',   badgeBg: '#FEE2E2', badgeBorder: '#FECACA', badgeText: '#991B1B', kpiBg: '#FEF2F2', kpiBorder: '#FECACA', kpiText: '#DC2626', ring: 'rgba(220,38,38,0.2)' },
+  // Two-phase A42 statuses
+  counterfort_ordered: { label: '🏗️ CF: รอคอนกรีต',    icon: 'fa-truck-loading',  badgeBg: '#FEF3C7', badgeBorder: '#FDE68A', badgeText: '#92400E', kpiBg: '#FFFBEB', kpiBorder: '#FDE68A', kpiText: '#B45309', ring: 'rgba(180,83,9,0.2)' },
+  counterfort_curing:  { label: '🏗️ CF: กำลังบ่ม',     icon: 'fa-hourglass-half', badgeBg: '#FFF7ED', badgeBorder: '#FED7AA', badgeText: '#C2410C', kpiBg: '#FFF7ED', kpiBorder: '#FED7AA', kpiText: '#EA580C', ring: 'rgba(234,88,12,0.2)' },
+  stem_ordered:        { label: '🧱 STEM: รอคอนกรีต',  icon: 'fa-truck-loading',  badgeBg: '#EDE9FE', badgeBorder: '#C4B5FD', badgeText: '#6D28D9', kpiBg: '#F5F3FF', kpiBorder: '#C4B5FD', kpiText: '#7C3AED', ring: 'rgba(124,58,237,0.2)' },
+  stem_curing:         { label: '🧱 STEM: กำลังบ่ม',   icon: 'fa-hourglass-half', badgeBg: '#F5F3FF', badgeBorder: '#DDD6FE', badgeText: '#7C3AED', kpiBg: '#F5F3FF', kpiBorder: '#DDD6FE', kpiText: '#7C3AED', ring: 'rgba(124,58,237,0.2)' },
 }
 
 const KPI_STATUSES: DisplayStatus[] = ['pending', 'concrete_ordered', 'casting', 'curing', 'ready_demold']

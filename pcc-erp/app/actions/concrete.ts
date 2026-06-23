@@ -7,13 +7,14 @@ import { calculateConcreteRounds } from '@/lib/concrete-utils'
 
 /**
  * Worker สั่งคอนกรีต — สร้าง concrete_order + concrete_rounds และอัปเดต job_order status
- * (ตอนนี้ถูกเรียกจาก WorkerClient โดยตรงผ่าน supabase client แล้ว ฟังก์ชันนี้ยังคงไว้เพื่อ compatibility)
+ * รองรับ two-phase production: phase = 'counterfort' | 'stem' | 'main'
  */
 export async function requestConcrete(
   jobOrderId: string,
   qtyRequested: number,
   mixRatio?: string,
-  notes?: string
+  notes?: string,
+  phase: 'counterfort' | 'stem' | 'main' = 'main'
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -23,7 +24,13 @@ export async function requestConcrete(
   const roundCount = roundData.length
   const now = new Date().toISOString()
 
-  // Insert concrete order
+  // กำหนด job_status ตาม phase
+  const newJobStatus =
+    phase === 'counterfort' ? 'counterfort_ordered'
+    : phase === 'stem'      ? 'stem_ordered'
+    : 'concrete_ordered'
+
+  // Insert concrete order พร้อมบันทึก phase
   const { data: order, error: orderErr } = await supabase
     .from('concrete_orders')
     .insert({
@@ -34,6 +41,7 @@ export async function requestConcrete(
       round_count: roundCount,
       mix_ratio: mixRatio ?? null,
       notes: notes ?? null,
+      phase,
       status: 'requested',
       requested_at: now,
     })
@@ -52,11 +60,11 @@ export async function requestConcrete(
   const { error: roundsErr } = await supabase.from('concrete_rounds').insert(rounds)
   if (roundsErr) throw new Error(roundsErr.message)
 
-  // อัปเดต job_order → concrete_ordered (ไม่ใช่ casting รอ QC)
+  // อัปเดต job_order → status ตาม phase
   const { error: jobErr } = await supabase
     .from('job_orders')
     .update({
-      status: 'concrete_ordered',
+      status: newJobStatus,
       concrete_requested_at: now,
       cast_at: null,
       worker_id: user.id,
@@ -169,26 +177,43 @@ export async function receiveConcreteRound(roundId: string) {
       .update({ status: 'received' })
       .eq('id', round.concrete_order_id)
 
-    // Fetch the order details to find associated jobs (by job_order_id or bed)
+    // Fetch the order details พร้อม phase เพื่อกำหนด job status ที่ถูกต้อง
     const { data: order } = await supabase
       .from('concrete_orders')
-      .select('bed, job_order_id')
+      .select('bed, job_order_id, phase')
       .eq('id', round.concrete_order_id)
       .single()
 
     if (order) {
+      const concretePhase = (order as any).phase ?? 'main'
+
+      // กำหนด status ที่ job_order ควรได้รับหลังคอนกรีตรับครบ
+      // two-phase: ให้รักษาสถานะเป็น counterfort_ordered / stem_ordered ไว้ เพื่อให้ QC มาตรวจสอบการเทและกดเริ่มบ่มในหน้าจอของ QC เอง
+      // ปกติ: concrete_ordered → ไม่เปลี่ยน (QC จะเปลี่ยนเอง)
+      const castPayload: Record<string, any> = { worker_id: user.id }
+      if (concretePhase === 'counterfort') {
+        castPayload.counterfort_cast_at = nowStr
+      } else if (concretePhase === 'stem') {
+        castPayload.stem_cast_at = nowStr
+      } else {
+        castPayload.cast_at = nowStr
+      }
+
       if (order.job_order_id) {
         await supabase
           .from('job_orders')
-          .update({ cast_at: nowStr, worker_id: user.id })
+          .update(castPayload)
           .eq('id', order.job_order_id)
       }
       if (order.bed) {
+        const matchStatus = concretePhase === 'counterfort' ? 'counterfort_ordered'
+          : concretePhase === 'stem' ? 'stem_ordered'
+          : 'concrete_ordered'
         await supabase
           .from('job_orders')
-          .update({ cast_at: nowStr, worker_id: user.id })
+          .update(castPayload)
           .eq('bed', order.bed)
-          .eq('status', 'concrete_ordered')
+          .eq('status', matchStatus)
       }
     }
   }
@@ -237,7 +262,7 @@ export async function getPendingConcreteOrders() {
         product:products(id, name, code, size, unit, concrete_group)
       )
     `)
-    .eq('status', 'concrete_ordered')
+    .in('status', ['concrete_ordered', 'counterfort_ordered', 'stem_ordered'])
 
   // Group job orders by PO ID and Bed (primary key: production_order_id + bed)
   const jobsByPoAndBed: Record<string, any[]> = {}
@@ -369,6 +394,12 @@ export async function deleteConcreteOrder(orderId: string, bed: string | null, j
     qty_cast: null,
     concrete_requested_at: null,
     photo_ready_url: null,
+    counterfort_cast_at: null,
+    counterfort_cured_at: null,
+    stem_cast_at: null,
+    stem_cured_at: null,
+    photo_counterfort_url: null,
+    photo_stem_url: null,
   };
 
   if (jobOrderId) {
@@ -376,7 +407,7 @@ export async function deleteConcreteOrder(orderId: string, bed: string | null, j
   } else if (bed) {
     await adminClient.from('job_orders').update(resetPayload)
     .eq('bed', bed)
-    .in('status', ['concrete_ordered', 'casting', 'curing', 'ready_demold'])
+    .in('status', ['concrete_ordered', 'casting', 'curing', 'ready_demold', 'counterfort_ordered', 'counterfort_curing', 'stem_ordered', 'stem_curing'])
   }
 
   revalidatePath('/concrete')
@@ -408,14 +439,19 @@ export async function resetJobOrder(jobId: string, bed: string) {
     // If there is an order, delete it (this will also reset the jobs via deleteConcreteOrder logic)
     await deleteConcreteOrder(orders[0].id, bed, null)
   } else {
-    // Just reset the job
     await adminClient.from('job_orders').update({
       status: 'pending',
       cast_at: null,
       qty_cast: null,
       concrete_requested_at: null,
       photo_ready_url: null,
-    }).in('status', ['concrete_ordered', 'casting', 'curing', 'ready_demold']).eq('bed', bed)
+      counterfort_cast_at: null,
+      counterfort_cured_at: null,
+      stem_cast_at: null,
+      stem_cured_at: null,
+      photo_counterfort_url: null,
+      photo_stem_url: null,
+    }).in('status', ['concrete_ordered', 'casting', 'curing', 'ready_demold', 'counterfort_ordered', 'counterfort_curing', 'stem_ordered', 'stem_curing']).eq('bed', bed)
   }
   
   revalidatePath('/job-orders')
