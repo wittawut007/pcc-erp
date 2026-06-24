@@ -188,7 +188,38 @@ export async function getMaterialSummary(params?: {
     .select(`
       *,
       raw_material:raw_materials(id, name, category, unit, material_code, weight_per_meter),
-      plan:production_plans!inner(id, plan_date, status, total_concrete, production_orders(order_number, status)),
+      plan:production_plans!inner(
+        id,
+        plan_date,
+        status,
+        total_concrete,
+        production_orders(
+          id,
+          order_number,
+          status,
+          job_orders(id, status)
+        ),
+        items:production_plan_items(
+          id,
+          qty_target,
+          product:products(
+            id,
+            code,
+            name,
+            category,
+            unit,
+            size,
+            concrete_per_unit,
+            wire_per_unit,
+            mesh_per_unit,
+            rebar_per_unit,
+            product_bom_items(
+              qty_per_unit,
+              raw_materials(id, name, material_code, unit)
+            )
+          )
+        )
+      ),
       dispensed_by_profile:profiles!plan_materials_dispensed_by_fkey(full_name)
     `)
     .order('created_at', { ascending: false })
@@ -210,4 +241,73 @@ export async function getMaterialSummary(params?: {
   }
 
   return filtered
+}
+
+/**
+ * ดึงข้อมูลสรุปการใช้คอนกรีต
+ * แยกตามหมวดหมู่สินค้า (A13/A30/A42...) และ plan.status (confirmed vs completed)
+ * concrete_orders → job_orders → production_plan_items → products
+ *                             → production_orders → production_plans
+ */
+export async function getConcreteSummary(params?: {
+  dateFrom?: string
+  dateTo?: string
+}) {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('concrete_orders')
+    .select(`
+      id,
+      phase,
+      qty_requested,
+      status,
+      mix_ratio,
+      requested_at,
+      job_order:job_orders!inner(
+        id,
+        plan_item:production_plan_items!inner(
+          id,
+          qty_target,
+          product:products!inner(
+            id,
+            code,
+            name,
+            category,
+            concrete_per_unit
+          )
+        ),
+        production_order:production_orders!inner(
+          id,
+          plan_id,
+          status,
+          job_orders(id, status),
+          plan:production_plans!inner(
+            id,
+            plan_date,
+            status,
+            total_concrete
+          )
+        )
+      )
+    `)
+    .neq('status', 'cancelled')
+    .order('requested_at', { ascending: false })
+
+  if (error) throw new Error(error.message)
+
+  let rows = data ?? []
+
+  // Filter ตาม plan_date
+  if (params?.dateFrom || params?.dateTo) {
+    rows = rows.filter((r: any) => {
+      const planDate = r.job_order?.production_order?.plan?.plan_date
+      if (!planDate) return false
+      if (params?.dateFrom && planDate < params.dateFrom) return false
+      if (params?.dateTo   && planDate > params.dateTo)   return false
+      return true
+    })
+  }
+
+  return rows
 }

@@ -41,6 +41,31 @@ export default function DashboardCharts({ dailyData, weeklyData, bedData, defect
       if (daily.current && dailyData) {
         const existing = Chart.getChart(daily.current)
         if (existing) existing.destroy()
+
+        const datalabelsPlugin = {
+          id: 'datalabels',
+          afterDatasetsDraw(chart: any) {
+            const { ctx } = chart
+            ctx.save()
+            ctx.font = "bold 11px 'IBM Plex Sans Thai', sans-serif"
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'bottom'
+
+            chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
+              if (!chart.isDatasetVisible(datasetIndex)) return
+              const meta = chart.getDatasetMeta(datasetIndex)
+              meta.data.forEach((bar: any, index: number) => {
+                const value = dataset.data[index]
+                if (value !== undefined && value !== null && value > 0) {
+                  ctx.fillStyle = '#334155'
+                  ctx.fillText(value.toLocaleString(), bar.x, bar.y - 4)
+                }
+              })
+            })
+            ctx.restore()
+          }
+        }
+
         new Chart(daily.current.getContext('2d')!, {
           type: 'bar',
           data: {
@@ -50,11 +75,12 @@ export default function DashboardCharts({ dailyData, weeklyData, bedData, defect
               { label: 'ผลิตได้จริง (Actual)', data: dailyData.labels.length > 0 ? dailyData.actualData : [0], backgroundColor: '#2563EB', borderRadius: 4 },
             ],
           },
+          plugins: [datalabelsPlugin],
           options: {
             responsive: true, maintainAspectRatio: false,
             plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } } },
             scales: {
-              y: { beginAtZero: true, border: { display: false }, grid: { color: '#EBEBF0' } },
+              y: { beginAtZero: true, grace: '10%', border: { display: false }, grid: { color: '#EBEBF0' } },
               x: { border: { display: false }, grid: { display: false } },
             },
           },
@@ -170,7 +196,7 @@ export default function DashboardCharts({ dailyData, weeklyData, bedData, defect
       {(!renderGroup || renderGroup === 'analytics') && dailyData && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>แผนการผลิตรายวัน วันนี้ (แยกตามหมวดหมู่)</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>แผนการผลิตย้อนหลัง 6 วัน (แยกตามหมวดหมู่)</span>
           </div>
           <div style={{ height: 280, width: '100%' }}>
             <canvas ref={daily}></canvas>

@@ -9,7 +9,7 @@ async function getSupabaseData() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!supabaseUrl || supabaseUrl === 'your_supabase_project_url' || !supabaseKey) {
-    return { todayPlans: null, jobOrders: null, recentLogs: null, lowStock: null }
+    return { todayPlans: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, sixDaysPlans: null, today: '' }
   }
   try {
     const { createClient } = await import('@/lib/supabase/server')
@@ -20,7 +20,18 @@ async function getSupabaseData() {
     sixDaysAgo.setDate(now.getDate() - 5)
     const startDateStr = sixDaysAgo.toISOString().split('T')[0]
     
-    const [{ data: todayPlans }, { data: jobOrders }, { data: recentLogs }, { data: lowStock }, { data: fgStock }, { data: qcData }, { data: demoldingRecs }, { data: concreteOrders }, { data: concreteRounds }] = await Promise.all([
+    const [
+      { data: todayPlans },
+      { data: jobOrders },
+      { data: recentLogs },
+      { data: lowStock },
+      { data: fgStock },
+      { data: qcData },
+      { data: demoldingRecs },
+      { data: concreteOrders },
+      { data: concreteRounds },
+      { data: sixDaysPlans }
+    ] = await Promise.all([
       supabase.from('production_plans').select('*,items:production_plan_items(*,product:products(*))').eq('plan_date', today),
       supabase.from('job_orders').select(`
         *,
@@ -39,31 +50,32 @@ async function getSupabaseData() {
       supabase.from('qc_inspections').select('demold_qty_defect, defect_reason, created_at').gte('created_at', startDateStr),
       supabase.from('demolding_records').select('job_order_id, qty_good, qty_defect, defect_reason, created_at, worker:profiles!demolding_records_worker_id_fkey(full_name)').gte('created_at', startDateStr),
       supabase.from('concrete_orders').select('id, job_order_id, bed, qty_requested, total_qty_requested, status, requested_at, created_at, round_count').gte('created_at', today),
-      supabase.from('concrete_rounds').select('concrete_order_id, round_number, qty_per_round, status, supplied_at').gte('created_at', today)
+      supabase.from('concrete_rounds').select('concrete_order_id, round_number, qty_per_round, status, supplied_at').gte('created_at', today),
+      supabase.from('production_plans').select('*,items:production_plan_items(*,product:products(*))').gte('plan_date', startDateStr)
     ])
-    return { todayPlans, jobOrders, recentLogs, lowStock, fgStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today }
+    return { todayPlans, jobOrders, recentLogs, lowStock, fgStock, qcData, demoldingRecs, concreteOrders, concreteRounds, sixDaysPlans, today }
   } catch (err) {
     console.error('Dashboard Fetch Error:', err)
-    return { todayPlans: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, today: '' }
+    return { todayPlans: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, sixDaysPlans: null, today: '' }
   }
 }
 
 function getThaiCategoryName(category: string): string {
   if (!category) return 'ไม่ระบุ'
   const cat = category.trim().toUpperCase()
-  if (cat.startsWith('A13')) return 'แผ่นพื้น'
-  if (cat.startsWith('A30')) return 'ผนังรั้วสำเร็จรูป'
-  if (cat.startsWith('A31')) return 'ผนังสำเร็จรูป/ผนังกันตก/FIN'
-  if (cat.startsWith('A35')) return 'รั้วสำเร็จรูป'
-  if (cat.startsWith('A36')) return 'เสา คาน บันได'
-  if (cat.startsWith('A41')) return 'เสาเข็ม'
-  if (cat.startsWith('A42')) return 'กำแพงกันดิน'
-  if (cat.startsWith('A82')) return 'เสารั้ว'
+  if (cat.startsWith('A13')) return 'A13 แผ่นพื้น'
+  if (cat.startsWith('A30')) return 'A30 ผนังรั้วสำเร็จรูป'
+  if (cat.startsWith('A31')) return 'A31 ผนังสำเร็จรูป/ผนังกันตก/FIN'
+  if (cat.startsWith('A35')) return 'A35 รั้วสำเร็จรูป'
+  if (cat.startsWith('A36')) return 'A36 เสา คาน บันได'
+  if (cat.startsWith('A41')) return 'A41 เสาเข็ม'
+  if (cat.startsWith('A42')) return 'A42 กำแพงกันดิน'
+  if (cat.startsWith('A82')) return 'A82 เสารั้ว'
   return category
 }
 
 export default async function DashboardPage() {
-  const { todayPlans, jobOrders, recentLogs, lowStock, fgStock, qcData, demoldingRecs, concreteOrders, concreteRounds, today } = await getSupabaseData()
+  const { todayPlans, jobOrders, recentLogs, lowStock, fgStock, qcData, demoldingRecs, concreteOrders, concreteRounds, sixDaysPlans, today } = await getSupabaseData()
 
   const todaysJobOrders = (jobOrders as any[])?.filter((j: any) => j.plan_item?.plan?.plan_date === today) || []
 
@@ -151,14 +163,14 @@ export default async function DashboardPage() {
   }
   
   const statusBadgeMap: Record<DisplayStatus, { label: string; bg: string; color: string }> = {
-    pending: { label: 'รอเริ่ม', bg: 'var(--amber-light)', color: '#B45309' },
-    concrete_ordered: { label: 'สั่งคอนกรีต', bg: 'var(--indigo-light)', color: 'var(--indigo)' },
-    casting: { label: 'เทคอนกรีต', bg: 'var(--accent-light)', color: 'var(--accent)' },
-    curing: { label: 'กำลังบ่ม', bg: 'var(--green-light)', color: '#059669' },
-    ready_demold: { label: 'พร้อมถอดแบบ', bg: 'var(--green-light)', color: '#059669' },
+    pending: { label: 'รอเริ่ม', bg: '#F3F4F6', color: '#6B7280' },
+    concrete_ordered: { label: 'สั่งคอนกรีต', bg: '#EEF2FF', color: '#4F46E5' },
+    casting: { label: 'เทคอนกรีต', bg: '#E0F2FE', color: '#0284C7' },
+    curing: { label: 'กำลังบ่ม', bg: '#FEF3C7', color: '#B45309' },
+    ready_demold: { label: 'พร้อมถอดแบบ', bg: '#D1FAE5', color: '#065F46' },
     demolded: { label: 'ถอดแบบแล้ว', bg: '#F3F4F6', color: '#6B7280' },
-    qc_passed: { label: 'QC ตรวจสอบแล้ว', bg: 'var(--accent-light)', color: 'var(--accent)' },
-    cancelled: { label: 'ยกเลิก', bg: 'var(--red-light)', color: 'var(--red)' },
+    qc_passed: { label: 'QC ตรวจสอบแล้ว', bg: '#EFF4FF', color: '#2563EB' },
+    cancelled: { label: 'ยกเลิก', bg: '#FEF2F2', color: '#EF4444' },
   }
 
   const mockJobs = [
@@ -211,11 +223,9 @@ export default async function DashboardPage() {
     const s = getDisplayStatus(j)
     return ['ready_demold', 'curing'].includes(s)
   }).sort((a, b) => {
-    const expectedA = a.expected_demold_at || (a.cast_at ? new Date(new Date(a.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : '')
-    const expectedB = b.expected_demold_at || (b.cast_at ? new Date(new Date(b.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : '')
-    if (!expectedA) return 1
-    if (!expectedB) return -1
-    return new Date(expectedA).getTime() - new Date(expectedB).getTime()
+    const timeA = new Date(a.cast_at || a.created_at).getTime()
+    const timeB = new Date(b.cast_at || b.created_at).getTime()
+    return timeB - timeA
   }) || []
 
   // Pipeline: count job orders by stage
@@ -284,10 +294,10 @@ export default async function DashboardPage() {
     { color: '#8B5CF6', label: 'อื่นๆ (Other)', pct: getDefectPct(defectStats.other), key: 'other' },
   ]
 
-  // Map Real Chart Data
+  // Map Real Chart Data for the last 6 days
   const categoriesMap = new Map()
-  if (Array.isArray(todayPlans)) {
-    todayPlans.forEach((plan: any) => {
+  if (Array.isArray(sixDaysPlans)) {
+    sixDaysPlans.forEach((plan: any) => {
       if (plan?.items) {
         plan.items.forEach((item: any) => {
           const rawCat = item.product?.category || 'ไม่ระบุ'
@@ -298,17 +308,19 @@ export default async function DashboardPage() {
       }
     })
   }
-  todaysJobOrders.forEach((job: any) => {
-    const rawCat = job.plan_item?.product?.category || 'ไม่ระบุ'
-    const catName = getThaiCategoryName(rawCat)
-    if (!categoriesMap.has(catName)) categoriesMap.set(catName, { plan: 0, actual: 0 })
-    
-    // นับเฉพาะที่ถอดแบบแล้ว (Finished Goods)
-    if (job.status === 'demolded') {
-      const actualQty = job.qc?.[0]?.demold_qty_good ?? job.qty_cast ?? 0
-      categoriesMap.get(catName).actual += actualQty
-    }
-  })
+  if (Array.isArray(jobOrders)) {
+    jobOrders.forEach((job: any) => {
+      const rawCat = job.plan_item?.product?.category || 'ไม่ระบุ'
+      const catName = getThaiCategoryName(rawCat)
+      if (!categoriesMap.has(catName)) categoriesMap.set(catName, { plan: 0, actual: 0 })
+      
+      // นับเฉพาะที่ถอดแบบแล้ว (Finished Goods)
+      if (job.status === 'demolded') {
+        const actualQty = job.qc?.[0]?.demold_qty_good ?? job.qty_cast ?? 0
+        categoriesMap.get(catName).actual += actualQty
+      }
+    })
+  }
 
   // dailyChart fallback to undefined so component can render mock or empty
   const dailyChartData = {

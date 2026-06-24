@@ -20,7 +20,7 @@ interface RawMaterial {
 
 const CATEGORIES = ['ทั้งหมด', 'เหล็กเส้น', 'ลวด', 'น้ำยา', 'ปูน', 'เมช', 'อื่นๆ']
 
-export default function RawMaterialsClient({ materials: initial, summaryData = [] }: { materials: RawMaterial[]; summaryData?: any[] }) {
+export default function RawMaterialsClient({ materials: initial, summaryData = [], concreteData = [] }: { materials: RawMaterial[]; summaryData?: any[]; concreteData?: any[] }) {
   const supabase = createClient()
   const [materials, setMaterials] = useState<RawMaterial[]>(initial)
   const [activeTab, setActiveTab] = useState<'stock' | 'summary'>('stock')
@@ -240,7 +240,7 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
 
       {/* ── Summary Tab ─────────────────────────────────────────────── */}
       {activeTab === 'summary' && (
-        <RawMaterialSummaryTab initialData={summaryData} />
+        <RawMaterialSummaryTab initialData={summaryData} initialConcrete={concreteData} />
       )}
 
       {/* ── Stock Tab ───────────────────────────────────────────────── */}
