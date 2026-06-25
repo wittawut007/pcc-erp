@@ -9,7 +9,7 @@ async function getSupabaseData() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!supabaseUrl || supabaseUrl === 'your_supabase_project_url' || !supabaseKey) {
-    return { todayPlans: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, sixDaysPlans: null, today: '' }
+    return { todayPlans: null, chartJobOrders: null, activeJobOrders: null, recentLogs: null, lowStock: null, fgStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, sixDaysPlans: null, today: '' }
   }
   try {
     const { createClient } = await import('@/lib/supabase/server')
@@ -22,7 +22,8 @@ async function getSupabaseData() {
     
     const [
       { data: todayPlans },
-      { data: jobOrders },
+      { data: chartJobOrders },
+      { data: activeJobOrders },
       { data: recentLogs },
       { data: lowStock },
       { data: fgStock },
@@ -44,6 +45,17 @@ async function getSupabaseData() {
       `)
       .gte('plan_item.plan.plan_date', startDateStr)
       .order('created_at', { ascending: false }),
+      supabase.from('job_orders').select(`
+        *,
+        plan_item:production_plan_items!inner(
+          product:products(name,category,code),
+          plan:production_plans!inner(plan_date)
+        ),
+        production_order:production_orders!inner(id, status),
+        qc:qc_inspections(pour_ok, demold_qty_good, demold_qty_defect, defect_reason)
+      `)
+      .neq('production_order.status', 'erp_synced')
+      .order('created_at', { ascending: false }),
       supabase.from('activity_logs').select('*,profile:profiles(full_name,role)').order('created_at', { ascending: false }).limit(10),
       supabase.from('raw_materials').select('*').eq('is_active', true),
       supabase.from('fg_inventory').select('qty'),
@@ -53,10 +65,10 @@ async function getSupabaseData() {
       supabase.from('concrete_rounds').select('concrete_order_id, round_number, qty_per_round, status, supplied_at').gte('created_at', today),
       supabase.from('production_plans').select('*,items:production_plan_items(*,product:products(*))').gte('plan_date', startDateStr)
     ])
-    return { todayPlans, jobOrders, recentLogs, lowStock, fgStock, qcData, demoldingRecs, concreteOrders, concreteRounds, sixDaysPlans, today }
+    return { todayPlans, chartJobOrders, activeJobOrders, recentLogs, lowStock, fgStock, qcData, demoldingRecs, concreteOrders, concreteRounds, sixDaysPlans, today }
   } catch (err) {
     console.error('Dashboard Fetch Error:', err)
-    return { todayPlans: null, jobOrders: null, recentLogs: null, lowStock: null, fgStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, sixDaysPlans: null, today: '' }
+    return { todayPlans: null, chartJobOrders: null, activeJobOrders: null, recentLogs: null, lowStock: null, fgStock: null, qcData: null, demoldingRecs: null, concreteOrders: null, concreteRounds: null, sixDaysPlans: null, today: '' }
   }
 }
 
@@ -75,9 +87,9 @@ function getThaiCategoryName(category: string): string {
 }
 
 export default async function DashboardPage() {
-  const { todayPlans, jobOrders, recentLogs, lowStock, fgStock, qcData, demoldingRecs, concreteOrders, concreteRounds, sixDaysPlans, today } = await getSupabaseData()
+  const { todayPlans, chartJobOrders, activeJobOrders, recentLogs, lowStock, fgStock, qcData, demoldingRecs, concreteOrders, concreteRounds, sixDaysPlans, today } = await getSupabaseData()
 
-  const todaysJobOrders = (jobOrders as any[])?.filter((j: any) => j.plan_item?.plan?.plan_date === today) || []
+  const todaysJobOrders = (activeJobOrders as any[])?.filter((j: any) => j.plan_item?.plan?.plan_date === today) || []
 
   const totalTarget = (todayPlans as any[])?.reduce((s: number, p: any) => s + (p.total_qty ?? 0), 0) ?? 0
   const qtyCast = todaysJobOrders.filter((j: any) => ['casting', 'curing', 'ready_demold', 'demolded'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
@@ -196,7 +208,7 @@ export default async function DashboardPage() {
   // Pre-compute which production_order IDs have ALL jobs finished (demolded or qc_passed)
   // This mirrors the FG Inventory logic: if every job in a PO is done → PO = "QC ตรวจสอบแล้ว"
   const poJobGroupMap = new Map<string, any[]>()
-  ;(jobOrders as any[])?.forEach((job: any) => {
+  ;(activeJobOrders as any[])?.forEach((job: any) => {
     const poId = job.production_order?.id
     if (!poId) return
     if (!poJobGroupMap.has(poId)) poJobGroupMap.set(poId, [])
@@ -212,13 +224,13 @@ export default async function DashboardPage() {
     }
   })
 
-  const activeJobs = (jobOrders as any[])?.filter((j: any) => {
+  const activeJobs = (activeJobOrders as any[])?.filter((j: any) => {
     if (j.production_order?.status === 'erp_synced') return false
     const s = getDisplayStatus(j)
     return !['demolded', 'qc_passed', 'cancelled'].includes(s)
   }) || []
 
-  const demoldingJobs = (jobOrders as any[])?.filter((j: any) => {
+  const demoldingJobs = (activeJobOrders as any[])?.filter((j: any) => {
     if (j.production_order?.status === 'erp_synced') return false
     const s = getDisplayStatus(j)
     return ['ready_demold', 'curing'].includes(s)
@@ -228,21 +240,24 @@ export default async function DashboardPage() {
     return timeB - timeA
   }) || []
 
-  // Pipeline: count job orders by stage
-  // Jobs that belong to a fully-done PO (all jobs demolded/qc_passed) are promoted to qc_passed
+  // Pipeline: count distinct production orders by stage
   const pipelineCounts: Record<DisplayStatus, number> = { pending: 0, concrete_ordered: 0, casting: 0, curing: 0, ready_demold: 0, demolded: 0, qc_passed: 0, cancelled: 0 }
   const pipelineQty: Record<DisplayStatus, number> = { pending: 0, concrete_ordered: 0, casting: 0, curing: 0, ready_demold: 0, demolded: 0, qc_passed: 0, cancelled: 0 }
-  ;(jobOrders as any[])?.forEach((job: any) => {
-    if (job.production_order?.status === 'erp_synced') return
-    let s = getDisplayStatus(job)
-    // If this job is 'demolded' but its entire PO is fully done → show as qc_passed
-    const poId = job.production_order?.id
-    if (s === 'demolded' && poId && fullyDonePoIds.has(poId)) {
+  
+  poJobGroupMap.forEach((jobs, poId) => {
+    if (jobs.length === 0) return
+    const firstJob = jobs[0]
+    let s = getDisplayStatus(firstJob)
+    
+    // Promote the entire PO to qc_passed if it is fully done
+    if (s === 'demolded' && fullyDonePoIds.has(poId)) {
       s = 'qc_passed'
     }
+    
     if (s && s !== 'cancelled') {
       pipelineCounts[s] = (pipelineCounts[s] || 0) + 1
-      pipelineQty[s] = (pipelineQty[s] || 0) + (job.qty_cast || job.qty_target || 0)
+      const totalPoQty = jobs.reduce((sum, j) => sum + (j.qty_cast || j.qty_target || 0), 0)
+      pipelineQty[s] = (pipelineQty[s] || 0) + totalPoQty
     }
   })
 
@@ -308,8 +323,8 @@ export default async function DashboardPage() {
       }
     })
   }
-  if (Array.isArray(jobOrders)) {
-    jobOrders.forEach((job: any) => {
+  if (Array.isArray(chartJobOrders)) {
+    chartJobOrders.forEach((job: any) => {
       const rawCat = job.plan_item?.product?.category || 'ไม่ระบุ'
       const catName = getThaiCategoryName(rawCat)
       if (!categoriesMap.has(catName)) categoriesMap.set(catName, { plan: 0, actual: 0 })
@@ -341,7 +356,7 @@ export default async function DashboardPage() {
   }
   
   const catWeeklyMap = new Map()
-  ;(jobOrders as any[])?.forEach(job => {
+  ;(chartJobOrders as any[])?.forEach(job => {
      const rawCat = job.plan_item?.product?.category || 'ไม่ระบุ'
      const catName = getThaiCategoryName(rawCat)
      if (!catWeeklyMap.has(catName)) catWeeklyMap.set(catName, { dates: {} })
@@ -383,7 +398,7 @@ export default async function DashboardPage() {
     cancelled: '#E5E7EB',
   }
   const bedMap = new Map<string, { cast: number; target: number; dominantStatus: string }>()
-  ;(jobOrders as any[])?.forEach((job: any) => {
+  ;(activeJobOrders as any[])?.forEach((job: any) => {
     if (job.production_order?.status === 'erp_synced') return
     const bedKey = `โรงผลิต ${job.bed}`
     if (!bedMap.has(bedKey)) bedMap.set(bedKey, { cast: 0, target: 0, dominantStatus: 'pending' })
