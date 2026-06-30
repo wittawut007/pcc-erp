@@ -73,6 +73,29 @@ export async function requestConcrete(
 
   if (jobErr) throw new Error(jobErr.message)
 
+  // Log action
+  try {
+    const { data: job } = await supabase
+      .from('job_orders')
+      .select('bed, qty_target, plan_item(product(name))')
+      .eq('id', jobOrderId)
+      .single()
+    const planItem = job?.plan_item as any
+    const product = planItem?.product as any
+    const productName = product?.name ?? 'ไม่ระบุ'
+    const detailText = `โรงผลิต ${job?.bed || '-'} | สั่งคอนกรีตจำนวน ${qtyRequested} Q สำหรับผลิต ${productName} (เฟส: ${phase === 'counterfort' ? 'CF' : phase === 'stem' ? 'STEM' : 'ปกติ'})`
+
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: 'สั่งคอนกรีต (Mobile)',
+      entity_type: 'concrete_order',
+      entity_id: order.id,
+      detail: detailText,
+    })
+  } catch (err) {
+    console.error('Failed to log requestConcrete activity:', err)
+  }
+
   revalidatePath('/worker')
   revalidatePath('/concrete')
 }
@@ -130,6 +153,33 @@ export async function supplyConcreteRound(roundId: string) {
       .from('concrete_orders')
       .update({ status: 'supplied', supplied_by: user.id, supplied_at: now })
       .eq('id', round.concrete_order_id)
+  }
+
+  // Log action
+  try {
+    const { data: roundDetails } = await supabase
+      .from('concrete_rounds')
+      .select('round_number, qty_per_round, concrete_orders(bed, job_orders(plan_item(product(name))))')
+      .eq('id', roundId)
+      .single()
+    
+    if (roundDetails) {
+      const orderData = roundDetails.concrete_orders as any
+      const jobData = orderData?.job_orders as any
+      const planItem = jobData?.plan_item as any
+      const product = planItem?.product as any
+      const detailText = `จ่ายคอนกรีตรอบที่ ${roundDetails.round_number} จำนวน ${roundDetails.qty_per_round} Q ไปยังโรงผลิต ${orderData?.bed || '-'} (สินค้า: ${product?.name ?? 'ไม่ระบุ'})`
+      
+      await supabase.from('activity_logs').insert({
+        user_id: user.id,
+        action_type: 'จ่ายคอนกรีต',
+        entity_type: 'concrete_round',
+        entity_id: roundId,
+        detail: detailText,
+      })
+    }
+  } catch (err) {
+    console.error('Failed to log supplyConcreteRound activity:', err)
   }
 
   revalidatePath('/concrete')
@@ -218,6 +268,33 @@ export async function receiveConcreteRound(roundId: string) {
     }
   }
 
+  // Log action
+  try {
+    const { data: roundDetails } = await supabase
+      .from('concrete_rounds')
+      .select('round_number, qty_per_round, concrete_orders(bed, job_orders(plan_item(product(name))))')
+      .eq('id', roundId)
+      .single()
+
+    if (roundDetails) {
+      const orderData = roundDetails.concrete_orders as any
+      const jobData = orderData?.job_orders as any
+      const planItem = jobData?.plan_item as any
+      const product = planItem?.product as any
+      const detailText = `ยืนยันรับคอนกรีตรอบที่ ${roundDetails.round_number} จำนวน ${roundDetails.qty_per_round} Q ที่โรงผลิต ${orderData?.bed || '-'} (สินค้า: ${product?.name ?? 'ไม่ระบุ'})`
+
+      await supabase.from('activity_logs').insert({
+        user_id: user.id,
+        action_type: 'รับคอนกรีต',
+        entity_type: 'concrete_round',
+        entity_id: roundId,
+        detail: detailText,
+      })
+    }
+  } catch (err) {
+    console.error('Failed to log receiveConcreteRound activity:', err)
+  }
+
   revalidatePath('/worker')
   revalidatePath('/concrete')
 }
@@ -237,7 +314,7 @@ export async function getPendingConcreteOrders() {
       requested_by_profile:profiles!concrete_orders_requested_by_fkey(full_name, employee_code),
       job_order:job_orders(
         id, bed, qty_target, order_id,
-        production_order:production_orders(status),
+        production_order:production_orders(order_number, status),
         plan_item:production_plan_items(
           product:products(name, code, concrete_per_unit, concrete_group)
         )

@@ -147,6 +147,20 @@ export async function dispenseMaterial(
 
   if (stockErr) throw new Error(stockErr.message)
 
+  // Log action
+  try {
+    const detailText = `จ่ายวัตถุดิบ: ${rawMat?.name ?? 'ไม่ระบุ'} (${rawMat?.material_code ?? '-'}) | จำนวน: ${qtyDispensed} ${rawMat?.unit} | ผู้รับ: ${receiverName || 'ไม่ระบุ'}`
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: 'เบิกวัตถุดิบ',
+      entity_type: 'plan_material',
+      entity_id: planMaterialId,
+      detail: detailText,
+    })
+  } catch (err) {
+    console.error('Failed to log dispenseMaterial activity:', err)
+  }
+
   revalidatePath('/material')
   revalidatePath('/inventory/raw')
 }

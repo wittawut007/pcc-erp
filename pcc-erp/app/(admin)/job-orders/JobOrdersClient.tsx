@@ -55,7 +55,7 @@ interface Worker {
 
 // ── Derive effective display status from QC state ──
 type DisplayStatus = 'pending' | 'concrete_ordered' | 'casting' | 'curing' | 'ready_demold' | 'demolded' | 'qc_passed' | 'cancelled'
-  | 'counterfort_ordered' | 'counterfort_curing' | 'stem_ordered' | 'stem_curing'
+  | 'counterfort_ordered' | 'counterfort_casting' | 'counterfort_curing' | 'cf_curing_done' | 'stem_ordered' | 'stem_casting' | 'stem_curing'
 
 function getDisplayStatus(job: JobOrder): DisplayStatus {
   if (job.status === 'pending') return 'pending'
@@ -63,10 +63,24 @@ function getDisplayStatus(job: JobOrder): DisplayStatus {
   if (job.status === 'qc_passed') return 'qc_passed'
   if (job.status === 'demolded') return 'demolded'
   if (job.status === 'ready_demold') return 'ready_demold'
-  // Two-phase statuses — pass through directly
-  if (job.status === 'counterfort_ordered') return 'counterfort_ordered'
-  if (job.status === 'counterfort_curing') return 'counterfort_curing'
-  if (job.status === 'stem_ordered') return 'stem_ordered'
+
+  // Two-phase statuses
+  if (job.status === 'counterfort_ordered') {
+    if (job.counterfort_cast_at) return 'counterfort_casting'
+    return 'counterfort_ordered'
+  }
+  if (job.status === 'counterfort_curing') {
+    const cfCastAt = job.counterfort_cast_at
+    if (cfCastAt) {
+      const expectedTime = new Date(new Date(cfCastAt).getTime() + 20 * 60 * 60 * 1000).toISOString()
+      if (new Date(expectedTime) <= new Date()) return 'cf_curing_done'
+    }
+    return 'counterfort_curing'
+  }
+  if (job.status === 'stem_ordered') {
+    if (job.stem_cast_at) return 'stem_casting'
+    return 'stem_ordered'
+  }
   if (job.status === 'stem_curing') {
     const stemCastAt = job.stem_cast_at
     if (stemCastAt) {
@@ -83,9 +97,15 @@ function getDisplayStatus(job: JobOrder): DisplayStatus {
     return 'curing'
   }
 
-  // casting / concrete_ordered: ตรวจ QC pour_ok
-  const qc = Array.isArray(job.qc_inspection) ? job.qc_inspection[0] : null
-  if (qc?.pour_ok === true) return 'casting'
+  if (job.status === 'concrete_ordered') {
+    const qc = Array.isArray(job.qc_inspection) ? job.qc_inspection[0] : null
+    if (job.cast_at || qc?.pour_ok === true) return 'casting'
+    return 'concrete_ordered'
+  }
+
+  // fallback casting
+  if (job.status === 'casting') return 'casting'
+
   return 'concrete_ordered'
 }
 
@@ -100,9 +120,12 @@ function getProgressPct(displayStatus: DisplayStatus): number {
     demolded: 100,
     qc_passed: 100,
     cancelled: 0,
-    counterfort_ordered: 20,
-    counterfort_curing: 50,
-    stem_ordered: 75,
+    counterfort_ordered: 15,
+    counterfort_casting: 30,
+    counterfort_curing: 45,
+    cf_curing_done: 60,
+    stem_ordered: 70,
+    stem_casting: 80,
     stem_curing: 90,
   }
   return map[displayStatus] ?? 0
@@ -110,21 +133,41 @@ function getProgressPct(displayStatus: DisplayStatus): number {
 
 const STATUS_CFG: Record<DisplayStatus, { label: string; icon: string; badgeBg: string; badgeBorder: string; badgeText: string; kpiBg: string; kpiBorder: string; kpiText: string; ring: string }> = {
   pending:             { label: 'รอเริ่ม',              icon: 'fa-clock',          badgeBg: '#F3F4F6', badgeBorder: '#E5E7EB', badgeText: '#6B7280', kpiBg: '#F9FAFB', kpiBorder: '#E5E7EB', kpiText: '#6B7280', ring: 'rgba(107,114,128,0.2)' },
-  concrete_ordered:    { label: 'สั่งคอนกรีต',         icon: 'fa-truck-loading',  badgeBg: '#DBEAFE', badgeBorder: '#BFDBFE', badgeText: '#1D4ED8', kpiBg: '#EFF6FF', kpiBorder: '#BFDBFE', kpiText: '#2563EB', ring: 'rgba(37,99,235,0.2)' },
-  casting:             { label: 'เทคอนกรีต',           icon: 'fa-fill-drip',      badgeBg: '#EDE9FE', badgeBorder: '#C4B5FD', badgeText: '#5B21B6', kpiBg: '#F5F3FF', kpiBorder: '#C4B5FD', kpiText: '#7C3AED', ring: 'rgba(124,58,237,0.2)' },
+  concrete_ordered:    { label: 'รอตรวจการเทคอนกรีต',   icon: 'fa-truck-loading',  badgeBg: '#FEF3C7', badgeBorder: '#FDE68A', badgeText: '#D97706', kpiBg: '#FFFBEB', kpiBorder: '#FDE68A', kpiText: '#D97706', ring: 'rgba(217,119,6,0.2)' },
+  casting:             { label: 'รอตรวจการเทคอนกรีต',   icon: 'fa-fill-drip',      badgeBg: '#FEF3C7', badgeBorder: '#FDE68A', badgeText: '#D97706', kpiBg: '#FFFBEB', kpiBorder: '#FDE68A', kpiText: '#D97706', ring: 'rgba(217,119,6,0.2)' },
   curing:              { label: 'กำลังบ่ม',             icon: 'fa-hourglass-half', badgeBg: '#FEF3C7', badgeBorder: '#FDE68A', badgeText: '#B45309', kpiBg: '#FFFBEB', kpiBorder: '#FDE68A', kpiText: '#D97706', ring: 'rgba(217,119,6,0.2)' },
   ready_demold:        { label: 'พร้อมถอดแบบ',          icon: 'fa-check-circle',   badgeBg: '#D1FAE5', badgeBorder: '#A7F3D0', badgeText: '#065F46', kpiBg: '#ECFDF5', kpiBorder: '#A7F3D0', kpiText: '#059669', ring: 'rgba(5,150,105,0.2)' },
   demolded:            { label: 'ถอดแบบแล้ว',            icon: 'fa-cubes',          badgeBg: '#ECFDF5', badgeBorder: '#6EE7B7', badgeText: '#065F46', kpiBg: '#F0FDF4', kpiBorder: '#86EFAC', kpiText: '#16A34A', ring: 'rgba(22,163,74,0.2)' },
   qc_passed:           { label: 'QC ตรวจสอบแล้ว',       icon: 'fa-check-double',   badgeBg: '#EFF4FF', badgeBorder: '#DBEAFE', badgeText: '#2563EB', kpiBg: '#EFF4FF', kpiBorder: '#DBEAFE', kpiText: '#2563EB', ring: 'rgba(37,99,235,0.2)' },
   cancelled:           { label: 'ยกเลิก',                icon: 'fa-times-circle',   badgeBg: '#FEE2E2', badgeBorder: '#FECACA', badgeText: '#991B1B', kpiBg: '#FEF2F2', kpiBorder: '#FECACA', kpiText: '#DC2626', ring: 'rgba(220,38,38,0.2)' },
   // Two-phase A42 statuses
-  counterfort_ordered: { label: '🏗️ CF: รอคอนกรีต',    icon: 'fa-truck-loading',  badgeBg: '#FEF3C7', badgeBorder: '#FDE68A', badgeText: '#92400E', kpiBg: '#FFFBEB', kpiBorder: '#FDE68A', kpiText: '#B45309', ring: 'rgba(180,83,9,0.2)' },
+  counterfort_ordered: { label: '🏗️ รอตรวจเท CF',      icon: 'fa-truck-loading',  badgeBg: '#FFF7ED', badgeBorder: '#FED7AA', badgeText: '#C2410C', kpiBg: '#FFF7ED', kpiBorder: '#FED7AA', kpiText: '#EA580C', ring: 'rgba(234,88,12,0.2)' },
+  counterfort_casting: { label: '🏗️ รอตรวจเท CF',      icon: 'fa-fill-drip',      badgeBg: '#FFF7ED', badgeBorder: '#FED7AA', badgeText: '#C2410C', kpiBg: '#FFF7ED', kpiBorder: '#FED7AA', kpiText: '#EA580C', ring: 'rgba(234,88,12,0.2)' },
   counterfort_curing:  { label: '🏗️ CF: กำลังบ่ม',     icon: 'fa-hourglass-half', badgeBg: '#FFF7ED', badgeBorder: '#FED7AA', badgeText: '#C2410C', kpiBg: '#FFF7ED', kpiBorder: '#FED7AA', kpiText: '#EA580C', ring: 'rgba(234,88,12,0.2)' },
-  stem_ordered:        { label: '🧱 STEM: รอคอนกรีต',  icon: 'fa-truck-loading',  badgeBg: '#EDE9FE', badgeBorder: '#C4B5FD', badgeText: '#6D28D9', kpiBg: '#F5F3FF', kpiBorder: '#C4B5FD', kpiText: '#7C3AED', ring: 'rgba(124,58,237,0.2)' },
+  cf_curing_done:      { label: '🏗️ CF บ่มเสร็จ (รอสั่ง STEM)', icon: 'fa-check-circle',   badgeBg: '#EFF6FF', badgeBorder: '#BFDBFE', badgeText: '#2563EB', kpiBg: '#EFF6FF', kpiBorder: '#BFDBFE', kpiText: '#2563EB', ring: 'rgba(37,99,235,0.2)' },
+  stem_ordered:        { label: '🧱 รอตรวจเท STEM',    icon: 'fa-truck-loading',  badgeBg: '#EDE9FE', badgeBorder: '#C4B5FD', badgeText: '#6D28D9', kpiBg: '#F5F3FF', kpiBorder: '#C4B5FD', kpiText: '#7C3AED', ring: 'rgba(124,58,237,0.2)' },
+  stem_casting:        { label: '🧱 รอตรวจเท STEM',    icon: 'fa-fill-drip',      badgeBg: '#EDE9FE', badgeBorder: '#C4B5FD', badgeText: '#6D28D9', kpiBg: '#F5F3FF', kpiBorder: '#C4B5FD', kpiText: '#7C3AED', ring: 'rgba(124,58,237,0.2)' },
   stem_curing:         { label: '🧱 STEM: กำลังบ่ม',   icon: 'fa-hourglass-half', badgeBg: '#F5F3FF', badgeBorder: '#DDD6FE', badgeText: '#7C3AED', kpiBg: '#F5F3FF', kpiBorder: '#DDD6FE', kpiText: '#7C3AED', ring: 'rgba(124,58,237,0.2)' },
 }
 
-const KPI_STATUSES: DisplayStatus[] = ['pending', 'concrete_ordered', 'casting', 'curing', 'ready_demold']
+function getKpiCategory(status: DisplayStatus): DisplayStatus {
+  if (status === 'counterfort_ordered' || status === 'stem_ordered') {
+    return 'concrete_ordered'
+  }
+  if (status === 'counterfort_casting' || status === 'stem_casting' || status === 'casting') {
+    // ยุบรวมการเทคอนกรีตเข้ากับคิวรอตรวจเทคอนกรีต (concrete_ordered)
+    return 'concrete_ordered'
+  }
+  if (status === 'counterfort_curing' || status === 'stem_curing') {
+    return 'curing'
+  }
+  if (status === 'cf_curing_done') {
+    return 'pending'
+  }
+  return status
+}
+
+const KPI_STATUSES: DisplayStatus[] = ['pending', 'concrete_ordered', 'curing', 'ready_demold']
 
 const thStyle: React.CSSProperties = {
   padding: '10px 16px',
@@ -217,7 +260,8 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
     const counts: Record<string, number> = {}
     KPI_STATUSES.forEach(s => { counts[s] = 0 })
     jobs.forEach(j => {
-      if (counts[j._displayStatus] !== undefined) counts[j._displayStatus]++
+      const cat = getKpiCategory(j._displayStatus)
+      if (counts[cat] !== undefined) counts[cat]++
     })
     return counts
   }, [jobs])
@@ -262,7 +306,7 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
     return planGroups.map(g => ({
       ...g,
       jobs: g.jobs.filter(j => {
-        const matchStatus = filterStatus === 'all' || j._displayStatus === filterStatus
+        const matchStatus = filterStatus === 'all' || getKpiCategory(j._displayStatus) === filterStatus
         const matchSearch = !search.trim() ||
           (j.plan_item?.product?.name ?? '').toLowerCase().includes(search.toLowerCase()) ||
           (j.plan_item?.product?.code ?? '').toLowerCase().includes(search.toLowerCase()) ||
@@ -369,7 +413,7 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
     <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', background: '#F7F8FA', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* KPI Cards — always visible */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         {KPI_STATUSES.map(key => {
           const cfg = STATUS_CFG[key]
           const isActive = filterStatus === key
@@ -503,7 +547,8 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
                 {filteredGroups.map(group => {
             const isOpen = expandedPlans.has(group.planId)
             const totalTarget = group.jobs.reduce((s, j) => s + j.qty_target, 0)
-            const statusCounts = KPI_STATUSES.map(s => ({
+            const uniqueStatuses = Array.from(new Set(group.jobs.map(j => j._displayStatus)))
+            const statusCounts = uniqueStatuses.map(s => ({
               status: s,
               count: group.jobs.filter(j => j._displayStatus === s).length,
             })).filter(x => x.count > 0)
@@ -769,7 +814,16 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
                               {/* Expected Demold */}
                               <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                                 {(() => {
-                                  const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
+                                  let expectedTime = job.expected_demold_at
+                                  if (!expectedTime) {
+                                    if (ds === 'counterfort_curing' && job.counterfort_cast_at) {
+                                      expectedTime = new Date(new Date(job.counterfort_cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString()
+                                    } else if (ds === 'stem_curing' && job.stem_cast_at) {
+                                      expectedTime = new Date(new Date(job.stem_cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString()
+                                    } else if (job.cast_at) {
+                                      expectedTime = new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString()
+                                    }
+                                  }
                                   if (expectedTime) {
                                     return (
                                       <div style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>
@@ -785,7 +839,9 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
                               {/* Admin Actions */}
                               {userRole === 'admin' && (
                                 <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                                  {(ds === 'concrete_ordered' || ds === 'casting' || ds === 'curing' || ds === 'ready_demold') && (
+                                  {(ds === 'concrete_ordered' || ds === 'casting' || ds === 'curing' || ds === 'ready_demold' ||
+                                    ds === 'counterfort_ordered' || ds === 'counterfort_curing' || ds === 'cf_curing_done' ||
+                                    ds === 'stem_ordered' || ds === 'stem_curing') && (
                                     <button
                                       disabled={resettingJobId === job.id}
                                       onClick={() => handleResetJob(job.id, job.bed)}

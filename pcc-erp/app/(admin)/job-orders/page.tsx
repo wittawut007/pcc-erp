@@ -21,7 +21,15 @@ const JOB_SELECT = `
 `
 
 // สถานะที่ถือว่า "ยังดำเนินการอยู่" — แสดงใน tab คิวงานรออยู่
-const ACTIVE_STATUSES = ['pending', 'concrete_ordered', 'casting', 'curing', 'ready_demold']
+// รวม two-phase statuses สำหรับสินค้ากลุ่มกำแพงกันดิน (L-Wall, is_two_phase = true)
+const ACTIVE_STATUSES = [
+  'pending',
+  'concrete_ordered', 'casting', 'curing', 'ready_demold',
+  // Two-phase: CF (ฐานเกือก)
+  'counterfort_ordered', 'counterfort_curing',
+  // Two-phase: STEM (ผนัง)
+  'stem_ordered', 'stem_curing',
+]
 
 // สถานะที่ถือว่า "เสร็จสิ้น" — แสดงใน tab ย้อนหลัง
 const HISTORY_STATUSES = ['demolded', 'cancelled']

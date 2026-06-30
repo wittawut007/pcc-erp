@@ -43,6 +43,7 @@ interface BomItemRow {
   raw_material_unit: string
   qty_per_unit: number | string
   sort_order: number
+  phase?: 'all' | 'counterfort' | 'stem'
 }
 
 export interface ProductBomItem {
@@ -51,6 +52,7 @@ export interface ProductBomItem {
   raw_material_id: string
   qty_per_unit: number
   sort_order: number
+  phase?: 'all' | 'counterfort' | 'stem'
   raw_materials: {
     id: string
     name: string
@@ -185,13 +187,16 @@ export default function ProductsClient({
     return { raw_material_id: rm.id, raw_material_name: rm.name, raw_material_unit: rm.unit, qty_per_unit: 0, sort_order: 1 }
   }
 
-  const addBomRow = (category: keyof FormBom, options: RawMaterial[]) => {
-    // Default to first available option not already selected
-    const used = bomForm[category].map(r => r.raw_material_id)
+  const addBomRow = (category: keyof FormBom, options: RawMaterial[], phase: 'all' | 'counterfort' | 'stem' = 'all') => {
+    // Default to first available option not already selected within this phase
+    const used = bomForm[category]
+      .filter(r => (r.phase || 'all') === phase)
+      .map(r => r.raw_material_id)
     const available = options.find(o => !used.includes(o.id))
-    if (!available) { toast.error('ไม่มีวัตถุดิบในกลุ่มนี้ให้เลือกเพิ่มแล้ว'); return }
+    if (!available) { toast.error('ไม่มีวัตถุดิบในกลุ่มนี้ให้เลือกเพิ่มแล้วสำหรับเฟสนี้'); return }
     setBomForm(prev => {
-      const nextSortOrder = prev[category].length + 1
+      const samePhase = prev[category].filter(r => (r.phase || 'all') === phase)
+      const nextSortOrder = samePhase.length + 1
       return {
         ...prev,
         [category]: [
@@ -201,7 +206,8 @@ export default function ProductsClient({
             raw_material_name: available.name,
             raw_material_unit: available.unit,
             qty_per_unit: 0,
-            sort_order: nextSortOrder
+            sort_order: nextSortOrder,
+            phase
           }
         ]
       }
@@ -224,11 +230,20 @@ export default function ProductsClient({
 
   const removeBomRow = (category: keyof FormBom, index: number) => {
     setBomForm(prev => {
+      const removed = prev[category][index]
       const remaining = prev[category].filter((_, i) => i !== index)
-      const remapped = remaining.map((row, idx) => ({
-        ...row,
-        sort_order: idx + 1
-      }))
+      const phase = removed?.phase || 'all'
+      
+      let count = 1
+      const remapped = remaining.map(row => {
+        if ((row.phase || 'all') === phase) {
+          return {
+            ...row,
+            sort_order: count++
+          }
+        }
+        return row
+      })
       return { ...prev, [category]: remapped }
     })
   }
@@ -386,6 +401,7 @@ export default function ProductsClient({
       raw_material_unit: item.raw_materials?.unit ?? '',
       qty_per_unit: Number(item.qty_per_unit),
       sort_order: item.sort_order ?? 1,
+      phase: item.phase || 'all',
     })
 
     setBomForm({
@@ -449,7 +465,8 @@ export default function ProductsClient({
           product_id: productId,
           raw_material_id: r.raw_material_id,
           qty_per_unit: parseFloat(r.qty_per_unit as string) || 0,
-          sort_order: r.sort_order
+          sort_order: r.sort_order,
+          phase: isTwoPhase ? (r.phase === 'stem' ? 'stem' : 'counterfort') : 'all'
         }))
 
       // Delete removed items (existing product only)
@@ -471,7 +488,7 @@ export default function ProductsClient({
       // Refresh local BOM state
       const { data: refreshedBom } = await supabase
         .from('product_bom_items')
-        .select('id, product_id, raw_material_id, qty_per_unit, sort_order, raw_materials(id, name, category, unit, material_code)')
+        .select('id, product_id, raw_material_id, qty_per_unit, sort_order, phase, raw_materials(id, name, category, unit, material_code)')
         .eq('product_id', productId)
       setProductBomItems(prev => {
         const others = prev.filter(b => b.product_id !== productId)
@@ -510,10 +527,11 @@ export default function ProductsClient({
 
   const renderBomSection = (
     categoryKey: keyof FormBom,
-    options: RawMaterial[]
+    options: RawMaterial[],
+    phase: 'all' | 'counterfort' | 'stem' = 'all'
   ) => {
     const config = BOM_CATEGORY_CONFIG[categoryKey]
-    const rows = bomForm[categoryKey]
+    const rows = bomForm[categoryKey].filter(r => (r.phase || 'all') === phase)
 
     return (
       <div style={{ border: `1px solid ${config.border}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -530,7 +548,7 @@ export default function ProductsClient({
           </div>
           <button
             type="button"
-            onClick={() => addBomRow(categoryKey, options)}
+            onClick={() => addBomRow(categoryKey, options, phase)}
             disabled={options.length === 0}
             style={{
               display: 'flex', alignItems: 'center', gap: 5,
@@ -547,77 +565,80 @@ export default function ProductsClient({
         {/* BOM Rows */}
         {rows.length > 0 && (
           <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, background: 'white' }}>
-            {rows.map((row, idx) => (
-              <div key={idx} style={{ display: 'grid', gridTemplateColumns: '45px 1fr 110px 28px', gap: 6, alignItems: 'center' }}>
-                {/* Index badge */}
-                <div style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  color: config.color,
-                  background: config.bg,
-                  border: `1px solid ${config.border}`,
-                  borderRadius: 6,
-                  height: 28,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  whiteSpace: 'nowrap'
-                }}>
-                  #{row.sort_order}
-                </div>
+            {rows.map((row, idx) => {
+              const unfilteredIdx = bomForm[categoryKey].indexOf(row)
+              return (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '45px 1fr 110px 28px', gap: 6, alignItems: 'center' }}>
+                  {/* Index badge */}
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: config.color,
+                    background: config.bg,
+                    border: `1px solid ${config.border}`,
+                    borderRadius: 6,
+                    height: 28,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    #{row.sort_order}
+                  </div>
 
-                {/* Material Dropdown */}
-                <select
-                  value={row.raw_material_id}
-                  onChange={e => updateBomRow(categoryKey, idx, 'raw_material_id', e.target.value, options)}
-                  style={{
-                    width: '100%', padding: '7px 8px', border: `1px solid ${config.border}`,
-                    borderRadius: 6, fontSize: 11, outline: 'none', background: 'white',
-                    color: '#1e293b', boxSizing: 'border-box'
-                  }}
-                >
-                  {options.map(opt => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.name} {opt.material_code ? `[${opt.material_code}]` : ''} ({categoryKey === 'wire' ? 'เมตร' : opt.unit})
-                    </option>
-                  ))}
-                </select>
-
-                {/* Quantity Input */}
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={row.qty_per_unit ?? ''}
-                    placeholder="0.0000"
-                    onChange={e => {
-                      const val = e.target.value;
-                      if (val === '' || /^[0-9.]*$/.test(val)) {
-                        updateBomRow(categoryKey, idx, 'qty_per_unit', val, options);
-                      }
-                    }}
+                  {/* Material Dropdown */}
+                  <select
+                    value={row.raw_material_id}
+                    onChange={e => updateBomRow(categoryKey, unfilteredIdx, 'raw_material_id', e.target.value, options)}
                     style={{
-                      width: '100%', padding: '7px 24px 7px 8px', border: `1px solid ${config.border}`,
-                      borderRadius: 6, fontSize: 11, outline: 'none', boxSizing: 'border-box',
-                      textAlign: 'right',
+                      width: '100%', padding: '7px 8px', border: `1px solid ${config.border}`,
+                      borderRadius: 6, fontSize: 11, outline: 'none', background: 'white',
+                      color: '#1e293b', boxSizing: 'border-box'
                     }}
-                  />
-                  <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#94a3b8', pointerEvents: 'none' }}>
-                    {categoryKey === 'wire' ? 'เมตร' : (row.raw_material_unit || config.unitLabel.split('/')[0])}
-                  </span>
-                </div>
+                  >
+                    {options.map(opt => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.name} {opt.material_code ? `[${opt.material_code}]` : ''} ({categoryKey === 'wire' ? 'เมตร' : opt.unit})
+                      </option>
+                    ))}
+                  </select>
 
-                {/* Remove Button */}
-                <button
-                  type="button"
-                  onClick={() => removeBomRow(categoryKey, idx)}
-                  style={{ width: 28, height: 28, borderRadius: 6, background: '#FEF2F2', color: '#EF4444', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-                  title="ลบรายการนี้"
-                >
-                  <i className="fas fa-trash-alt" style={{ fontSize: 10 }}></i>
-                </button>
-              </div>
-            ))}
+                  {/* Quantity Input */}
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={row.qty_per_unit ?? ''}
+                      placeholder="0.0000"
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === '' || /^[0-9.]*$/.test(val)) {
+                          updateBomRow(categoryKey, unfilteredIdx, 'qty_per_unit', val, options);
+                        }
+                      }}
+                      style={{
+                        width: '100%', padding: '7px 24px 7px 8px', border: `1px solid ${config.border}`,
+                        borderRadius: 6, fontSize: 11, outline: 'none', boxSizing: 'border-box',
+                        textAlign: 'right',
+                      }}
+                    />
+                    <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#94a3b8', pointerEvents: 'none' }}>
+                      {categoryKey === 'wire' ? 'เมตร' : (row.raw_material_unit || config.unitLabel.split('/')[0])}
+                    </span>
+                  </div>
+
+                  {/* Remove Button */}
+                  <button
+                    type="button"
+                    onClick={() => removeBomRow(categoryKey, unfilteredIdx)}
+                    style={{ width: 28, height: 28, borderRadius: 6, background: '#FEF2F2', color: '#EF4444', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                    title="ลบรายการนี้"
+                  >
+                    <i className="fas fa-trash-alt" style={{ fontSize: 10 }}></i>
+                  </button>
+                </div>
+              )
+            })}
           </div>
         )}
 
@@ -730,7 +751,10 @@ export default function ProductsClient({
               {paginated.map(p => {
                 const prefix = p.category.split(' ')[0]
                 const catStyle = CAT_STYLES.find(c => c.prefix === prefix) || CAT_STYLES[0]
-                const bomCount = productBomItems.filter(b => b.product_id === p.id).length
+                const boms = productBomItems.filter(b => b.product_id === p.id)
+                const bomCount = boms.length
+                const cfBomCount = boms.filter(b => b.phase === 'counterfort').length
+                const stemBomCount = boms.filter(b => b.phase === 'stem').length
 
                 return (
                   <tr key={p.id} className="hover:bg-[var(--bg)] transition-colors" style={{ position: 'relative' }}>
@@ -740,11 +764,29 @@ export default function ProductsClient({
                     </td>
                     <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                       <div style={{ fontWeight: 600, fontSize: 12, color: p.is_active ? 'var(--accent)' : 'var(--text-muted)' }}>{p.name}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                         {bomCount > 0 && (
                           <span style={{ color: '#0369A1', fontWeight: 600 }}>
-                            <i className="fas fa-cubes" style={{ fontSize: 8, marginRight: 3 }}></i>BOM {bomCount} รายการ
+                            <i className="fas fa-cubes" style={{ fontSize: 8, marginRight: 3 }}></i>
+                            {p.is_two_phase ? (
+                              `BOM: CF ${cfBomCount} / STEM ${stemBomCount} รายการ`
+                            ) : (
+                              `BOM ${bomCount} รายการ`
+                            )}
                           </span>
+                        )}
+                        {p.is_two_phase ? (
+                          <span style={{ color: '#16A34A', fontWeight: 600 }}>
+                            <i className="fas fa-fill-drip" style={{ fontSize: 8, marginRight: 3 }}></i>
+                            คอนกรีต: CF {Number(p.concrete_counterfort ?? 0).toFixed(4)} / STEM {Number(p.concrete_stem ?? 0).toFixed(4)} ม.³
+                          </span>
+                        ) : (
+                          p.concrete_per_unit > 0 && (
+                            <span style={{ color: '#16A34A', fontWeight: 600 }}>
+                              <i className="fas fa-fill-drip" style={{ fontSize: 8, marginRight: 3 }}></i>
+                              คอนกรีต: {Number(p.concrete_per_unit).toFixed(4)} ม.³
+                            </span>
+                          )
                         )}
                       </div>
                     </td>
@@ -1079,11 +1121,41 @@ export default function ProductsClient({
                   <span style={{ fontSize: 10, color: '#94A3B8' }}>— เพิ่มหลายรายการได้ต่อกลุ่ม</span>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {renderBomSection('wire', wireOptions)}
-                  {renderBomSection('mesh', meshOptions)}
-                  {renderBomSection('rebar', rebarOptions)}
-                </div>
+                {!(baseForm as any).is_two_phase ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {renderBomSection('wire', wireOptions, 'all')}
+                    {renderBomSection('mesh', meshOptions, 'all')}
+                    {renderBomSection('rebar', rebarOptions, 'all')}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {/* Phase 1: COUNTERFORT */}
+                    <div style={{ border: '1px dashed #3B82F6', borderRadius: 12, padding: 12, background: '#EFF6FF' }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: '#1E3A8A', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ background: '#3B82F6', color: 'white', padding: '2px 8px', borderRadius: 6, fontSize: 10 }}>เฟส 1</span>
+                        วัตถุดิบเฟส COUNTERFORT
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {renderBomSection('wire', wireOptions, 'counterfort')}
+                        {renderBomSection('mesh', meshOptions, 'counterfort')}
+                        {renderBomSection('rebar', rebarOptions, 'counterfort')}
+                      </div>
+                    </div>
+
+                    {/* Phase 2: STEM */}
+                    <div style={{ border: '1px dashed #7C3AED', borderRadius: 12, padding: 12, background: '#F5F3FF' }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: '#5B21B6', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ background: '#7C3AED', color: 'white', padding: '2px 8px', borderRadius: 6, fontSize: 10 }}>เฟส 2</span>
+                        วัตถุดิบเฟส STEM
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {renderBomSection('wire', wireOptions, 'stem')}
+                        {renderBomSection('mesh', meshOptions, 'stem')}
+                        {renderBomSection('rebar', rebarOptions, 'stem')}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
             </div>

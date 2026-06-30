@@ -92,8 +92,8 @@ export default async function DashboardPage() {
   const todaysJobOrders = (activeJobOrders as any[])?.filter((j: any) => j.plan_item?.plan?.plan_date === today) || []
 
   const totalTarget = (todayPlans as any[])?.reduce((s: number, p: any) => s + (p.total_qty ?? 0), 0) ?? 0
-  const qtyCast = todaysJobOrders.filter((j: any) => ['casting', 'curing', 'ready_demold', 'demolded'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
-  const qtyCuring = todaysJobOrders.filter((j: any) => ['curing', 'ready_demold'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
+  const qtyCast = todaysJobOrders.filter((j: any) => ['casting', 'curing', 'ready_demold', 'demolded', 'counterfort_curing', 'stem_curing'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
+  const qtyCuring = todaysJobOrders.filter((j: any) => ['curing', 'ready_demold', 'counterfort_curing', 'stem_curing'].includes(j.status)).reduce((s: number, j: any) => s + (j.qty_cast ?? 0), 0)
   const qtyDemolded = todaysJobOrders.filter((j: any) => j.status === 'demolded').reduce((s: number, j: any) => s + (j.qc?.[0]?.demold_qty_good ?? j.qty_cast ?? 0), 0)
 
   // Calculate defect rate from qc_inspections
@@ -120,6 +120,7 @@ export default async function DashboardPage() {
   ]
 
   type DisplayStatus = 'pending' | 'concrete_ordered' | 'casting' | 'curing' | 'ready_demold' | 'demolded' | 'qc_passed' | 'cancelled'
+    | 'counterfort_ordered' | 'counterfort_casting' | 'counterfort_curing' | 'cf_curing_done' | 'stem_ordered' | 'stem_casting' | 'stem_curing'
 
   // Build a Set of beds that have received all concrete today
   // (All rounds status = 'received' → รับคอนกรีตครบแล้ว = เทคอนกรีตเรียบร้อย)
@@ -141,6 +142,32 @@ export default async function DashboardPage() {
     if (job.status === 'qc_passed') return 'qc_passed'
     if (job.status === 'demolded') return 'demolded'
     if (job.status === 'ready_demold') return 'ready_demold'
+
+    // Two-phase statuses
+    if (job.status === 'counterfort_ordered') {
+      if (job.counterfort_cast_at) return 'counterfort_casting'
+      return 'counterfort_ordered'
+    }
+    if (job.status === 'counterfort_curing') {
+      const cfCastAt = job.counterfort_cast_at
+      if (cfCastAt) {
+        const expectedTime = new Date(new Date(cfCastAt).getTime() + 20 * 60 * 60 * 1000).toISOString()
+        if (new Date(expectedTime) <= new Date()) return 'cf_curing_done'
+      }
+      return 'counterfort_curing'
+    }
+    if (job.status === 'stem_ordered') {
+      if (job.stem_cast_at) return 'stem_casting'
+      return 'stem_ordered'
+    }
+    if (job.status === 'stem_curing') {
+      const stemCastAt = job.stem_cast_at
+      if (stemCastAt) {
+        const expectedTime = new Date(new Date(stemCastAt).getTime() + 20 * 60 * 60 * 1000).toISOString()
+        if (new Date(expectedTime) <= new Date()) return 'ready_demold'
+      }
+      return 'stem_curing'
+    }
     if (job.status === 'curing') {
       const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
       if (expectedTime && new Date(expectedTime) <= new Date()) {
@@ -149,14 +176,16 @@ export default async function DashboardPage() {
       return 'curing'
     }
 
-    // concrete_ordered → ถ้าคอนกรีตที่สั่งในโรงนี้ (bed) รับครบเรียบร้อยแล้ว -> แสดงเป็น "เทคอนกรีต"
-    if (job.status === 'concrete_ordered' && receivedBeds.has(String(job.bed))) {
-      return 'casting'
+    if (job.status === 'concrete_ordered') {
+      if (job.cast_at || receivedBeds.has(String(job.bed))) return 'casting'
+      const qc = Array.isArray(job.qc) ? job.qc[0] : null
+      if (qc?.pour_ok === true) return 'casting'
+      return 'concrete_ordered'
     }
 
-    // Fallback: ตรวจ QC pour_ok เพื่อรองรับการเปลี่ยนไป casting ในสถานการณ์อื่น
-    const qc = Array.isArray(job.qc) ? job.qc[0] : null
-    if (qc?.pour_ok === true) return 'casting'
+    // fallback casting
+    if (job.status === 'casting') return 'casting'
+
     return 'concrete_ordered'
   }
   
@@ -170,6 +199,13 @@ export default async function DashboardPage() {
       demolded: 100,
       qc_passed: 100,
       cancelled: 0,
+      counterfort_ordered: 15,
+      counterfort_casting: 30,
+      counterfort_curing: 45,
+      cf_curing_done: 60,
+      stem_ordered: 70,
+      stem_casting: 80,
+      stem_curing: 90,
     }
     return map[displayStatus] ?? 0
   }
@@ -177,12 +213,36 @@ export default async function DashboardPage() {
   const statusBadgeMap: Record<DisplayStatus, { label: string; bg: string; color: string }> = {
     pending: { label: 'รอเริ่ม', bg: '#F3F4F6', color: '#6B7280' },
     concrete_ordered: { label: 'สั่งคอนกรีต', bg: '#EEF2FF', color: '#4F46E5' },
-    casting: { label: 'เทคอนกรีต', bg: '#E0F2FE', color: '#0284C7' },
+    casting: { label: 'รอตรวจการเทคอนกรีต', bg: '#FEF3C7', color: '#D97706' },
     curing: { label: 'กำลังบ่ม', bg: '#FEF3C7', color: '#B45309' },
     ready_demold: { label: 'พร้อมถอดแบบ', bg: '#D1FAE5', color: '#065F46' },
     demolded: { label: 'ถอดแบบแล้ว', bg: '#F3F4F6', color: '#6B7280' },
     qc_passed: { label: 'QC ตรวจสอบแล้ว', bg: '#EFF4FF', color: '#2563EB' },
     cancelled: { label: 'ยกเลิก', bg: '#FEF2F2', color: '#EF4444' },
+    // Two-phase
+    counterfort_ordered: { label: '🏗️ CF: รอคอนกรีต', bg: '#FEF3C7', color: '#92400E' },
+    counterfort_casting: { label: '🏗️ รอตรวจเท CF', bg: '#FFF7ED', color: '#C2410C' },
+    counterfort_curing: { label: '🏗️ CF: กำลังบ่ม', bg: '#FFF7ED', color: '#C2410C' },
+    cf_curing_done: { label: '🏗️ CF บ่มเสร็จ (รอสั่ง STEM)', bg: '#EFF6FF', color: '#2563EB' },
+    stem_ordered: { label: '🧱 STEM: รอคอนกรีต', bg: '#EDE9FE', color: '#6D28D9' },
+    stem_casting: { label: '🧱 รอตรวจเท STEM', bg: '#EDE9FE', color: '#6D28D9' },
+    stem_curing: { label: '🧱 STEM: กำลังบ่ม', bg: '#F5F3FF', color: '#7C3AED' },
+  }
+
+  function getKpiCategory(status: DisplayStatus): DisplayStatus {
+    if (status === 'counterfort_ordered' || status === 'stem_ordered') {
+      return 'concrete_ordered'
+    }
+    if (status === 'counterfort_casting' || status === 'stem_casting' || status === 'casting') {
+      return 'casting'
+    }
+    if (status === 'counterfort_curing' || status === 'stem_curing') {
+      return 'curing'
+    }
+    if (status === 'cf_curing_done') {
+      return 'pending'
+    }
+    return status
   }
 
   const mockJobs = [
@@ -241,8 +301,14 @@ export default async function DashboardPage() {
   }) || []
 
   // Pipeline: count distinct production orders by stage
-  const pipelineCounts: Record<DisplayStatus, number> = { pending: 0, concrete_ordered: 0, casting: 0, curing: 0, ready_demold: 0, demolded: 0, qc_passed: 0, cancelled: 0 }
-  const pipelineQty: Record<DisplayStatus, number> = { pending: 0, concrete_ordered: 0, casting: 0, curing: 0, ready_demold: 0, demolded: 0, qc_passed: 0, cancelled: 0 }
+  const pipelineCounts: Record<DisplayStatus, number> = {
+    pending: 0, concrete_ordered: 0, casting: 0, curing: 0, ready_demold: 0, demolded: 0, qc_passed: 0, cancelled: 0,
+    counterfort_ordered: 0, counterfort_casting: 0, counterfort_curing: 0, cf_curing_done: 0, stem_ordered: 0, stem_casting: 0, stem_curing: 0
+  }
+  const pipelineQty: Record<DisplayStatus, number> = {
+    pending: 0, concrete_ordered: 0, casting: 0, curing: 0, ready_demold: 0, demolded: 0, qc_passed: 0, cancelled: 0,
+    counterfort_ordered: 0, counterfort_casting: 0, counterfort_curing: 0, cf_curing_done: 0, stem_ordered: 0, stem_casting: 0, stem_curing: 0
+  }
   
   poJobGroupMap.forEach((jobs, poId) => {
     if (jobs.length === 0) return
@@ -254,10 +320,11 @@ export default async function DashboardPage() {
       s = 'qc_passed'
     }
     
-    if (s && s !== 'cancelled') {
-      pipelineCounts[s] = (pipelineCounts[s] || 0) + 1
+    const cat = getKpiCategory(s)
+    if (cat && cat !== 'cancelled') {
+      pipelineCounts[cat] = (pipelineCounts[cat] || 0) + 1
       const totalPoQty = jobs.reduce((sum, j) => sum + (j.qty_cast || j.qty_target || 0), 0)
-      pipelineQty[s] = (pipelineQty[s] || 0) + totalPoQty
+      pipelineQty[cat] = (pipelineQty[cat] || 0) + totalPoQty
     }
   })
 
@@ -411,8 +478,9 @@ export default async function DashboardPage() {
     // Promote fully-done PO jobs to qc_passed for chart coloring
     const poId = job.production_order?.id
     if (ds === 'demolded' && poId && fullyDonePoIds.has(poId)) ds = 'qc_passed'
-    if (ds && statusOrder.indexOf(ds) < statusOrder.indexOf(entry.dominantStatus)) {
-      entry.dominantStatus = ds
+    const cat = getKpiCategory(ds)
+    if (cat && statusOrder.indexOf(cat) < statusOrder.indexOf(entry.dominantStatus)) {
+      entry.dominantStatus = cat
     }
   })
   const bedLabels = Array.from(bedMap.keys()).sort()
@@ -516,7 +584,7 @@ export default async function DashboardPage() {
               {([
                 { key: 'pending' as DisplayStatus, label: 'รอเริ่ม', icon: 'fa-hourglass-start', color: '#6B7280', bg: '#F9FAFB', border: '#E5E7EB' },
                 { key: 'concrete_ordered' as DisplayStatus, label: 'สั่งคอนกรีต', icon: 'fa-truck', color: '#4F46E5', bg: '#EEF2FF', border: '#C7D2FE' },
-                { key: 'casting' as DisplayStatus, label: 'เทคอนกรีต', icon: 'fa-fill-drip', color: '#0284C7', bg: '#E0F2FE', border: '#BAE6FD' },
+                { key: 'casting' as DisplayStatus, label: 'รอตรวจการเทคอนกรีต', icon: 'fa-fill-drip', color: '#D97706', bg: '#FEF3C7', border: '#FDE68A' },
                 { key: 'curing' as DisplayStatus, label: 'กำลังบ่ม', icon: 'fa-clock', color: '#D97706', bg: '#FEF3C7', border: '#FDE68A' },
                 { key: 'ready_demold' as DisplayStatus, label: 'พร้อมถอดแบบ', icon: 'fa-check-circle', color: '#059669', bg: '#D1FAE5', border: '#6EE7B7' },
                 { key: 'demolded' as DisplayStatus, label: 'ถอดแบบแล้ว', icon: 'fa-cubes', color: '#7C3AED', bg: '#EDE9FE', border: '#C4B5FD' },
@@ -797,8 +865,17 @@ export default async function DashboardPage() {
               <tbody>
                 {demoldingJobs.slice(0, 8).map((job) => {
                   const displayStatus = getDisplayStatus(job)
+                  let expectedTime = job.expected_demold_at
+                  if (!expectedTime) {
+                    if (displayStatus === 'counterfort_curing' && job.counterfort_cast_at) {
+                      expectedTime = new Date(new Date(job.counterfort_cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString()
+                    } else if (displayStatus === 'stem_curing' && job.stem_cast_at) {
+                      expectedTime = new Date(new Date(job.stem_cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString()
+                    } else if (job.cast_at) {
+                      expectedTime = new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString()
+                    }
+                  }
                   const ready = displayStatus === 'ready_demold'
-                  const expectedTime = job.expected_demold_at || (job.cast_at ? new Date(new Date(job.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
                   const demoldRec = demoldMap.get(job.id) ?? null
 
                   return (

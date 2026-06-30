@@ -104,6 +104,24 @@ export async function confirmFGReceipt(
 
   if (jobErr) throw new Error(jobErr.message)
 
+  // Log action
+  try {
+    const { data: product } = await supabase.from('products').select('name, code').eq('id', productId).single()
+    const { data: job } = await supabase.from('job_orders').select('production_order(order_number)').eq('id', jobOrderId).single()
+    const poCode = (job?.production_order as any)?.order_number ?? '-'
+    const detailText = `รับสินค้าเข้าคลัง FG: ${product?.name ?? 'ไม่ระบุ'} (${product?.code ?? '-'}) | จำนวนดี: ${qtyGood} ชิ้น / เสีย: ${qtyDefect} ชิ้น (ใบสั่งผลิต: ${poCode})${notes ? ' | หมายเหตุ: ' + notes : ''}`
+
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: 'รับสินค้า FG (FG In)',
+      entity_type: 'fg_receipt',
+      entity_id: jobOrderId,
+      detail: detailText,
+    })
+  } catch (err) {
+    console.error('Failed to log confirmFGReceipt activity:', err)
+  }
+
   revalidatePath('/inventory/fg')
   revalidatePath('/dashboard')
 }

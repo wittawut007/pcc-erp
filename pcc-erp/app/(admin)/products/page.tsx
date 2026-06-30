@@ -29,6 +29,7 @@ export default async function ProductsPage() {
       raw_material_id,
       qty_per_unit,
       sort_order,
+      phase,
       raw_materials (
         id,
         name,

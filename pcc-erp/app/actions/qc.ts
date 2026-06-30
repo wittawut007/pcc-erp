@@ -57,6 +57,28 @@ export async function inspectPour(
     if (error) throw new Error(error.message)
   }
 
+  // Log action
+  try {
+    const { data: job } = await supabase
+      .from('job_orders')
+      .select('bed, plan_item(product(name))')
+      .eq('id', jobOrderId)
+      .single()
+    const planItem = job?.plan_item as any
+    const product = planItem?.product as any
+    const detailText = `ตรวจการเทคอนกรีตโรงผลิต ${job?.bed || '-'} | ผลตรวจ: ${pourOk ? 'ผ่าน (OK)' : 'ไม่ผ่าน (FAIL)'} (สินค้า: ${product?.name ?? 'ไม่ระบุ'}, เฟส: ${phase === 'counterfort' ? 'CF' : phase === 'stem' ? 'STEM' : 'ปกติ'})${pourNotes ? ' | หมายเหตุ: ' + pourNotes : ''}`
+
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: 'เทคอนกรีต',
+      entity_type: 'job_order',
+      entity_id: jobOrderId,
+      detail: detailText,
+    })
+  } catch (err) {
+    console.error('Failed to log inspectPour activity:', err)
+  }
+
   revalidatePath('/qc')
 }
 
@@ -122,6 +144,28 @@ export async function startCuring(jobOrderId: string, photoUrl: string, phase: '
     await supabase.from('qc_inspections').update(qcPhaseFields).eq('id', existing.id)
   } else {
     await supabase.from('qc_inspections').insert({ job_order_id: jobOrderId, ...qcPhaseFields })
+  }
+
+  // Log action
+  try {
+    const { data: job } = await supabase
+      .from('job_orders')
+      .select('bed, plan_item(product(name))')
+      .eq('id', jobOrderId)
+      .single()
+    const planItem = job?.plan_item as any
+    const product = planItem?.product as any
+    const detailText = `เริ่มกระบวนการบ่มปูนโรงผลิต ${job?.bed || '-'} | บันทึกภาพถ่าย (สินค้า: ${product?.name ?? 'ไม่ระบุ'}, เฟส: ${phase === 'counterfort' ? 'CF' : phase === 'stem' ? 'STEM' : 'ปกติ'})`
+
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: 'เริ่มการบ่ม',
+      entity_type: 'job_order',
+      entity_id: jobOrderId,
+      detail: detailText,
+    })
+  } catch (err) {
+    console.error('Failed to log startCuring activity:', err)
   }
 
   revalidatePath('/qc-inspect')

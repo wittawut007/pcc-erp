@@ -31,6 +31,7 @@ interface ConcreteOrder {
     id: string
     bed: string
     qty_target: number
+    production_order?: { order_number: string; status: string } | null
     plan_item?: { product?: { name: string; code: string; concrete_per_unit?: number; concrete_group?: string | null } | null } | null
   } | null
   rounds?: RoundItem[]
@@ -164,6 +165,11 @@ function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
   const pct = totalRounds > 0 ? Math.round((suppliedCount / totalRounds) * 100) : 0
   const product = order.job_order?.plan_item?.product
   const nextPending = rounds.find(r => r.status === 'pending')
+  // ดึง PO number จาก job_order หรือ bed_jobs ตัวแรก
+  const orderNumber =
+    order.job_order?.production_order?.order_number ||
+    order.bed_jobs?.[0]?.production_order?.order_number ||
+    null
 
   return (
     <div style={{ border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -205,6 +211,17 @@ function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
           <div style={{ fontSize: 12, color: '#6B7280', display: 'flex', gap: 12, marginTop: 4 }}>
             <span><i className="fas fa-user" style={{ marginRight: 4, fontSize: 10 }} />{order.requested_by_profile?.full_name ?? '—'}</span>
             <span><i className="fas fa-clock" style={{ marginRight: 4, fontSize: 10 }} />{fmtTime(order.requested_at)}</span>
+            {orderNumber && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                background: '#EFF6FF', color: '#1D4ED8',
+                border: '1px solid #BFDBFE', borderRadius: 6,
+                padding: '1px 8px', fontFamily: 'monospace', fontSize: 11, fontWeight: 700
+              }}>
+                <i className="fas fa-file-alt" style={{ fontSize: 9 }} />
+                {orderNumber}
+              </span>
+            )}
           </div>
           {order.notes && (
             <div style={{ marginTop: 4, fontSize: 11, color: '#D97706', fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 4 }}>

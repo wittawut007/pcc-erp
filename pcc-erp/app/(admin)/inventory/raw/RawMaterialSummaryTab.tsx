@@ -3,6 +3,7 @@
 import { useState, useMemo, useTransition, useCallback, Fragment } from 'react'
 import { getMaterialSummary, getConcreteSummary } from '@/app/actions/material'
 import toast from 'react-hot-toast'
+import * as XLSX from 'xlsx'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,9 @@ interface SummaryItem {
       } | null
     }[]
   } | null
+  dispensed_by_profile?: {
+    full_name: string
+  } | null
 }
 
 interface ConcreteOrder {
@@ -74,15 +78,18 @@ interface ConcreteOrder {
   requested_at: string
   job_order: {
     id: string
+    bed?: string | null
     plan_item: {
       id: string
       qty_target: number
+      bed?: string | null
       product: {
         id: string
         code: string
         name: string
         category: string  // e.g. "A13 แผ่นพื้นตัน"
         concrete_per_unit: number | null
+        size?: string | null
       } | null
     } | null
     production_order: {
@@ -351,6 +358,154 @@ export default function RawMaterialSummaryTab({ initialData, initialConcrete = [
     })
   }, [dateFrom, dateTo, catFilter])
 
+  const handleExportExcel = () => {
+    try {
+      const showIp = statusFilter === 'ทั้งหมด' || statusFilter === 'กำลังผลิต'
+      const showCp = statusFilter === 'ทั้งหมด' || statusFilter === 'ผลิตสำเร็จ'
+
+      const wb = XLSX.utils.book_new()
+
+      // Sheet 1: สรุปภาพรวมวัตถุดิบ
+      if (showMaterials) {
+        const summaryData = filteredRows.map(r => {
+          const rq = (showIp ? r.ipReq : 0) + (showCp ? r.cpReq : 0)
+          const dp = dispToDisplay(r.category, (showIp ? r.ipDispRaw : 0) + (showCp ? r.cpDispRaw : 0), r.weight_per_meter)
+          const p = pct(dp, rq)
+          
+          let statusText = '—'
+          if (statusFilter === 'กำลังผลิต') {
+            if (r.ipMatPending > 0 && r.ipMatDone === 0) statusText = 'รอจ่ายวัตถุดิบ'
+            else if (r.ipMatPending > 0 && r.ipMatDone > 0) statusText = 'จ่ายบางส่วน'
+            else statusText = 'จ่ายครบ-รอ QC'
+          } else if (statusFilter === 'ผลิตสำเร็จ') {
+            statusText = 'ผลิตสำเร็จ'
+          } else {
+            // 'ทั้งหมด'
+            if (r.ipEntryCount > 0) {
+              if (r.ipMatPending > 0 && r.ipMatDone === 0) statusText = 'กำลังผลิต (รอจ่ายวัตถุดิบ)'
+              else if (r.ipMatPending > 0 && r.ipMatDone > 0) statusText = 'กำลังผลิต (จ่ายบางส่วน)'
+              else statusText = 'กำลังผลิต (จ่ายครบ-รอ QC)'
+            } else if (r.cpEntryCount > 0) {
+              statusText = 'ผลิตสำเร็จ'
+            }
+          }
+
+          return {
+            'รหัสวัตถุดิบ': r.material_code || '—',
+            'ชื่อวัตถุดิบ': r.name,
+            'หมวดหมู่': r.category,
+            'ความต้องการ': rq,
+            'จ่ายแล้ว': dp,
+            'หน่วย': getCatUnit(r.category) || r.unit,
+            'ร้อยละการจ่าย (%)': p,
+            'สถานะ': statusText,
+            'เบิกจ่ายล่าสุด': r.lastDispensedAt ? new Date(r.lastDispensedAt).toLocaleString('th-TH') : '—'
+          }
+        })
+
+        const wsSummary = XLSX.utils.json_to_sheet(summaryData)
+        XLSX.utils.book_append_sheet(wb, wsSummary, 'สรุปภาพรวมวัตถุดิบ')
+      }
+
+      // Sheet 2: รายละเอียดการเบิกจ่าย
+      if (showMaterials) {
+        const detailsData: any[] = []
+        filteredRows.forEach(r => {
+          const filteredEntries = r.entries.filter(i => {
+            const status = getPlanComputedStatus(i.plan)
+            return statusFilter === 'ทั้งหมด' 
+              ? true 
+              : statusFilter === 'กำลังผลิต' 
+                ? status === 'in_progress' 
+                : status === 'completed'
+          })
+
+          filteredEntries.forEach(entry => {
+            const planDateStr = entry.plan?.plan_date 
+              ? new Date(entry.plan.plan_date).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) 
+              : '—'
+            const poNumber = entry.plan?.production_orders?.[0]?.order_number ?? `PO-${entry.plan?.plan_date?.replace(/-/g, '')}-xxx`
+            
+            const orders = entry.plan?.production_orders || []
+            let detailStatusText = 'กำลังดำเนินการ'
+            if (orders.length > 0) {
+              const o = orders[0]
+              const isErpSynced = o.status === 'erp_synced'
+              const jobOrders = o.job_orders || []
+              const isFullyDemolded = jobOrders.length > 0 && jobOrders.every((j: any) => j.status === 'demolded' || j.status === 'qc_passed')
+              
+              if (isErpSynced) {
+                detailStatusText = 'บันทึกเข้าระบบแล้ว (FG)'
+              } else if (isFullyDemolded) {
+                detailStatusText = 'QC ตรวจสอบแล้ว'
+              }
+            }
+
+            detailsData.push({
+              'วันที่แผนผลิต': planDateStr,
+              'เลขที่ใบสั่งผลิต (PO)': poNumber,
+              'รหัสวัตถุดิบ': r.material_code || '—',
+              'ชื่อวัตถุดิบ': r.name,
+              'หมวดหมู่': r.category,
+              'ปริมาณต้องการ': entry.qty_required,
+              'ปริมาณจ่ายจริง': dispToDisplay(r.category, entry.qty_dispensed, r.weight_per_meter),
+              'หน่วย': getCatUnit(r.category) || r.unit,
+              'สถานะแผน': detailStatusText,
+              'วันเวลาที่จ่าย': entry.dispensed_at ? new Date(entry.dispensed_at).toLocaleString('th-TH') : '—',
+              'ผู้บันทึกจ่าย': entry.dispensed_by_profile?.full_name || '—'
+            })
+          })
+        })
+
+        if (detailsData.length > 0) {
+          const wsDetails = XLSX.utils.json_to_sheet(detailsData)
+          XLSX.utils.book_append_sheet(wb, wsDetails, 'รายละเอียดการเบิกจ่าย')
+        }
+      }
+
+      // Sheet 3: การสั่งคอนกรีต
+      if (showConcrete) {
+        const concreteData = concreteItems
+          .filter(c => {
+            const isSupplied = c.status === 'supplied' || c.status === 'received'
+            if (isSupplied && !showCp) return false
+            if (!isSupplied && !showIp) return false
+            return true
+          })
+          .map(c => {
+            const requestedAtStr = c.requested_at ? new Date(c.requested_at).toLocaleString('th-TH') : '—'
+            const poNumber = c.job_order?.production_order?.order_number ?? '—'
+            const bed = c.job_order?.plan_item?.bed ?? c.job_order?.bed ?? '—'
+            const productName = c.job_order?.plan_item?.product?.name ?? 'สั่งแบบรวม'
+            const size = c.job_order?.plan_item?.product?.size ?? '—'
+            const statusText = c.status === 'supplied' || c.status === 'received' ? 'จ่ายครบแล้ว' : 'รอจ่ายคอนกรีต'
+
+            return {
+              'วันเวลาที่สั่ง': requestedAtStr,
+              'เลขที่ใบสั่งผลิต (PO)': poNumber,
+              'โรงผลิต (Bed)': bed,
+              'ชื่อสินค้า': productName,
+              'ขนาด': size,
+              'ปริมาณสั่ง (ม.³)': c.qty_requested,
+              'สถานะ': statusText,
+              'อัตราส่วนผสม': c.mix_ratio || '—'
+            }
+          })
+
+        if (concreteData.length > 0) {
+          const wsConcrete = XLSX.utils.json_to_sheet(concreteData)
+          XLSX.utils.book_append_sheet(wb, wsConcrete, 'การสั่งคอนกรีต')
+        }
+      }
+
+      const dateStr = `${dateFrom || 'ทั้งหมด'}_ถึง_${dateTo || 'ทั้งหมด'}`
+      XLSX.writeFile(wb, `สรุปการเบิกจ่ายวัตถุดิบ_${dateStr}.xlsx`)
+      toast.success('ดาวน์โหลดไฟล์ Excel สำเร็จ!')
+    } catch (e: any) {
+      toast.error('เกิดข้อผิดพลาดในการสร้างไฟล์ Excel: ' + e.message)
+    }
+  }
+
   // ─── Aggregate by raw_material_id ─────────────────────────────────────────
   // แบ่ง 2 bucket: ip (plan confirmed = กำลังผลิต) vs cp (plan completed = QC ผ่านแล้ว)
 
@@ -590,10 +745,16 @@ export default function RawMaterialSummaryTab({ initialData, initialConcrete = [
               <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 11, outline: 'none' }} />
             </div>
           )}
-          <button onClick={refetch} disabled={isPending} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 8, fontSize: 11, fontWeight: 600, background: isPending ? '#D1D5DB' : '#2563EB', color: '#fff', border: 'none', cursor: isPending ? 'wait' : 'pointer', transition: 'all 0.15s' }}>
-            <i className={isPending ? 'fas fa-spinner fa-spin' : 'fas fa-sync-alt'} />
-            {isPending ? 'กำลังโหลด...' : 'โหลดข้อมูล'}
-          </button>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={handleExportExcel} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 8, fontSize: 11, fontWeight: 600, background: '#16A34A', color: '#fff', border: 'none', cursor: 'pointer', transition: 'all 0.15s' }}>
+              <i className="fas fa-file-excel" />
+              Export Excel
+            </button>
+            <button onClick={refetch} disabled={isPending} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 8, fontSize: 11, fontWeight: 600, background: isPending ? '#D1D5DB' : '#2563EB', color: '#fff', border: 'none', cursor: isPending ? 'wait' : 'pointer', transition: 'all 0.15s' }}>
+              <i className={isPending ? 'fas fa-spinner fa-spin' : 'fas fa-sync-alt'} />
+              {isPending ? 'กำลังโหลด...' : 'โหลดข้อมูล'}
+            </button>
+          </div>
         </div>
 
         {/* Row 2 – Category + Sort + Search */}
