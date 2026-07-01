@@ -1008,32 +1008,32 @@ export default function WorkerClient({
                     <span style={{ fontSize: '10px', fontWeight: 800, color: '#2563EB', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Live Updates</span>
                   </div>
                   <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.3px', margin: 0 }}>คิวงานวันนี้</h2>
-                  {(() => {
-                    const uniqueOrderNumbers = Array.from(new Set(jobOrders.map((j: any) => j.production_order?.order_number).filter(Boolean)))
-                    if (uniqueOrderNumbers.length > 0) {
-                      return (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-                          {uniqueOrderNumbers.map(po => (
-                            <span key={po} style={{ fontSize: '12px', fontWeight: 700, backgroundColor: '#F1F5F9', color: '#475569', padding: '3px 8px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
-                              <i className="fas fa-file-invoice" style={{ marginRight: '4px', color: '#64748B' }}></i>
-                              ใบสั่งผลิต: {po}
-                            </span>
-                          ))}
-                        </div>
-                      )
-                    }
-                    return <p style={{ fontSize: '13px', color: '#94A3B8', fontWeight: 500, marginTop: '4px' }}>รายการงานผลิตในความรับผิดชอบ</p>
-                  })()}
+                  <p style={{ fontSize: '13px', color: '#94A3B8', fontWeight: 500, marginTop: '4px' }}>รายการงานผลิตในความรับผิดชอบ</p>
                 </div>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '6px',
-                  backgroundColor: '#EFF6FF', color: '#2563EB',
-                  padding: '8px 14px', borderRadius: '12px',
-                  border: '1px solid #BFDBFE',
-                  fontSize: '13px', fontWeight: 800,
-                  boxShadow: '0 2px 6px rgba(37,99,235,0.08)',
-                }}>
-                  <i className="fas fa-layer-group"></i> {jobOrders.length}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {/* Badge: จำนวนใบสั่งผลิต */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    backgroundColor: '#F5F3FF', color: '#7C3AED',
+                    padding: '8px 14px', borderRadius: '12px',
+                    border: '1px solid #DDD6FE',
+                    fontSize: '13px', fontWeight: 800,
+                    boxShadow: '0 2px 6px rgba(124,58,237,0.08)',
+                  }}>
+                    <i className="fas fa-file-invoice"></i>{' '}
+                    {Array.from(new Set(jobOrders.map((j: any) => j.production_order?.order_number).filter(Boolean))).length}
+                  </div>
+                  {/* Badge: จำนวนชิ้นงาน */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    backgroundColor: '#EFF6FF', color: '#2563EB',
+                    padding: '8px 14px', borderRadius: '12px',
+                    border: '1px solid #BFDBFE',
+                    fontSize: '13px', fontWeight: 800,
+                    boxShadow: '0 2px 6px rgba(37,99,235,0.08)',
+                  }}>
+                    <i className="fas fa-layer-group"></i> {jobOrders.length}
+                  </div>
                 </div>
               </div>
 
