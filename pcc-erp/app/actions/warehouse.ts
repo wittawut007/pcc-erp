@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { logError } from '@/lib/logger'
 
 /**
  * ดึงรายการที่รอรับเข้าคลัง FG (QC ผ่านแล้ว)
@@ -119,7 +120,7 @@ export async function confirmFGReceipt(
       detail: detailText,
     })
   } catch (err) {
-    console.error('Failed to log confirmFGReceipt activity:', err)
+    await logError({ action: 'confirmFGReceipt/activityLog', error: err, context: { jobOrderId, productId } })
   }
 
   revalidatePath('/inventory/fg')

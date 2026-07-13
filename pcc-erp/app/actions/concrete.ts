@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { calculateConcreteRounds } from '@/lib/concrete-utils'
+import { logError } from '@/lib/logger'
 
 /**
  * Worker สั่งคอนกรีต — สร้าง concrete_order + concrete_rounds และอัปเดต job_order status
@@ -93,7 +94,7 @@ export async function requestConcrete(
       detail: detailText,
     })
   } catch (err) {
-    console.error('Failed to log requestConcrete activity:', err)
+    await logError({ action: 'requestConcrete/activityLog', error: err, context: { jobOrderId } })
   }
 
   revalidatePath('/worker')
@@ -179,7 +180,7 @@ export async function supplyConcreteRound(roundId: string) {
       })
     }
   } catch (err) {
-    console.error('Failed to log supplyConcreteRound activity:', err)
+    await logError({ action: 'supplyConcreteRound/activityLog', error: err, context: { roundId } })
   }
 
   revalidatePath('/concrete')
@@ -292,7 +293,7 @@ export async function receiveConcreteRound(roundId: string) {
       })
     }
   } catch (err) {
-    console.error('Failed to log receiveConcreteRound activity:', err)
+    await logError({ action: 'receiveConcreteRound/activityLog', error: err, context: { roundId } })
   }
 
   revalidatePath('/worker')

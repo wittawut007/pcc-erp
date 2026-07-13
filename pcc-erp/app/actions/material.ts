@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { logError } from '@/lib/logger'
 
 /**
  * ดึงรายการวัตถุดิบของแผนการผลิต
@@ -158,7 +159,7 @@ export async function dispenseMaterial(
       detail: detailText,
     })
   } catch (err) {
-    console.error('Failed to log dispenseMaterial activity:', err)
+    await logError({ action: 'dispenseMaterial/activityLog', error: err, context: { planMaterialId } })
   }
 
   revalidatePath('/material')

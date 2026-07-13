@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@/lib/supabase/server'
+import { getCachedUser, getCachedProfile } from '@/lib/supabase/server'
 import type { Profile } from '@/lib/supabase/types'
 import MobileLogoutButton from '@/components/shared/MobileLogoutButton'
 
@@ -20,11 +20,10 @@ export default async function Header({ title, subtitle, rightContent }: HeaderPr
 
   if (isConfigured) {
     try {
-      const supabase = await createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const { user } = await getCachedUser()
       userEmail = user?.email ?? null
       if (user) {
-        const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+        const { data } = await getCachedProfile(user.id)
         profile = data
       }
     } catch {

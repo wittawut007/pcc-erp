@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { Toaster } from 'react-hot-toast'
+import NextTopLoader from 'nextjs-toploader'
 
 export const metadata: Metadata = {
   title: 'PCC POST-TENSION ERP',
@@ -28,6 +29,7 @@ export default function RootLayout({
         />
       </head>
       <body>
+        <NextTopLoader color="#2563EB" showSpinner={false} height={3} />
         {children}
         <Toaster
           position="top-right"

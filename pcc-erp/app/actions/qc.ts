@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { logError } from '@/lib/logger'
 
 /**
  * QC ยืนยันการเทคอนกรีต (Pour Inspection)
@@ -76,7 +77,7 @@ export async function inspectPour(
       detail: detailText,
     })
   } catch (err) {
-    console.error('Failed to log inspectPour activity:', err)
+    await logError({ action: 'inspectPour/activityLog', error: err, context: { jobOrderId, phase } })
   }
 
   revalidatePath('/qc')
@@ -165,7 +166,7 @@ export async function startCuring(jobOrderId: string, photoUrl: string, phase: '
       detail: detailText,
     })
   } catch (err) {
-    console.error('Failed to log startCuring activity:', err)
+    await logError({ action: 'startCuring/activityLog', error: err, context: { jobOrderId, phase } })
   }
 
   revalidatePath('/qc-inspect')

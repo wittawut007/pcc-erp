@@ -22,7 +22,7 @@ export default async function ProductionOrdersPage() {
       production_orders(order_number, status)
     `)
     .order('plan_date', { ascending: false })
-    .limit(60)
+    .limit(1000)
 
   const { data: { user } } = await supabase.auth.getUser()
   let userRole = 'worker'

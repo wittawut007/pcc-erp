@@ -3,6 +3,7 @@ import Sidebar from '@/components/layout/Sidebar'
 import type { UserRole } from '@/lib/supabase/types'
 import { getSidebarBadgeCounts } from '@/app/actions/sidebar-badges'
 import type { SidebarBadgeCounts } from '@/app/actions/sidebar-badges'
+import { getCachedUser, getCachedProfile } from '@/lib/supabase/server'
 
 export default async function AdminLayout({
   children,
@@ -24,19 +25,13 @@ export default async function AdminLayout({
 
   if (isConfigured) {
     try {
-      const { createClient } = await import('@/lib/supabase/server')
-      const supabase = await createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const { user } = await getCachedUser()
 
       if (!user) {
         redirect('/login')
       }
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
+      const { data: profile } = await getCachedProfile(user.id)
 
       const fetchedRole = profile?.role as UserRole | undefined
 

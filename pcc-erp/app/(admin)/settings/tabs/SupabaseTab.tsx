@@ -13,10 +13,20 @@ import {
   Legend
 } from 'recharts'
 
-// Quota definitions (Free Tier limits)
-const DB_SIZE_LIMIT = 500 * 1024 * 1024 // 500 MB in bytes
-const STORAGE_SIZE_LIMIT = 1024 * 1024 * 1024 // 1 GB in bytes
-const AUTH_USERS_LIMIT = 50000
+// Quota definitions (Configurable via environment variables, default to Free Tier)
+const DB_SIZE_LIMIT = process.env.NEXT_PUBLIC_SUPABASE_DB_SIZE_LIMIT
+  ? parseInt(process.env.NEXT_PUBLIC_SUPABASE_DB_SIZE_LIMIT, 10)
+  : 500 * 1024 * 1024 // 500 MB in bytes
+
+const STORAGE_SIZE_LIMIT = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_SIZE_LIMIT
+  ? parseInt(process.env.NEXT_PUBLIC_SUPABASE_STORAGE_SIZE_LIMIT, 10)
+  : 1024 * 1024 * 1024 // 1 GB in bytes
+
+const AUTH_USERS_LIMIT = process.env.NEXT_PUBLIC_SUPABASE_AUTH_USERS_LIMIT
+  ? parseInt(process.env.NEXT_PUBLIC_SUPABASE_AUTH_USERS_LIMIT, 10)
+  : 50000
+
+const TIER_NAME = process.env.NEXT_PUBLIC_SUPABASE_TIER_NAME || 'Free Tier'
 
 function formatBytes(bytes: number, decimals = 2) {
   if (bytes === 0) return '0 Bytes'
@@ -258,7 +268,7 @@ export default function SupabaseTab() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)' }}>
             <span>{dbPercent.toFixed(1)}% ใช้ไป</span>
-            <span>ขีดจำกัด Free Tier 500MB</span>
+            <span>ขีดจำกัด {TIER_NAME} {formatBytes(DB_SIZE_LIMIT)}</span>
           </div>
         </div>
 

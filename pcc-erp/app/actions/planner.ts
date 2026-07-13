@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { logError } from '@/lib/logger'
 
 export async function clearOldPlanData(planId: string) {
   const { createClient: createServiceClient } = await import('@supabase/supabase-js')
@@ -83,7 +84,7 @@ export async function deleteProductionPlan(planId: string) {
     revalidatePath('/material')
     return { success: true }
   } catch (err: any) {
-    console.error('deleteProductionPlan error:', err)
+    await logError({ action: 'deleteProductionPlan', error: err, context: { planId } })
     return { success: false, error: err.message || 'Failed to delete plan' }
   }
 }
@@ -107,7 +108,7 @@ export async function getProductionOrderPrintData(planId: string) {
     .single()
 
   if (error || !plan) {
-    console.error('Fetch plan error:', error)
+    await logError({ action: 'getProductionOrderPrintData', error: error ?? 'plan not found', context: { planId } })
     throw new Error('ไม่พบข้อมูลแผนการผลิต')
   }
 

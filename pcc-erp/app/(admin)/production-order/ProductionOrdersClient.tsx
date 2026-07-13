@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useTransition } from 'react'
+import { useState, useMemo, useTransition, useEffect } from 'react'
 import Link from 'next/link'
 import { toast } from 'react-hot-toast'
 import { deleteProductionPlan } from '@/app/actions/planner'
@@ -99,6 +99,13 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
   const [isPending, startTransition] = useTransition()
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [printModalPlanId, setPrintModalPlanId] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+
+  // Reset currentPage to 1 when filters, search or pageSize change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [activeStatus, search, pageSize])
 
   const handleDelete = (planId: string, orderNumber: string) => {
     if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งผลิต ${orderNumber} ?\nการกระทำนี้จะลบข้อมูลที่เกี่ยวข้องทั้งหมดและไม่สามารถย้อนกลับได้`)) return
@@ -143,6 +150,15 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
       return matchStatus && matchSearch
     })
   }, [plans, activeStatus, search])
+
+  // Paginated list
+  const paginatedList = useMemo(() => {
+    const startIdx = (currentPage - 1) * pageSize
+    return filtered.slice(startIdx, startIdx + pageSize)
+  }, [filtered, currentPage, pageSize])
+
+  // Total pages
+  const totalPages = Math.ceil(filtered.length / pageSize)
 
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -218,25 +234,52 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
               {activeStatus === 'all' ? 'รายการสั่งผลิตทั้งหมด' : `รายการ: ${STATUS_CONFIG[activeStatus].label}`}
             </h2>
             <p style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
-              แสดง {filtered.length} รายการ {search ? `(ค้นหา: "${search}")` : ''}
+              แสดง {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filtered.length)} จาก {filtered.length} รายการ {search ? `(ค้นหา: "${search}")` : ''}
             </p>
           </div>
 
-          {/* Search */}
-          <div style={{ position: 'relative' }}>
-            <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#9CA3AF' }}></i>
-            <input
-              type="text"
-              placeholder="ค้นหาเลขที่ PO, วันที่, ผู้อนุมัติ..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{
-                paddingLeft: 32, paddingRight: 12, height: 36,
-                border: '1px solid #E5E7EB', borderRadius: 8,
-                fontSize: 12, width: 260, outline: 'none', color: '#374151',
-                background: '#F9FAFB',
-              }}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {/* Page Size Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 12, color: '#6B7280' }}>ต่อหน้า:</span>
+              <select
+                value={pageSize}
+                onChange={e => setPageSize(Number(e.target.value))}
+                style={{
+                  height: 36,
+                  padding: '0 8px',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  color: '#374151',
+                  background: '#F9FAFB',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value={10}>10 รายการ</option>
+                <option value={20}>20 รายการ</option>
+                <option value={50}>50 รายการ</option>
+                <option value={100}>100 รายการ</option>
+              </select>
+            </div>
+
+            {/* Search */}
+            <div style={{ position: 'relative' }}>
+              <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#9CA3AF' }}></i>
+              <input
+                type="text"
+                placeholder="ค้นหาเลขที่ PO, วันที่, ผู้อนุมัติ..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{
+                  paddingLeft: 32, paddingRight: 12, height: 36,
+                  border: '1px solid #E5E7EB', borderRadius: 8,
+                  fontSize: 12, width: 260, outline: 'none', color: '#374151',
+                  background: '#F9FAFB',
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -265,7 +308,7 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((plan, idx) => {
+                {paginatedList.map((plan, idx) => {
                   const po = Array.isArray(plan.production_orders) ? plan.production_orders[0] : null
                   const orderNumber = po?.order_number || `ไม่มี PO (#${plan.id.slice(0, 8).toUpperCase()})`
                   const statusKey = getStatus(plan.status)
@@ -426,24 +469,131 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
         {/* Table Footer */}
         {filtered.length > 0 && (
           <div style={{
-            padding: '10px 20px',
-            borderTop: '1px solid #F3F4F6',
+            padding: '12px 20px',
+            borderTop: '1px solid #E5E7EB',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             background: '#FAFAFA',
             flexShrink: 0,
+            flexWrap: 'wrap',
+            gap: 12
           }}>
-            <span style={{ fontSize: 11, color: '#9CA3AF' }}>
-              แสดง {filtered.length} จาก {plans.length} รายการทั้งหมด
-            </span>
-            <span style={{ fontSize: 11, color: '#9CA3AF' }}>
-              รวมชิ้นงาน:{' '}
-              <strong style={{ color: '#2563EB' }}>
-                {filtered.reduce((s, p) => s + (p.total_qty ?? 0), 0).toLocaleString()}
-              </strong>{' '}
-              ชิ้น
-            </span>
+            <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#9CA3AF' }}>
+              <span>
+                แสดง {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} -{' '}
+                {Math.min(currentPage * pageSize, filtered.length)} จาก {filtered.length} รายการ
+              </span>
+              <span>
+                รวมชิ้นงาน:{' '}
+                <strong style={{ color: '#2563EB' }}>
+                  {filtered.reduce((s, p) => s + (p.total_qty ?? 0), 0).toLocaleString()}
+                </strong>{' '}
+                ชิ้น
+              </span>
+            </div>
+
+            {/* Page navigation */}
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #E5E7EB',
+                    background: '#fff',
+                    color: currentPage === 1 ? '#9CA3AF' : '#374151',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}
+                >
+                  <i className="fas fa-chevron-left" style={{ fontSize: 10 }}></i>
+                  ก่อนหน้า
+                </button>
+
+                {(() => {
+                  const pages = []
+                  const maxVisiblePages = 5
+                  let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2))
+                  let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1)
+
+                  if (endPage - startPage + 1 < maxVisiblePages) {
+                    startPage = Math.max(1, endPage - maxVisiblePages + 1)
+                  }
+
+                  if (startPage > 1) {
+                    pages.push(
+                      <button
+                        key={1}
+                        onClick={() => setCurrentPage(1)}
+                        style={getPageBtnStyle(currentPage === 1)}
+                      >
+                        1
+                      </button>
+                    )
+                    if (startPage > 2) {
+                      pages.push(<span key="dots-start" style={{ padding: '0 4px', color: '#9CA3AF', fontSize: 12 }}>...</span>)
+                    }
+                  }
+
+                  for (let p = startPage; p <= endPage; p++) {
+                    pages.push(
+                      <button
+                        key={p}
+                        onClick={() => setCurrentPage(p)}
+                        style={getPageBtnStyle(currentPage === p)}
+                      >
+                        {p}
+                      </button>
+                    )
+                  }
+
+                  if (endPage < totalPages) {
+                    if (endPage < totalPages - 1) {
+                      pages.push(<span key="dots-end" style={{ padding: '0 4px', color: '#9CA3AF', fontSize: 12 }}>...</span>)
+                    }
+                    pages.push(
+                      <button
+                        key={totalPages}
+                        onClick={() => setCurrentPage(totalPages)}
+                        style={getPageBtnStyle(currentPage === totalPages)}
+                      >
+                        {totalPages}
+                      </button>
+                    )
+                  }
+
+                  return pages
+                })()}
+
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #E5E7EB',
+                    background: '#fff',
+                    color: currentPage === totalPages ? '#9CA3AF' : '#374151',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}
+                >
+                  ถัดไป
+                  <i className="fas fa-chevron-right" style={{ fontSize: 10 }}></i>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -467,3 +617,19 @@ const thStyle: React.CSSProperties = {
   letterSpacing: '0.05em',
   whiteSpace: 'nowrap',
 }
+
+const getPageBtnStyle = (isActive: boolean): React.CSSProperties => ({
+  width: 32,
+  height: 32,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 6,
+  border: isActive ? '1px solid #BFDBFE' : '1px solid #E5E7EB',
+  background: isActive ? '#EFF6FF' : '#fff',
+  color: isActive ? '#2563EB' : '#374151',
+  fontSize: 12,
+  fontWeight: isActive ? 700 : 500,
+  cursor: 'pointer',
+  transition: 'all 0.15s',
+})

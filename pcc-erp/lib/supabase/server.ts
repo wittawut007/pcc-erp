@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { cache } from 'react'
 
 export async function createClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -28,3 +29,29 @@ export async function createClient() {
     },
   })
 }
+
+// Request-memoized user fetcher
+export const getCachedUser = cache(async () => {
+  try {
+    const supabase = await createClient()
+    const { data: { user }, error } = await supabase.auth.getUser()
+    return { user, error }
+  } catch (e) {
+    return { user: null, error: e }
+  }
+})
+
+// Request-memoized profile fetcher
+export const getCachedProfile = cache(async (userId: string) => {
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single()
+    return { data, error }
+  } catch (e) {
+    return { data: null, error: e }
+  }
+})

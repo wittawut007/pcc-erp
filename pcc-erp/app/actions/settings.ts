@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { logError } from '@/lib/logger'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -101,6 +102,7 @@ export async function getSystemStatsAction(): Promise<{ data?: SystemStats; erro
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'
+    await logError({ action: 'getSystemStatsAction', error: err })
     return { error: message }
   }
 }
@@ -153,6 +155,7 @@ export async function resetPlansAction(): Promise<ResetResult> {
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'
+    await logError({ action: 'resetPlansAction', error: err })
     return { success: false, error: message }
   }
 }
@@ -190,6 +193,7 @@ export async function resetJobOrdersAction(): Promise<ResetResult> {
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'
+    await logError({ action: 'resetJobOrdersAction', error: err })
     return { success: false, error: message }
   }
 }
@@ -217,6 +221,7 @@ export async function resetQcAction(): Promise<ResetResult> {
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'
+    await logError({ action: 'resetQcAction', error: err })
     return { success: false, error: message }
   }
 }
@@ -244,6 +249,7 @@ export async function resetInventoryAction(): Promise<ResetResult> {
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'
+    await logError({ action: 'resetInventoryAction', error: err })
     return { success: false, error: message }
   }
 }
@@ -265,6 +271,7 @@ export async function clearActivityLogsAction(): Promise<ResetResult> {
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'
+    await logError({ action: 'clearActivityLogsAction', error: err })
     return { success: false, error: message }
   }
 }
@@ -320,6 +327,7 @@ export async function resetAllProductionAction(): Promise<ResetResult> {
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'
+    await logError({ action: 'resetAllProductionAction', error: err })
     return { success: false, error: message }
   }
 }
@@ -371,6 +379,7 @@ export async function nuclearResetAction(): Promise<ResetResult> {
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'
+    await logError({ action: 'nuclearResetAction', error: err })
     return { success: false, error: message }
   }
 }
@@ -513,6 +522,7 @@ export async function getSupabaseUsageAction(): Promise<{ data?: SupabaseUsageSu
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการดึงข้อมูล Supabase'
+    await logError({ action: 'getSupabaseUsageAction', error: err })
     return { error: message }
   }
 }
@@ -602,7 +612,7 @@ export async function purgeOldPhotosAction(startDate: string, endDate: string): 
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเคลียร์ข้อมูลรูปภาพ'
+    await logError({ action: 'purgeOldPhotosAction', error: err, context: { startDate, endDate } })
     return { success: false, error: message }
   }
 }
-

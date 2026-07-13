@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { logError } from '@/lib/logger'
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -260,6 +261,7 @@ export async function searchPlanByPoCode(poCode: string): Promise<SearchPlanResu
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการค้นหาข้อมูล'
+    await logError({ action: 'searchPlanByPoCode', error: err, context: { poCode } })
     return { success: false, error: message }
   }
 }
@@ -454,6 +456,7 @@ export async function deleteFullPlanByPlanId(planId: string, poCode: string): Pr
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการลบแผนผลิต'
+    await logError({ action: 'deleteFullPlanByPlanId', error: err, context: { planId, poCode } })
     return { success: false, error: message }
   }
 }
