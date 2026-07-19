@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
-import { createUserAction, updateUserAction, generateWorkerTokenAction } from './actions'
+import { createUserAction, updateUserAction, generateWorkerTokenAction, deleteUserAction } from './actions'
 import { useRouter } from 'next/navigation'
 
 function QRImage({ value, size = 180 }: { value: string; size?: number }) {
@@ -48,7 +48,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
     setCacheBuster(Date.now().toString())
   }, [])
 
-  const rolesList = ['ทั้งหมด', 'Admin', 'Planner', 'Warehouse', 'QC', 'Worker']
+  const rolesList = ['ทั้งหมด', 'Admin', 'Planner', 'Warehouse', 'QC', 'Worker', 'Material', 'Concrete']
 
   const filtered = users.filter(u => {
     const roleMap: Record<string, string> = {
@@ -57,6 +57,8 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
       'warehouse': 'Warehouse',
       'qc': 'QC',
       'worker': 'Worker',
+      'material': 'Material',
+      'concrete': 'Concrete',
     }
     const matchRole = filterRole === 'ทั้งหมด' || roleMap[u.role] === filterRole
     const matchSearch = !search ||
@@ -119,6 +121,24 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
         loading: 'กำลังอัพเดทสถานะ...',
         success: 'อัพเดทสถานะสำเร็จ!',
         error: 'เกิดข้อผิดพลาด'
+      }
+    )
+  }
+
+  const handleDeleteUser = async (u: any) => {
+    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้งาน "${u.full_name}"? การลบนี้จะเป็นการลบถาวรและไม่สามารถกู้คืนได้`)) {
+      return
+    }
+
+    toast.promise(
+      deleteUserAction(u.id).then(res => {
+        if (!res.success) throw new Error(res.error)
+        router.refresh()
+      }),
+      {
+        loading: 'กำลังลบผู้ใช้งาน...',
+        success: 'ลบผู้ใช้งานสำเร็จ!',
+        error: (err) => `ลบผู้ใช้งานไม่สำเร็จ: ${err.message}`
       }
     )
   }
@@ -205,6 +225,8 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
     warehouse: { bg: 'var(--amber-light)', color: 'var(--amber)', label: 'Warehouse' },
     qc: { bg: 'var(--green-light)', color: 'var(--green)', label: 'QC' },
     worker: { bg: '#FFF7ED', color: '#EA580C', label: 'Worker' }, // orange mapping
+    material: { bg: '#E0F2FE', color: '#0369A1', label: 'Material' }, // sky blue
+    concrete: { bg: '#F1F5F9', color: '#475569', label: 'Concrete' }, // slate gray
   }
 
   return (
@@ -309,6 +331,10 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
                       
                       <button onClick={() => handleToggleStatus(u)} style={{ padding: '5px 10px', background: u.is_active ? 'var(--bg)' : 'var(--green-light)', color: u.is_active ? 'var(--text-muted)' : 'var(--green)', border: `1px solid ${u.is_active ? 'var(--border)' : 'var(--green-light)'}`, borderRadius: 5, cursor: 'pointer', fontSize: 11 }} title={u.is_active ? "ระงับสิทธิ์" : "เปิดใช้งาน"}>
                         <i className={`fas ${u.is_active ? 'fa-ban' : 'fa-unlock'}`}></i>
+                      </button>
+
+                      <button onClick={() => handleDeleteUser(u)} style={{ padding: '5px 10px', background: '#FEE2E2', color: '#DC2626', border: '1px solid #FCA5A5', borderRadius: 5, cursor: 'pointer', fontSize: 11 }} title="ลบผู้ใช้งาน">
+                        <i className="fas fa-trash-alt"></i>
                       </button>
                     </div>
                   </td>
@@ -447,6 +473,8 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
                   <option value="warehouse">คลังสินค้า (Warehouse)</option>
                   <option value="qc">ฝ่าย QC</option>
                   <option value="worker">พนักงานหน้างาน (Worker)</option>
+                  <option value="material">ผู้ควบคุมวัสดุ (Material)</option>
+                  <option value="concrete">ผู้ควบคุมคอนกรีต (Concrete)</option>
                 </select>
               </div>
 

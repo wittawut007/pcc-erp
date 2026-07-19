@@ -15,27 +15,39 @@ export default async function MobileLayout({
   const isConfigured = supabaseUrl && supabaseUrl !== 'your_supabase_project_url'
 
   if (isConfigured) {
+    let shouldRedirectToLogin = false
+    let shouldRedirectToUnauthorized = false
+
     try {
       const { createClient } = await import('@/lib/supabase/server')
       const supabase = await createClient()
       const { data: { user } } = await supabase.auth.getUser()
 
-      if (!user) redirect('/login')
+      if (!user) {
+        shouldRedirectToLogin = true
+      } else {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, full_name')
+          .eq('id', user.id)
+          .single()
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, full_name')
-        .eq('id', user.id)
-        .single()
-
-      if (!profile || profile.role !== 'qc') {
-        redirect('/unauthorized?reason=forbidden')
+        if (!profile || (profile.role !== 'qc' && profile.role !== 'admin')) {
+          shouldRedirectToUnauthorized = true
+        } else {
+          role = profile.role as UserRole
+          userName = profile.full_name ?? ''
+        }
       }
-
-      role = profile.role as UserRole
-      userName = profile.full_name ?? ''
     } catch {
-      // dev mode
+      // dev mode fallback or network error
+    }
+
+    if (shouldRedirectToLogin) {
+      redirect('/login')
+    }
+    if (shouldRedirectToUnauthorized) {
+      redirect('/unauthorized?reason=forbidden')
     }
   }
 

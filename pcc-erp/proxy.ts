@@ -78,9 +78,32 @@ export async function proxy(request: NextRequest) {
   }
 
   // ─── กรณี C: Mobile Route (QC & Worker) ──────────────────────────────────────────────
-  // /qc-inspect และ /worker → ต้องมี Session ปกติ
+  // /qc-inspect และ /worker → ต้องมี Session ปกติ หรือมี worker_session (สำหรับ worker)
   if (path === '/qc-inspect' || path.startsWith('/qc-inspect/') || path === '/worker' || path.startsWith('/worker/')) {
     let supabaseResponseMobile = NextResponse.next({ request })
+
+    // Check if worker session exists for worker path
+    const isWorkerPath = path === '/worker' || path.startsWith('/worker/')
+    const workerSession = request.cookies.get('worker_session')?.value
+
+    if (isWorkerPath && workerSession) {
+      try {
+        const adminSupabase = createAdminClient(supabaseUrl, serviceRoleKey || supabaseKey)
+        const { data: profile } = await adminSupabase
+          .from('profiles')
+          .select('id, role, is_active')
+          .eq('worker_token', workerSession)
+          .single()
+
+        if (profile && profile.role === 'worker' && profile.is_active) {
+          // Token valid: allow access to worker page
+          return supabaseResponseMobile
+        }
+      } catch (err) {
+        console.error('Error validating worker session in proxy:', err)
+      }
+    }
+
     const supabaseMobile = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
         getAll() { return request.cookies.getAll() },
@@ -99,8 +122,19 @@ export async function proxy(request: NextRequest) {
       },
     })
 
-    const { data: { user } } = await supabaseMobile.auth.getUser()
+    let user = null
+    try {
+      const { data } = await supabaseMobile.auth.getUser()
+      user = data?.user || null
+    } catch (e) {
+      console.warn('Supabase getUser failed in proxy Case C:', e)
+    }
+
     if (!user) {
+      // In development mode, allow bypass if database is unreachable, except when workerSession failed validation
+      if (process.env.NODE_ENV === 'development' && !workerSession) {
+        return supabaseResponseMobile
+      }
       return redirectWithCookies(new URL('/login', request.url), supabaseResponseMobile)
     }
 
@@ -152,10 +186,20 @@ export async function proxy(request: NextRequest) {
     },
   })
 
-  const { data: { user } } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data?.user || null
+  } catch (e) {
+    console.warn('Supabase getUser failed in proxy Case D:', e)
+  }
 
   // ไม่ได้ Login และพยายามเข้าหน้าอื่น → redirect /login
   if (!user && path !== '/login' && path !== '/unauthorized') {
+    // ในกรณี dev mode และฐานข้อมูลเชื่อมต่อไม่ได้ ให้ผ่านไปก่อน
+    if (process.env.NODE_ENV === 'development') {
+      return supabaseResponse
+    }
     return redirectWithCookies(new URL('/login', request.url), supabaseResponse)
   }
 

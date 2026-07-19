@@ -113,3 +113,14 @@ export async function generateWorkerTokenAction(formData: FormData) {
     return { success: false, error: error.message }
   }
 }
+
+export async function deleteUserAction(userId: string) {
+  try {
+    const supabaseAdmin = createAdminClient()
+    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId)
+    if (authError) throw authError
+    return { success: true }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+}
