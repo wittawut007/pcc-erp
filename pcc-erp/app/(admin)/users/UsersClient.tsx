@@ -5,13 +5,15 @@ import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { createUserAction, updateUserAction, generateWorkerTokenAction, deleteUserAction } from './actions'
 import { useRouter } from 'next/navigation'
+import type { UserProfile, QrModalState } from '@/lib/types'
+import { getRoleStyle } from '@/lib/utils/roles'
 
 function QRImage({ value, size = 180 }: { value: string; size?: number }) {
   const url = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(value)}&margin=10`
   return <img src={url} alt="QR Code" width={size} height={size} style={{ borderRadius: 6, display: 'block', margin: '0 auto' }} />
 }
 
-export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
+export default function UsersClient({ initialUsers }: { initialUsers: UserProfile[] }) {
   const router = useRouter()
   const [users, setUsers] = useState(initialUsers)
   const [search, setSearch] = useState('')
@@ -25,7 +27,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const [qrModal, setQrModal] = useState<{ open: boolean; user: any | null; token: string | null }>({
+  const [qrModal, setQrModal] = useState<QrModalState>({
     open: false, user: null, token: null,
   })
   const [generatingQr, setGeneratingQr] = useState(false)
@@ -76,7 +78,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
     setIsModalOpen(true)
   }
 
-  const openEdit = (u: any) => {
+  const openEdit = (u: UserProfile) => {
     setEditingId(u.id)
     setForm({ email: u.email || '', password: '', fullName: u.full_name || '', role: u.role || 'worker', employeeCode: u.employee_code || '', isActive: u.is_active, avatarUrl: u.avatar_url || '' })
     setAvatarFile(null)
@@ -84,7 +86,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
     setIsModalOpen(true)
   }
 
-  const openQrModal = async (u: any) => {
+  const openQrModal = async (u: UserProfile) => {
     setQrModal({ open: true, user: u, token: u.worker_token ?? null })
   }
 
@@ -92,11 +94,15 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
     if (!qrModal.user) return
     setGeneratingQr(true)
     const fd = new FormData()
+    if (!qrModal.user) return
     fd.append('userId', qrModal.user.id)
     const res = await generateWorkerTokenAction(fd)
     if (res.success && res.token) {
       setQrModal(prev => ({ ...prev, token: res.token! }))
-      setUsers(prev => prev.map(u => u.id === qrModal.user.id ? { ...u, worker_token: res.token } : u))
+      const currentUser = qrModal.user
+      if (currentUser) {
+        setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, worker_token: res.token ?? null } : u))
+      }
       toast.success('สร้าง QR Code ใหม่สำเร็จ!')
     } else {
       toast.error(res.error || 'เกิดข้อผิดพลาดในการสร้าง QR')
@@ -104,12 +110,12 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
     setGeneratingQr(false)
   }
 
-  const handleToggleStatus = async (u: any) => {
+  const handleToggleStatus = async (u: UserProfile) => {
     const fd = new FormData()
     fd.append('userId', u.id)
-    fd.append('fullName', u.full_name)
+    fd.append('fullName', u.full_name ?? '')
     fd.append('role', u.role)
-    fd.append('employeeCode', u.employee_code || '')
+    fd.append('employeeCode', u.employee_code ?? '')
     fd.append('isActive', (!u.is_active).toString())
 
     toast.promise(
@@ -125,7 +131,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
     )
   }
 
-  const handleDeleteUser = async (u: any) => {
+  const handleDeleteUser = async (u: UserProfile) => {
     if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้งาน "${u.full_name}"? การลบนี้จะเป็นการลบถาวรและไม่สามารถกู้คืนได้`)) {
       return
     }
@@ -200,8 +206,8 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
       setIsModalOpen(false)
       setCacheBuster(Date.now().toString())
       router.refresh()
-    } catch (err: any) {
-      toast.error(err.message || 'เกิดข้อผิดพลาด')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด')
     } finally {
       setSaving(false)
     }
@@ -219,15 +225,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
     admins: users.filter(u => ['admin', 'planner'].includes(u.role)).length,
   }
 
-  const roleStyleMap: Record<string, { bg: string, color: string, label: string }> = {
-    admin: { bg: 'var(--accent-light)', color: 'var(--accent)', label: 'Admin' },
-    planner: { bg: 'var(--indigo-light)', color: 'var(--indigo)', label: 'Planner' },
-    warehouse: { bg: 'var(--amber-light)', color: 'var(--amber)', label: 'Warehouse' },
-    qc: { bg: 'var(--green-light)', color: 'var(--green)', label: 'QC' },
-    worker: { bg: '#FFF7ED', color: '#EA580C', label: 'Worker' }, // orange mapping
-    material: { bg: '#E0F2FE', color: '#0369A1', label: 'Material' }, // sky blue
-    concrete: { bg: '#F1F5F9', color: '#475569', label: 'Concrete' }, // slate gray
-  }
+
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
@@ -279,7 +277,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
           </thead>
           <tbody>
             {filtered.map(u => {
-              const rStyle = roleStyleMap[u.role] ?? { bg: '#F3F4F6', color: '#6B7280', label: u.role }
+              const rStyle = getRoleStyle(u.role)
               const initials = u.full_name ? u.full_name.substring(0,2) : 'U'
               
               return (
@@ -287,7 +285,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: any[] }) {
                   <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       {u.avatar_url ? (
-                        <img src={`${u.avatar_url}?t=${cacheBuster}`} alt={u.full_name} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />
+                        <img src={`${u.avatar_url}?t=${cacheBuster}`} alt={u.full_name ?? ''} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />
                       ) : (
                         <div style={{ width: 34, height: 34, borderRadius: '50%', background: rStyle.bg, color: rStyle.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
                           {u.role === 'admin' ? 'AD' : initials}

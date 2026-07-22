@@ -5,6 +5,8 @@ import { getFgPrintData } from '@/app/actions/fg'
 import FgPrintClient from '@/app/(admin)/inventory/fg/print/[orderId]/FgPrintClient'
 import toast from 'react-hot-toast'
 
+type FgPrintData = Awaited<ReturnType<typeof getFgPrintData>>
+
 interface FgDocumentModalProps {
   isOpen: boolean
   onClose: () => void
@@ -16,7 +18,7 @@ export default function FgDocumentModal({
   onClose,
   orderId
 }: FgDocumentModalProps) {
-  const [printData, setPrintData] = useState<any | null>(null)
+  const [printData, setPrintData] = useState<FgPrintData | null>(null)
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
@@ -31,20 +33,28 @@ export default function FgDocumentModal({
   }, [isOpen])
 
   useEffect(() => {
-    if (!isOpen || !orderId) {
-      setPrintData(null)
-      return
-    }
+    if (!isOpen || !orderId) return
 
+    let isCancelled = false
     startTransition(async () => {
+      setPrintData(null)
       try {
         const data = await getFgPrintData(orderId)
-        setPrintData(data)
-      } catch (err: any) {
-        toast.error('ไม่สามารถโหลดข้อมูลเอกสารได้: ' + err.message)
-        onClose()
+        if (!isCancelled) {
+          setPrintData(data)
+        }
+      } catch (err: unknown) {
+        if (!isCancelled) {
+          const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ'
+          toast.error('ไม่สามารถโหลดข้อมูลเอกสารได้: ' + message)
+          onClose()
+        }
       }
     })
+
+    return () => {
+      isCancelled = true
+    }
   }, [isOpen, orderId, onClose])
 
   if (!isOpen) return null
@@ -71,7 +81,7 @@ export default function FgDocumentModal({
         </div>
       )}
       {!isPending && printData && (
-        <FgPrintClient onClose={onClose} {...printData} />
+        <FgPrintClient onClose={onClose} {...(printData as any)} />
       )}
     </div>
   )

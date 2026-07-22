@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react'
 import MaterialDocumentPrintClient from '@/app/(admin)/material/MaterialDocumentPrintClient'
+import type { PlanItem } from '@/lib/types'
 
 interface MaterialDocumentModalProps {
   isOpen: boolean
@@ -11,7 +12,7 @@ interface MaterialDocumentModalProps {
   time: string
   userFullName: string
   totalConcrete: number
-  planItems: any[]
+  planItems: PlanItem[]
 }
 
 export default function MaterialDocumentModal({

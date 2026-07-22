@@ -2,7 +2,6 @@
 
 import React, { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import html2canvas from 'html2canvas'
 
 interface BomItem {
   id: string
@@ -376,6 +375,7 @@ export default function FgPrintClient({
 
       for (let i = 0; i < pages.length; i++) {
         const pageEl = pages[i] as HTMLElement
+        const html2canvas = (await import('html2canvas')).default
         const canvas = await html2canvas(pageEl, {
           scale: 2,
           useCORS: true,
@@ -417,6 +417,7 @@ export default function FgPrintClient({
       const pages = element.querySelectorAll('.print-page')
       for (let i = 0; i < pages.length; i++) {
         const pageEl = pages[i] as HTMLElement
+        const html2canvas = (await import('html2canvas')).default
         const canvas = await html2canvas(pageEl, {
           scale: 2,
           useCORS: true,

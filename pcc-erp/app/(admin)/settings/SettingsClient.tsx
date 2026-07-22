@@ -1,14 +1,16 @@
 'use client'
 
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import type { SystemStats } from '@/app/actions/settings'
-import GeneralTab from './tabs/GeneralTab'
-import UserManagementTab from './tabs/UserManagementTab'
-import MasterDataTab from './tabs/MasterDataTab'
-import DataManagementTab from './tabs/DataManagementTab'
-import MonitoringTab from './tabs/MonitoringTab'
-import SupabaseTab from './tabs/SupabaseTab'
-import PlanDeleteTab from './tabs/PlanDeleteTab'
+
+const GeneralTab = dynamic(() => import('./tabs/GeneralTab'))
+const UserManagementTab = dynamic(() => import('./tabs/UserManagementTab'))
+const MasterDataTab = dynamic(() => import('./tabs/MasterDataTab'))
+const DataManagementTab = dynamic(() => import('./tabs/DataManagementTab'))
+const MonitoringTab = dynamic(() => import('./tabs/MonitoringTab'))
+const SupabaseTab = dynamic(() => import('./tabs/SupabaseTab'))
+const PlanDeleteTab = dynamic(() => import('./tabs/PlanDeleteTab'))
 
 interface Tab {
   id: string

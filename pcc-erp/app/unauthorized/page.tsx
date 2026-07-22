@@ -176,7 +176,7 @@ function UnauthorizedContent() {
               }
             </button>
           )}
-          {config.showBackToQr && (
+          {config.showBackToQr && process.env.NODE_ENV === 'development' && (
             <button onClick={() => window.location.href = '/api/auth/test-worker'}
               style={{ width: '100%', padding: '12px 0', background: '#0F172A', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', marginBottom: 8 }}>
               <i className="fas fa-vial" style={{ marginRight: 8 }}></i>

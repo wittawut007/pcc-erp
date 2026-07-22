@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import type { UserRole } from '@/lib/supabase/types'
 import type { SidebarBadgeCounts } from '@/app/actions/sidebar-badges'
@@ -136,7 +136,6 @@ function BadgeDot({ count, isCollapsed }: { count: number; isCollapsed: boolean 
 
 export default function Sidebar({ role, badgeCounts }: SidebarProps) {
   const pathname = usePathname()
-  const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
 
   if (pathname && pathname.includes('/print/')) {

@@ -36,10 +36,49 @@ export async function proxy(request: NextRequest) {
   // Bypass proxy for static public assets (images, fonts, etc.)
   if (
     path.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|css|js|woff2?|eot|ttf)$/) ||
-    path.startsWith('/_next/') ||
-    path.startsWith('/api/')
+    path.startsWith('/_next/')
   ) {
     return NextResponse.next()
+  }
+
+  // ─── กรณี API Routes: รีเฟรช Cookie และตรวจสอบ Auth ───────────────────
+  if (path.startsWith('/api/')) {
+    if (path === '/api/seed-users' || path === '/api/auth/test-worker') {
+      return NextResponse.next()
+    }
+
+    let supabaseApiResponse = NextResponse.next({ request })
+    const supabaseApi = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() { return request.cookies.getAll() },
+        setAll(cookiesToSet, headers) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          supabaseApiResponse = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseApiResponse.cookies.set(name, value, options)
+          )
+          if (headers) {
+            Object.entries(headers).forEach(([key, value]) =>
+              supabaseApiResponse.headers.set(key, value)
+            )
+          }
+        },
+      },
+    })
+
+    let user = null
+    try {
+      const { data } = await supabaseApi.auth.getUser()
+      user = data?.user || null
+    } catch (e) {
+      console.warn('Supabase getUser failed in proxy API handler:', e)
+    }
+
+    if (!user && process.env.NODE_ENV !== 'development') {
+      return NextResponse.json({ error: 'Unauthorized: Authentication required' }, { status: 401 })
+    }
+
+    return supabaseApiResponse
   }
 
   // ─── กรณี A: Worker QR Entry ─────────────────────────────────────────────
@@ -253,5 +292,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api|logo\\.png|.*\\.png$|.*\\.svg$|.*\\.jpg$|.*\\.jpeg$|.*\\.gif$|.*\\.webp$|.*\\.ico$|.*\\.css$|.*\\.js$).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|logo\\.png|.*\\.png$|.*\\.svg$|.*\\.jpg$|.*\\.jpeg$|.*\\.gif$|.*\\.webp$|.*\\.ico$|.*\\.css$|.*\\.js$).*)'],
 }

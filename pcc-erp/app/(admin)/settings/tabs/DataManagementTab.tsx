@@ -1,8 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import JSZip from 'jszip'
-import * as XLSX from 'xlsx'
 import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase/client'
 import ResetConfirmModal, { type ResetConfig } from '../components/ResetConfirmModal'
@@ -122,6 +120,8 @@ export default function DataManagementTab() {
 
       // 2. เริ่มสร้าง ZIP Archive และเขียนตาราง Excel
       setBackupProgress({ active: true, percent: 25, text: 'กำลังประกอบตารางรายงานลงไฟล์ Excel (.xlsx)...' })
+      const JSZip = (await import('jszip')).default
+      const XLSX = await import('xlsx')
       const zip = new JSZip()
       const wb = XLSX.utils.book_new()
 

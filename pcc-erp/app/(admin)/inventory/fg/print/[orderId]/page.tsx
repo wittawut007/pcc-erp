@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { translateDefectReason } from '@/lib/utils/defects'
 import FgPrintClient from './FgPrintClient'
 
 interface PageProps {
@@ -215,12 +216,3 @@ export default async function FgPrintPage({ params }: PageProps) {
   )
 }
 
-function translateDefectReason(reason: string): string {
-  const mapping: Record<string, string> = {
-    crack: 'แตก / ร้าว',
-    chip: 'บิ่น / มุมหัก',
-    honeycomb: 'Honeycomb',
-    other: 'อื่นๆ',
-  }
-  return mapping[reason] || reason
-}

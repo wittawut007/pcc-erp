@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useRef } from 'react'
-import html2canvas from 'html2canvas'
 
 interface MaterialDocumentPrintClientProps {
   orderNumber: string
@@ -30,6 +29,7 @@ export default function MaterialDocumentPrintClient({
     if (!element) return
     setIsExporting('pdf')
     try {
+      const html2canvas = (await import('html2canvas')).default
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
@@ -68,6 +68,7 @@ export default function MaterialDocumentPrintClient({
     if (!element) return
     setIsExporting('png')
     try {
+      const html2canvas = (await import('html2canvas')).default
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,

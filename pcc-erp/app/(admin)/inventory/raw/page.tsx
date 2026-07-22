@@ -5,6 +5,9 @@ import RawMaterialsClient from './RawMaterialsClient'
 import { createClient } from '@/lib/supabase/server'
 import { getMaterialSummary, getConcreteSummary } from '@/app/actions/material'
 
+type SummaryData = Awaited<ReturnType<typeof getMaterialSummary>>
+type ConcreteData = Awaited<ReturnType<typeof getConcreteSummary>>
+
 export default async function RawMaterialsPage() {
   const supabase = await createClient()
 
@@ -16,8 +19,8 @@ export default async function RawMaterialsPage() {
     .order('name')
 
   // Fetch summary data for current month as initial data
-  let summaryData: any[] = []
-  let concreteData: any[] = []
+  let summaryData: SummaryData = []
+  let concreteData: ConcreteData = []
   try {
     const now = new Date()
     const monthFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]

@@ -4,6 +4,10 @@ import { useState, Fragment } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import RawMaterialSummaryTab from './RawMaterialSummaryTab'
+import type { getMaterialSummary, getConcreteSummary } from '@/app/actions/material'
+
+type SummaryItem = Awaited<ReturnType<typeof getMaterialSummary>>[number]
+type ConcreteOrder = Awaited<ReturnType<typeof getConcreteSummary>>[number]
 
 interface RawMaterial {
   id: string
@@ -20,7 +24,7 @@ interface RawMaterial {
 
 const CATEGORIES = ['ทั้งหมด', 'เหล็กเส้น', 'ลวด', 'น้ำยา', 'ปูน', 'เมช', 'อื่นๆ']
 
-export default function RawMaterialsClient({ materials: initial, summaryData = [], concreteData = [] }: { materials: RawMaterial[]; summaryData?: any[]; concreteData?: any[] }) {
+export default function RawMaterialsClient({ materials: initial, summaryData = [], concreteData = [] }: { materials: RawMaterial[]; summaryData?: SummaryItem[]; concreteData?: ConcreteOrder[] }) {
   const supabase = createClient()
   const [materials, setMaterials] = useState<RawMaterial[]>(initial)
   const [activeTab, setActiveTab] = useState<'stock' | 'summary'>('stock')
@@ -76,7 +80,7 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
       setMaterials(prev => prev.map(m => m.id === adjustModal.id ? { ...m, qty_on_hand: newQty, min_stock: adjustMinStock, updated_at: new Date().toISOString() } : m))
       toast.success('อัปเดตสต็อกสำเร็จ!')
       setAdjustModal(null)
-    } catch (e: any) { toast.error('เกิดข้อผิดพลาด: ' + e.message) }
+    } catch (e: unknown) { toast.error('เกิดข้อผิดพลาด: ' + (e instanceof Error ? e.message : 'ไม่ทราบสาเหตุ')) }
     finally { setSaving(false) }
   }
 
@@ -150,7 +154,7 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
       setAddModal(false)
       setEditMaterial(null)
       setNewForm({ material_code: '', name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0, weight_per_meter: '' })
-    } catch (e: any) { toast.error('เกิดข้อผิดพลาด: ' + e.message) }
+    } catch (e: unknown) { toast.error('เกิดข้อผิดพลาด: ' + (e instanceof Error ? e.message : 'ไม่ทราบสาเหตุ')) }
     finally { setSaving(false) }
   }
 
@@ -238,12 +242,12 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
         </button>
       </div>
 
-      {/* ── Summary Tab ─────────────────────────────────────────────── */}
+      {/* --- Tab Bar --- */}
       {activeTab === 'summary' && (
-        <RawMaterialSummaryTab initialData={summaryData} initialConcrete={concreteData} />
+        <RawMaterialSummaryTab initialData={summaryData as any} initialConcrete={concreteData as any} />
       )}
 
-      {/* ── Stock Tab ───────────────────────────────────────────────── */}
+      {/* --- Stock Tab --- */}
       {activeTab === 'stock' && (
       <div style={{ display: 'contents' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>

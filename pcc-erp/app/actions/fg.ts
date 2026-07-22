@@ -2,6 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { translateDefectReason } from '@/lib/utils/defects'
+import type { FgPrintData, FgPrintItem, PrintBomItem, PrintPlanMaterial, MaterialStatus, OrderStatus } from '@/lib/types'
 
 export async function saveErpReference(orderId: string, erpReference: string) {
   const supabase = await createClient()
@@ -266,9 +268,9 @@ export async function getFgPrintData(orderId: string) {
   // Handle plan object/array mapping and fetch actual materials
   const planObj = Array.isArray(order.plan) ? order.plan[0] : order.plan
   const planId = planObj?.id
-  const totalConcrete = planObj?.total_concrete ? parseFloat(planObj.total_concrete as any) : 0
+  const totalConcrete = planObj?.total_concrete ? parseFloat(String(planObj.total_concrete)) : 0
 
-  let planMaterials: any[] = []
+  let planMaterials: PrintPlanMaterial[] = []
   if (planId) {
     const { data: pmData, error: pmErr } = await supabase
       .from('plan_materials')
@@ -292,21 +294,24 @@ export async function getFgPrintData(orderId: string) {
       .eq('plan_id', planId)
     
     if (!pmErr && pmData) {
-      planMaterials = pmData.map((m: any) => ({
-        id: m.id,
-        qtyRequired: m.qty_required ? parseFloat(m.qty_required) : 0,
-        qtyDispensed: m.qty_dispensed ? parseFloat(m.qty_dispensed) : 0,
-        status: m.status,
-        notes: m.notes,
-        rawMaterial: m.raw_material ? {
-          id: m.raw_material.id,
-          name: m.raw_material.name,
-          category: m.raw_material.category,
-          unit: m.raw_material.unit,
-          materialCode: m.raw_material.material_code,
-          weightPerMeter: m.raw_material.weight_per_meter ? parseFloat(m.raw_material.weight_per_meter) : null,
-        } : null,
-      }))
+      planMaterials = pmData.map((m) => {
+        const rm = Array.isArray(m.raw_material) ? m.raw_material[0] : m.raw_material
+        return {
+          id: m.id,
+          qtyRequired: m.qty_required ? parseFloat(String(m.qty_required)) : 0,
+          qtyDispensed: m.qty_dispensed ? parseFloat(String(m.qty_dispensed)) : 0,
+          status: (m.status ?? 'pending') as import('@/lib/types').MaterialStatus,
+          notes: m.notes ?? null,
+          rawMaterial: rm ? {
+            id: rm.id,
+            name: rm.name,
+            category: rm.category,
+            unit: rm.unit,
+            materialCode: rm.material_code ?? null,
+            weightPerMeter: rm.weight_per_meter ? parseFloat(String(rm.weight_per_meter)) : null,
+          } : null,
+        }
+      })
     }
   }
 
@@ -333,18 +338,20 @@ export async function getFgPrintData(orderId: string) {
   })
 
   // Format items
-  const items = (order.job_orders ?? []).map((job: any) => {
-    const p = job.plan_item?.product || {}
+  const items: FgPrintItem[] = (order.job_orders ?? []).map((job) => {
+    const planItem = Array.isArray(job.plan_item) ? job.plan_item[0] : job.plan_item
+    const p = (Array.isArray(planItem?.product) ? planItem.product[0] : planItem?.product) ?? {}
     const records = Array.isArray(job.demolding_records) ? job.demolding_records : [job.demolding_records].filter(Boolean)
-    const qtyGood = records.reduce((s: number, r: any) => s + (r?.qty_good || 0), 0)
-    const qtyDefect = records.reduce((s: number, r: any) => s + (r?.qty_defect || 0), 0)
+    const qtyGood = records.reduce((s: number, r) => s + ((r as { qty_good?: number })?.qty_good || 0), 0)
+    const qtyDefect = records.reduce((s: number, r) => s + ((r as { qty_defect?: number })?.qty_defect || 0), 0)
     
     // Group defect reasons and details
     const defectDetails = records
-      .map((r: any) => {
-        if (!r?.qty_defect) return null
-        const reasonStr = r.defect_reason ? translateDefectReason(r.defect_reason) : ''
-        const detailStr = r.defect_detail ? `(${r.defect_detail})` : ''
+      .map((r) => {
+        const record = r as { qty_defect?: number; defect_reason?: string; defect_detail?: string }
+        if (!record?.qty_defect) return null
+        const reasonStr = record.defect_reason ? translateDefectReason(record.defect_reason) : ''
+        const detailStr = record.defect_detail ? `(${record.defect_detail})` : ''
         return [reasonStr, detailStr].filter(Boolean).join(' ')
       })
       .filter(Boolean)
@@ -367,26 +374,27 @@ export async function getFgPrintData(orderId: string) {
       rebarPerUnit: p.rebar_per_unit ? parseFloat(p.rebar_per_unit) : 0,
       meshPerUnit: p.mesh_per_unit ? parseFloat(p.mesh_per_unit) : 0,
       length: p.length ? parseFloat(p.length) : 0,
-      bomItems: (p.product_bom_items ?? []).map((bom: any) => {
+      bomItems: ((p as { product_bom_items?: Array<{ id: string; qty_per_unit?: number; raw_materials?: { name?: string; category?: string; unit?: string; material_code?: string | null; weight_per_meter?: number | null } }> }).product_bom_items ?? []).map((bom): PrintBomItem => {
         const rm = bom.raw_materials || {}
         return {
           id: bom.id,
-          qtyPerUnit: bom.qty_per_unit ? parseFloat(bom.qty_per_unit) : 0,
+          qtyPerUnit: bom.qty_per_unit ? parseFloat(String(bom.qty_per_unit)) : 0,
           materialName: rm.name ?? '',
           materialCategory: rm.category ?? '',
           materialUnit: rm.unit ?? '',
           materialCode: rm.material_code ?? null,
-          weightPerMeter: rm.weight_per_meter ? parseFloat(rm.weight_per_meter) : null,
+          weightPerMeter: rm.weight_per_meter ? parseFloat(String(rm.weight_per_meter)) : null,
         }
       })
     }
   })
 
   const confirmedByRaw = order.confirmed_by
+  type ConfirmedByProfile = { full_name?: string | null }
   const confirmedBy = (
     Array.isArray(confirmedByRaw)
-      ? confirmedByRaw[0]?.full_name
-      : (confirmedByRaw as any)?.full_name
+      ? (confirmedByRaw[0] as ConfirmedByProfile)?.full_name
+      : (confirmedByRaw as ConfirmedByProfile | null)?.full_name
   ) || 'ผู้ดูแลระบบ (Admin)'
 
   return {
@@ -401,15 +409,5 @@ export async function getFgPrintData(orderId: string) {
     totalConcrete,
     planMaterials,
   }
-}
-
-function translateDefectReason(reason: string): string {
-  const mapping: Record<string, string> = {
-    crack: 'แตก / ร้าว',
-    chip: 'บิ่น / มุมหัก',
-    honeycomb: 'Honeycomb',
-    other: 'อื่นๆ',
-  }
-  return mapping[reason] || reason
 }
 

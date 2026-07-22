@@ -3,7 +3,6 @@
 import { useState, useMemo, useTransition, useCallback, Fragment } from 'react'
 import { getMaterialSummary, getConcreteSummary } from '@/app/actions/material'
 import toast from 'react-hot-toast'
-import * as XLSX from 'xlsx'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -358,8 +357,9 @@ export default function RawMaterialSummaryTab({ initialData, initialConcrete = [
     })
   }, [dateFrom, dateTo, catFilter])
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     try {
+      const XLSX = await import('xlsx')
       const showIp = statusFilter === 'ทั้งหมด' || statusFilter === 'กำลังผลิต'
       const showCp = statusFilter === 'ทั้งหมด' || statusFilter === 'ผลิตสำเร็จ'
 

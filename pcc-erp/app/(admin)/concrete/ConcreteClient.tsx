@@ -62,10 +62,6 @@ function fmtTime(iso: string | null) {
   return new Date(iso).toLocaleString('th-TH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-function fmtDateInput(iso: string) {
-  return iso.split('T')[0]
-}
-
 // ── Round Card inside each order ──────────────────────────────────────────────
 function RoundRow({
   round, onSupply, loading, isLocked, isNext, concreteGroup,
@@ -194,7 +190,7 @@ function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
         <div style={{ flex: 1, minWidth: 0 }}>
           {order.bed_jobs && order.bed_jobs.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {order.bed_jobs.map((job, idx) => {
+              {order.bed_jobs.map((job) => {
                 const jProduct = job.plan_item?.product
                 const sizeStr = jProduct?.size && jProduct?.size !== '-' ? ` ขนาด ${jProduct.size}` : ''
                 return (
@@ -403,7 +399,7 @@ export default function ConcreteClient({ pending: initialPending, history: initi
   const [loadingRoundId, setLoadingRoundId] = useState<string | null>(null)
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
   const [historyDate, setHistoryDate] = useState(selectedDate)
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
 
   // Sync local state when server data updates via router.refresh()
   useEffect(() => {

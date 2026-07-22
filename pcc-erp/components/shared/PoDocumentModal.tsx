@@ -5,6 +5,8 @@ import { getProductionOrderPrintData } from '@/app/actions/planner'
 import ProductionOrderPrintClient from '@/app/(admin)/production-order/[planId]/ProductionOrderPrintClient'
 import toast from 'react-hot-toast'
 
+type ProductionOrderPrintData = Awaited<ReturnType<typeof getProductionOrderPrintData>>
+
 interface PoDocumentModalProps {
   isOpen: boolean
   onClose: () => void
@@ -16,7 +18,7 @@ export default function PoDocumentModal({
   onClose,
   planId
 }: PoDocumentModalProps) {
-  const [printData, setPrintData] = useState<any | null>(null)
+  const [printData, setPrintData] = useState<ProductionOrderPrintData | null>(null)
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
@@ -31,20 +33,28 @@ export default function PoDocumentModal({
   }, [isOpen])
 
   useEffect(() => {
-    if (!isOpen || !planId) {
-      setPrintData(null)
-      return
-    }
+    if (!isOpen || !planId) return
 
+    let isCancelled = false
     startTransition(async () => {
+      setPrintData(null)
       try {
         const data = await getProductionOrderPrintData(planId)
-        setPrintData(data)
-      } catch (err: any) {
-        toast.error('ไม่สามารถโหลดข้อมูลเอกสารได้: ' + err.message)
-        onClose()
+        if (!isCancelled) {
+          setPrintData(data)
+        }
+      } catch (err: unknown) {
+        if (!isCancelled) {
+          const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ'
+          toast.error('ไม่สามารถโหลดข้อมูลเอกสารได้: ' + message)
+          onClose()
+        }
       }
     })
+
+    return () => {
+      isCancelled = true
+    }
   }, [isOpen, planId, onClose])
 
   if (!isOpen) return null

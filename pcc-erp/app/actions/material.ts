@@ -181,6 +181,7 @@ export async function getPendingRequisitions() {
     `)
     .in('plan.status', ['confirmed', 'completed'])
     .order('created_at', { ascending: false })
+    .limit(300)
 
   if (error) throw new Error(error.message)
   return data
@@ -246,7 +247,7 @@ export async function getMaterialSummary(params?: {
     query = query.lte('plan.plan_date' as any, params.dateTo)
   }
 
-  const { data, error } = await query
+  const { data, error } = await query.limit(1000)
   if (error) throw new Error(error.message)
 
   // ถ้ากรองหมวดหมู่ ทำ filter ฝั่ง JS เพราะ nested filter บน Supabase ทำยาก

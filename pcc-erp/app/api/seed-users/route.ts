@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function GET() {
+  if (process.env.NODE_ENV !== 'development') {
+    return NextResponse.json({ error: 'Forbidden: Seed route is disabled in production' }, { status: 403 })
+  }
+
   const supabase = createAdminClient()
   
   const testUsers = [
@@ -10,7 +14,7 @@ export async function GET() {
     { email: 'worker@pcc.com', password: 'password123', full_name: 'สมชาย (Worker)', role: 'worker' }
   ]
 
-  let results = []
+  const results = []
 
   for (const u of testUsers) {
     const { data, error } = await supabase.auth.admin.createUser({

@@ -6,8 +6,8 @@ import type { UserRole } from './supabase/types'
 // path prefix: ตรวจสอบว่า pathname เริ่มต้นด้วย prefix นั้นหรือไม่
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   admin:     ['*'],
-  planner:   ['/dashboard', '/planner', '/production-order', '/job-orders', '/products', '/data-catalog'],
-  material:  ['/dashboard', '/material'],
+  planner:   ['/dashboard', '/planner', '/production-order', '/job-orders', '/demolding', '/qc', '/products', '/data-catalog'],
+  material:  ['/dashboard', '/material', '/inventory/raw'],
   concrete:  ['/dashboard', '/concrete'],
   warehouse: ['/dashboard', '/inventory', '/warehouse'],
   qc:        [],  // QC ใช้ /(mobile)/qc — ไม่มีสิทธิ์ใน admin routes

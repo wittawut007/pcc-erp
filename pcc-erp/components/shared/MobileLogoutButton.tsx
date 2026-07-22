@@ -11,7 +11,7 @@ export default function MobileLogoutButton() {
       await supabase.auth.signOut()
       // Hard redirect — avoids Next.js router "Failed to fetch" race after signOut
       window.location.href = '/login'
-    } catch (e: any) {
+    } catch (_e: unknown) {
       toast.error('เกิดข้อผิดพลาดในการออกจากระบบ')
     }
   }

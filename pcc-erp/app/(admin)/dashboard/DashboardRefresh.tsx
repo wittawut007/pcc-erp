@@ -6,39 +6,31 @@ import { useEffect, useTransition, useState } from 'react'
 export default function DashboardRefresh() {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [lastUpdated, setLastUpdated] = useState<string>('')
+  const [lastUpdated, setLastUpdated] = useState<string>(() =>
+    new Date().toLocaleTimeString('th-TH', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+  )
 
   useEffect(() => {
-    // กำหนดเวลาอัปเดตเริ่มต้นเมื่อ component mount
-    setLastUpdated(
-      new Date().toLocaleTimeString('th-TH', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-    )
-
     // สั่งรีเฟรชข้อมูลทุก 15 วินาที
     const interval = setInterval(() => {
       startTransition(() => {
         router.refresh()
+        setLastUpdated(
+          new Date().toLocaleTimeString('th-TH', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          })
+        )
       })
     }, 15000)
 
     return () => clearInterval(interval)
   }, [router])
-
-  useEffect(() => {
-    if (!isPending) {
-      setLastUpdated(
-        new Date().toLocaleTimeString('th-TH', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })
-      )
-    }
-  }, [isPending])
 
   return (
     <div

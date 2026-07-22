@@ -18,28 +18,27 @@ export default function LoginPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  const [username, setUsername] = useState('')
+  const [username, setUsername] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(REMEMBER_ME_KEY) || ''
+    }
+    return ''
+  })
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showPass, setShowPass] = useState(false)
-  const [rememberMe, setRememberMe] = useState(false)
-  const [workerBlocked, setWorkerBlocked] = useState(false)
-
-  // โหลด username ที่บันทึกไว้เมื่อเปิดหน้า
-  useEffect(() => {
-    const savedUsername = localStorage.getItem(REMEMBER_ME_KEY)
-    if (savedUsername) {
-      setUsername(savedUsername)
-      setRememberMe(true)
+  const [rememberMe, setRememberMe] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return !!localStorage.getItem(REMEMBER_ME_KEY)
     }
-  }, [])
+    return false
+  })
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
-    setWorkerBlocked(false)
 
     // บันทึก/ลบ username ตามสถานะ Remember Me
     if (rememberMe) {

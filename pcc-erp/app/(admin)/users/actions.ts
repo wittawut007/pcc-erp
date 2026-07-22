@@ -1,6 +1,31 @@
 'use server'
 
+import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import type { UserRole, AuthUpdatePayload, ProfileUpdatePayload } from '@/lib/types'
+
+/**
+ * Helper: ตรวจสอบ Session การเข้าสู่ระบบและสิทธิ์การใช้งานระดับ Admin
+ */
+async function assertAdminUser() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    throw new Error('ไม่ได้เข้าสู่ระบบ (Unauthorized)')
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, is_active')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile || !profile.is_active || profile.role !== 'admin') {
+    throw new Error('ไม่มีสิทธิ์ใช้งานการดำเนินการนี้ (Forbidden: Admin role required)')
+  }
+
+  return user
+}
 
 export async function createUserAction(formData: FormData) {
   const email = formData.get('email') as string
@@ -11,6 +36,7 @@ export async function createUserAction(formData: FormData) {
   const avatarUrl = formData.get('avatarUrl') as string | null
 
   try {
+    await assertAdminUser()
     const supabaseAdmin = createAdminClient()
 
     // 1. Create User in Supabase Auth
@@ -44,11 +70,11 @@ export async function createUserAction(formData: FormData) {
     }
 
     return { success: true, user: authData.user }
-  } catch (error: any) {
-    return { success: false, error: error.message }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ'
+    return { success: false, error: message }
   }
 }
-
 
 export async function updateUserAction(formData: FormData) {
   const userId = formData.get('userId') as string
@@ -60,24 +86,25 @@ export async function updateUserAction(formData: FormData) {
   const avatarUrl = formData.get('avatarUrl') as string | null
 
   try {
+    await assertAdminUser()
     const supabaseAdmin = createAdminClient()
 
     // Update Auth Data (Email / Password / Ban state)
-    const updatePayload: any = {
-      user_metadata: { full_name: fullName, role, employee_code: employeeCode },
-      ban_duration: isActive ? 'none' : '876000h' // Ban for 100 years if inactive
+    const updatePayload: AuthUpdatePayload = {
+      user_metadata: { full_name: fullName, role: role as UserRole, employee_code: employeeCode },
+      ban_duration: isActive ? 'none' : '876000h', // Ban for 100 years if inactive
     }
-    if (password) updatePayload.password = password
+    if (password) (updatePayload as AuthUpdatePayload & { password?: string }).password = password
 
     const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, updatePayload)
     if (authError) throw authError
 
     // Update Profile
-    const profileData: any = {
+    const profileData: ProfileUpdatePayload = {
       full_name: fullName,
-      role: role,
+      role: role as UserRole,
       employee_code: employeeCode,
-      is_active: isActive
+      is_active: isActive,
     }
     if (avatarUrl !== null) profileData.avatar_url = avatarUrl
 
@@ -86,8 +113,9 @@ export async function updateUserAction(formData: FormData) {
     if (profileError) throw profileError
 
     return { success: true }
-  } catch (error: any) {
-    return { success: false, error: error.message }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ'
+    return { success: false, error: message }
   }
 }
 
@@ -95,6 +123,7 @@ export async function generateWorkerTokenAction(formData: FormData) {
   const userId = formData.get('userId') as string
 
   try {
+    await assertAdminUser()
     const supabaseAdmin = createAdminClient()
 
     // สร้าง UUID ใหม่สำหรับ worker_token
@@ -109,18 +138,21 @@ export async function generateWorkerTokenAction(formData: FormData) {
     if (error) throw error
 
     return { success: true, token: newToken }
-  } catch (error: any) {
-    return { success: false, error: error.message }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ'
+    return { success: false, error: message }
   }
 }
 
 export async function deleteUserAction(userId: string) {
   try {
+    await assertAdminUser()
     const supabaseAdmin = createAdminClient()
     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId)
     if (authError) throw authError
     return { success: true }
-  } catch (error: any) {
-    return { success: false, error: error.message }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ'
+    return { success: false, error: message }
   }
 }

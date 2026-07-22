@@ -2,9 +2,6 @@
 
 import React, { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import QRCode from 'qrcode'
-import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
 
 interface PlanItem {
   id?: string
@@ -80,9 +77,12 @@ export default function ProductionOrderPrintClient({
     const loginUrl = `${baseUrl.replace(/\/$/, '')}/login`
     setQrUrl(loginUrl)
 
-    QRCode.toDataURL(loginUrl, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
-      .then((url) => setQrCodeDataUrl(url))
-      .catch(console.error)
+    import('qrcode').then((QRCodeModule) => {
+      const QRCode = QRCodeModule.default
+      QRCode.toDataURL(loginUrl, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
+        .then((url) => setQrCodeDataUrl(url))
+        .catch(console.error)
+    })
   }, [])
 
   const handleDownloadPDF = async () => {
@@ -90,7 +90,7 @@ export default function ProductionOrderPrintClient({
     if (!element) return
     setIsExporting('pdf')
     try {
-      // Disable scroll momentarily or pass scroll size to html2canvas to avoid truncating
+      const html2canvas = (await import('html2canvas')).default
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
@@ -131,6 +131,7 @@ export default function ProductionOrderPrintClient({
     if (!element) return
     setIsExporting('png')
     try {
+      const html2canvas = (await import('html2canvas')).default
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,

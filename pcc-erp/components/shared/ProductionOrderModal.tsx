@@ -1,9 +1,6 @@
 'use client'
 
 import React, { useEffect, useState, useRef } from 'react'
-import QRCode from 'qrcode'
-import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
 
 interface PlanItem {
   id?: string
@@ -48,13 +45,15 @@ export default function ProductionOrderModal({
 
   useEffect(() => {
     if (isOpen && qrUrl) {
-      QRCode.toDataURL(qrUrl, { margin: 1, width: 160 })
-        .then(url => {
-          setQrCodeDataUrl(url)
-        })
-        .catch(err => {
-          console.error(err)
-        })
+      import('qrcode').then((QRCode) => {
+        QRCode.default.toDataURL(qrUrl, { margin: 1, width: 160 })
+          .then(url => {
+            setQrCodeDataUrl(url)
+          })
+          .catch(err => {
+            console.error(err)
+          })
+      })
     }
   }, [isOpen, qrUrl])
 
@@ -64,6 +63,8 @@ export default function ProductionOrderModal({
     const element = printRef.current
     if (!element) return
 
+    const html2canvas = (await import('html2canvas')).default
+    const { jsPDF } = await import('jspdf')
     const canvas = await html2canvas(element, { scale: 2 })
     const imgData = canvas.toDataURL('image/png')
     const pdf = new jsPDF('p', 'mm', 'a4')
@@ -78,6 +79,7 @@ export default function ProductionOrderModal({
     const element = printRef.current
     if (!element) return
 
+    const html2canvas = (await import('html2canvas')).default
     const canvas = await html2canvas(element, { scale: 2 })
     const url = canvas.toDataURL('image/png')
     const link = document.createElement('a')

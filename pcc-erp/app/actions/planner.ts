@@ -1,12 +1,28 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { logError } from '@/lib/logger'
 
 export async function clearOldPlanData(planId: string) {
-  const { createClient: createServiceClient } = await import('@supabase/supabase-js')
-  const supabase = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  const supabaseClient = await createClient()
+  const { data: { user } } = await supabaseClient.auth.getUser()
+  if (!user) {
+    throw new Error('ไม่ได้เข้าสู่ระบบ (Unauthorized)')
+  }
+
+  const { data: profile } = await supabaseClient
+    .from('profiles')
+    .select('role, is_active')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile || !profile.is_active || (profile.role !== 'admin' && profile.role !== 'planner')) {
+    throw new Error('ไม่มีสิทธิ์ในการจัดการข้อมูลแผนการผลิต (Forbidden: Admin or Planner role required)')
+  }
+
+  const supabase = createAdminClient()
   
   // Safe deletion: delete job_orders first to avoid FK violations
   const { data: oldItems } = await supabase.from('production_plan_items').select('id').eq('plan_id', planId)

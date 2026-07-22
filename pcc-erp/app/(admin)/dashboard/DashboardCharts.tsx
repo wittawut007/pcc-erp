@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import type { Chart as ChartType } from 'chart.js'
+import type { ChartDataset } from '@/lib/types'
 
 interface DashboardChartsProps {
   dailyData?: {
@@ -10,7 +12,7 @@ interface DashboardChartsProps {
   }
   weeklyData?: {
     labels: string[]
-    datasets: any[]
+    datasets: ChartDataset[]
   }
   bedData?: {
     labels: string[]       // Bed names e.g. ['Bed 1','Bed 2',...]
@@ -20,7 +22,7 @@ interface DashboardChartsProps {
   }
   defectTrendData?: {
     labels: string[]
-    datasets: any[]
+    datasets: ChartDataset[]
   }
   renderGroup?: 'analytics' | 'quality'
 }
@@ -44,21 +46,22 @@ export default function DashboardCharts({ dailyData, weeklyData, bedData, defect
 
         const datalabelsPlugin = {
           id: 'datalabels',
-          afterDatasetsDraw(chart: any) {
+          afterDatasetsDraw(chart: ChartType) {
             const { ctx } = chart
             ctx.save()
             ctx.font = "bold 11px 'IBM Plex Sans Thai', sans-serif"
             ctx.textAlign = 'center'
             ctx.textBaseline = 'bottom'
 
-            chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
+            chart.data.datasets.forEach((dataset, datasetIndex: number) => {
               if (!chart.isDatasetVisible(datasetIndex)) return
               const meta = chart.getDatasetMeta(datasetIndex)
-              meta.data.forEach((bar: any, index: number) => {
+              meta.data.forEach((bar, index: number) => {
                 const value = dataset.data[index]
-                if (value !== undefined && value !== null && value > 0) {
+                const numValue = typeof value === 'number' ? value : null
+                if (numValue !== undefined && numValue !== null && numValue > 0) {
                   ctx.fillStyle = '#334155'
-                  ctx.fillText(value.toLocaleString(), bar.x, bar.y - 4)
+                  ctx.fillText(numValue.toLocaleString(), bar.x, bar.y - 4)
                 }
               })
             })

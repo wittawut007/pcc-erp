@@ -1,7 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import Header from '@/components/layout/Header'
-import DashboardCharts from './DashboardCharts'
+import nextDynamic from 'next/dynamic'
+const DashboardCharts = nextDynamic(() => import('./DashboardCharts'))
 import Link from 'next/link'
 import DashboardRefresh from './DashboardRefresh'
 

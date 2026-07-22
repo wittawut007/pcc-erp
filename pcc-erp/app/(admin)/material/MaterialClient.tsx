@@ -454,7 +454,7 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
             time={new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
             userFullName={userFullName || 'เจ้าหน้าที่เบิกจ่าย'}
             totalConcrete={activePlanGroup.plan.total_concrete ?? 0}
-            planItems={activePlanItems}
+            planItems={activePlanItems as any}
           />
         )
       })()}

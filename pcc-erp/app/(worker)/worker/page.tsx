@@ -33,7 +33,6 @@ export default async function WorkerPage() {
     }))
   })
   
-  console.log('SERVER SIDE planMaterialsMap:', JSON.stringify(planMaterialsMap, null, 2))
 
   const { data: planItems } = await supabase
     .from('production_plan_items')
