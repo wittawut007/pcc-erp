@@ -7,10 +7,10 @@ import type { SystemStats } from '@/app/actions/settings'
 const GeneralTab = dynamic(() => import('./tabs/GeneralTab'))
 const UserManagementTab = dynamic(() => import('./tabs/UserManagementTab'))
 const MasterDataTab = dynamic(() => import('./tabs/MasterDataTab'))
-const DataManagementTab = dynamic(() => import('./tabs/DataManagementTab'))
 const MonitoringTab = dynamic(() => import('./tabs/MonitoringTab'))
 const SupabaseTab = dynamic(() => import('./tabs/SupabaseTab'))
 const PlanDeleteTab = dynamic(() => import('./tabs/PlanDeleteTab'))
+const BackupTab = dynamic(() => import('./tabs/BackupTab'))
 
 interface Tab {
   id: string
@@ -24,9 +24,9 @@ const tabs: Tab[] = [
   { id: 'general', label: 'ทั่วไป', icon: 'fa-cog' },
   { id: 'users', label: 'จัดการผู้ใช้', icon: 'fa-users-cog' },
   { id: 'master', label: 'ข้อมูลหลัก', icon: 'fa-database' },
+  { id: 'backup', label: 'Backup', icon: 'fa-shield-alt' },
   { id: 'supabase', label: 'Supabase', icon: 'fa-bolt' },
   { id: 'plan-delete', label: 'ลบแผนการผลิต', icon: 'fa-trash-alt', badge: '⚠️', badgeColor: '#DC2626' },
-  { id: 'data', label: 'ข้อมูล & รีเซ็ต', icon: 'fa-redo-alt', badge: '⚠️', badgeColor: '#DC2626' },
   { id: 'monitoring', label: 'Monitoring', icon: 'fa-chart-bar' },
 ]
 
@@ -161,9 +161,9 @@ export default function SettingsClient({ stats, statsError }: SettingsClientProp
                   {tab.id === 'general' && 'ข้อมูลทั่วไปและสถานะระบบ'}
                   {tab.id === 'users' && 'จัดการบัญชีผู้ใช้และสิทธิ์การเข้าถึง'}
                   {tab.id === 'master' && 'จัดการข้อมูลหลัก: สินค้า, วัตถุดิบ, BOM'}
+                  {tab.id === 'backup' && 'Automatic backup ฐานข้อมูลทุกวัน — ดูประวัติและ Download'}
                   {tab.id === 'supabase' && 'รายละเอียดการใช้งานทรัพยากร Supabase'}
                   {tab.id === 'plan-delete' && '⚠️ ค้นหาและลบข้อมูลแผนการผลิตรวมถึงประวัติทั้งหมดโดยใช้ PO Code'}
-                  {tab.id === 'data' && '⚠️ ระวัง — การกระทำต่อไปนี้ไม่สามารถกู้คืนได้'}
                   {tab.id === 'monitoring' && 'ตรวจสอบสถานะระบบและสถิติข้อมูล'}
                 </div>
               </div>
@@ -178,9 +178,9 @@ export default function SettingsClient({ stats, statsError }: SettingsClientProp
         {activeTab === 'general' && <GeneralTab stats={stats} />}
         {activeTab === 'users' && <UserManagementTab stats={stats} />}
         {activeTab === 'master' && <MasterDataTab stats={stats} />}
+        {activeTab === 'backup' && <BackupTab />}
         {activeTab === 'supabase' && <SupabaseTab />}
         {activeTab === 'plan-delete' && <PlanDeleteTab />}
-        {activeTab === 'data' && <DataManagementTab />}
         {activeTab === 'monitoring' && <MonitoringTab stats={stats} statsError={statsError} />}
       </div>
     </div>
