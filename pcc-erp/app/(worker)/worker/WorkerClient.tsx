@@ -23,6 +23,8 @@ interface Job {
   counterfort_cured_at?: string | null
   stem_cast_at?: string | null
   stem_cured_at?: string | null
+  photo_ready_url?: string | null
+  photo_cast_url?: string | null
   photo_counterfort_url?: string | null
   photo_stem_url?: string | null
   production_order?: {
@@ -357,6 +359,14 @@ export default function WorkerClient({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
+      // บังคับถ่ายรูปเตรียมงานก่อนสั่งคอนกรีตทุกครั้ง
+      for (const job of jobsToOrder) {
+        const photo = jobItemPhotos[job.id]
+        if (!photo && !job.photo_ready_url) {
+          throw new Error('กรุณาถ่ายภาพเตรียมงานก่อนสั่งคอนกรีต')
+        }
+      }
+
       const groups: Record<string, Job[]> = {}
       jobsToOrder.forEach(job => {
         if (!groups[job.bed]) groups[job.bed] = []
@@ -374,8 +384,12 @@ export default function WorkerClient({
 
         for (const job of bedJobs) {
           const photo = jobItemPhotos[job.id]
-          const photoUrl = photo ? await uploadPhoto(photo.file, 'preparation') : null
+          const photoUrl = photo ? await uploadPhoto(photo.file, 'preparation') : (job.photo_ready_url || null)
           
+          if (!photoUrl) {
+            throw new Error('กรุณาถ่ายภาพเตรียมงานก่อนสั่งคอนกรีต')
+          }
+
           let concretePerUnit = job.plan_item?.product?.concrete_per_unit || 0
           let newStatus = 'concrete_ordered'
           
@@ -426,6 +440,14 @@ export default function WorkerClient({
               status: 'pending',
             }))
             await supabase.from('concrete_rounds').insert(rounds)
+
+            await supabase.from('activity_logs').insert({
+              user_id: user.id,
+              action_type: 'สั่งคอนกรีต (Worker)',
+              entity_type: 'concrete_order',
+              entity_id: order.id,
+              detail: `ส่งคำสั่งคอนกรีตโรงผลิต ${bed} จำนวน ${totalConcreteQty.toFixed(2)} Q (${bedRounds} รอบ) (เฟส: ${orderPhase === 'counterfort' ? 'CF' : orderPhase === 'stem' ? 'STEM' : 'ปกติ'})`,
+            })
           }
         }
       }
@@ -480,8 +502,9 @@ export default function WorkerClient({
     setReceivingId(roundId)
     try {
       await receiveConcreteRound(roundId)
-      toast.success('รับคอนกรีตสำเร็จ')
+      toast.success('รับคอนกรีตเรียบร้อย!')
       await fetchActiveConcreteOrders()
+      router.refresh()
     } catch (e: any) {
       toast.error(e.message)
     } finally {
@@ -529,10 +552,20 @@ export default function WorkerClient({
       const { data: { user } } = await supabase.auth.getUser()
       const bedJobs = jobsByBed[confirmingBedIndex].jobs
       const bed = jobsByBed[confirmingBedIndex].bed
+
+      for (const job of bedJobs) {
+        const photo = photos[`phase1-${job.id}`]
+        if (!photo && !job.photo_ready_url) {
+          throw new Error('กรุณาถ่ายภาพเตรียมงานก่อนสั่งคอนกรีต')
+        }
+      }
       
       let totalCalculatedQty = 0
       for (const job of bedJobs) {
-        const p1PhotoUrl = photos[`phase1-${job.id}`] ? await uploadPhoto(photos[`phase1-${job.id}`].file, 'preparation') : null
+        const p1PhotoUrl = photos[`phase1-${job.id}`] ? await uploadPhoto(photos[`phase1-${job.id}`].file, 'preparation') : (job.photo_ready_url || null)
+        if (!p1PhotoUrl) {
+          throw new Error('กรุณาถ่ายภาพเตรียมงานก่อนสั่งคอนกรีต')
+        }
         const jobConcreteQty = (job.plan_item?.product?.concrete_per_unit || 0) * job.qty_target
         totalCalculatedQty += jobConcreteQty
         await supabase.from('job_orders').update({
@@ -594,6 +627,16 @@ export default function WorkerClient({
             status: 'pending',
           }))
           await supabase.from('concrete_rounds').insert(rounds)
+
+          if (user?.id) {
+            await supabase.from('activity_logs').insert({
+              user_id: user.id,
+              action_type: 'สั่งคอนกรีต (Worker)',
+              entity_type: 'concrete_order',
+              entity_id: order.id,
+              detail: `ส่งคำสั่งคอนกรีตโรงผลิต ${bed} จำนวน ${finalQty.toFixed(2)} Q (${bedRounds} รอบ)${notes ? ' | ' + notes : ''}`,
+            })
+          }
         }
       }
 

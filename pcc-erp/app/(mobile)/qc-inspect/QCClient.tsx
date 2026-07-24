@@ -117,6 +117,11 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
 
   const handleStartCuring = async (jobId: string) => {
     const job = jobs.find(j => j.id === jobId)
+    if (!job?.photo_ready_url) {
+      toast.error('ไม่สามารถดำเนินการได้ เนื่องจากยังไม่มีการอัปโหลดรูปถ่ายเตรียมการก่อนสั่งคอนกรีต')
+      return
+    }
+
     const isTwoPhase = job?.plan_item?.product?.is_two_phase ?? false
     let phase: 'main' | 'counterfort' | 'stem' = 'main'
     if (isTwoPhase) {

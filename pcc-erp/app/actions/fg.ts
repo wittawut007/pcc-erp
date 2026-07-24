@@ -7,7 +7,14 @@ import type { FgPrintData, FgPrintItem, PrintBomItem, PrintPlanMaterial, Materia
 
 export async function saveErpReference(orderId: string, erpReference: string) {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   
+  const { data: order } = await supabase
+    .from('production_orders')
+    .select('order_number')
+    .eq('id', orderId)
+    .single()
+
   const { error } = await supabase
     .from('production_orders')
     .update({ 
@@ -18,7 +25,18 @@ export async function saveErpReference(orderId: string, erpReference: string) {
 
   if (error) throw new Error(error.message)
 
+  if (user) {
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: 'ยืนยัน ERP (Warehouse)',
+      entity_type: 'production_order',
+      entity_id: orderId,
+      detail: `อัปเดตหมายเลขอ้างอิง ERP (${erpReference}) สำหรับใบสั่งผลิต: ${order?.order_number ?? orderId} และยืนยันเข้าระบบสำเร็จ`,
+    })
+  }
+
   revalidatePath('/inventory/fg')
+  revalidatePath('/dashboard')
   return { success: true }
 }
 
@@ -28,9 +46,29 @@ export interface ManualFgItem {
   bed: string
 }
 
+export interface ManualFgMaterialDeduction {
+  rawMaterialId: string
+  qtyToDeduct: number
+}
+
+export async function getManualFgFormData() {
+  const supabase = await createClient()
+
+  const [rawMaterialsRes, bomItemsRes] = await Promise.all([
+    supabase.from('raw_materials').select('id, name, category, unit, qty_on_hand, weight_per_meter, material_code').order('name'),
+    supabase.from('product_bom_items').select('product_id, raw_material_id, qty_per_unit')
+  ])
+
+  return {
+    rawMaterials: rawMaterialsRes.data || [],
+    bomItems: bomItemsRes.data || []
+  }
+}
+
 export async function createManualFgOrder(
   items: ManualFgItem[],
-  notes?: string
+  notes?: string,
+  materialDeductions?: ManualFgMaterialDeduction[]
 ) {
   if (!items || items.length === 0) throw new Error('กรุณาระบุรายการสินค้า')
 
@@ -161,6 +199,53 @@ export async function createManualFgOrder(
     }
   }
 
+  // 6.5 Deduct materials from raw_materials and record plan_materials if provided
+  if (materialDeductions && materialDeductions.length > 0) {
+    for (const mat of materialDeductions) {
+      if (!mat.rawMaterialId || mat.qtyToDeduct <= 0) continue
+
+      // Save to plan_materials
+      const { error: pmErr } = await supabase
+        .from('plan_materials')
+        .insert({
+          plan_id: plan.id,
+          raw_material_id: mat.rawMaterialId,
+          qty_required: mat.qtyToDeduct,
+          qty_dispensed: mat.qtyToDeduct,
+          status: 'dispensed',
+          dispensed_by: user.id,
+          dispensed_at: now,
+        })
+      if (pmErr) throw new Error('บันทึก plan_materials ล้มเหลว: ' + pmErr.message)
+
+      // Fetch current raw_materials stock
+      const { data: rawMat } = await supabase
+        .from('raw_materials')
+        .select('id, qty_on_hand, name')
+        .eq('id', mat.rawMaterialId)
+        .single()
+
+      if (rawMat) {
+        const newStock = Math.max(0, (rawMat.qty_on_hand || 0) - mat.qtyToDeduct)
+        const { error: rmErr } = await supabase
+          .from('raw_materials')
+          .update({ qty_on_hand: newStock })
+          .eq('id', mat.rawMaterialId)
+
+        if (rmErr) throw new Error('หักสต็อกวัตถุดิบล้มเหลว: ' + rmErr.message)
+
+        // Log material deduction action
+        await supabase.from('activity_logs').insert({
+          user_id: user.id,
+          action_type: 'หักสต็อกวัตถุดิบ (ปรับเพิ่ม FG นอกแผน)',
+          entity_type: 'raw_material',
+          entity_id: mat.rawMaterialId,
+          detail: `หักสต็อก ${rawMat.name}: ${mat.qtyToDeduct} หน่วย (อ้างอิงใบสั่งสินค้า: ${orderNumber})`,
+        })
+      }
+    }
+  }
+
   // 7. Activity Log
   const detailsList = items.map(item => `Product ID: ${item.productId}, Qty: ${item.qty}, Bed: ${item.bed}`).join(' | ')
   await supabase.from('activity_logs').insert({
@@ -172,6 +257,7 @@ export async function createManualFgOrder(
   })
 
   revalidatePath('/inventory/fg')
+  revalidatePath('/inventory/raw')
   revalidatePath('/dashboard')
 
   // Fetch full details of the newly created order to return to client

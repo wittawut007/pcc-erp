@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { saveErpReference, createManualFgOrder } from '@/app/actions/fg'
+import { saveErpReference, createManualFgOrder, getManualFgFormData } from '@/app/actions/fg'
 import FgDocumentModal from '@/components/shared/FgDocumentModal'
 
 interface ProductionOrder {
@@ -22,6 +22,38 @@ interface Product {
   category: string
   size: string
   unit: string
+  wire_per_unit?: number
+  mesh_per_unit?: number
+  rebar_per_unit?: number
+  concrete_per_unit?: number
+  length?: number
+  bom_code?: string
+}
+
+interface RawMaterial {
+  id: string
+  name: string
+  category: string
+  unit: string
+  qty_on_hand: number
+  weight_per_meter: number | null
+  material_code: string | null
+}
+
+interface ProductBomItem {
+  product_id: string
+  raw_material_id: string
+  qty_per_unit: number
+}
+
+interface MaterialDeductionItem {
+  rawMaterialId: string
+  name: string
+  code: string
+  unit: string
+  currentStock: number
+  calculatedQty: number
+  deductQty: number
 }
 
 const CATEGORIES = [
@@ -68,6 +100,91 @@ export default function FgInventoryClient({
     bed: string
     qty: number
   }[]>([])
+
+  // Raw materials and BOM state
+  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([])
+  const [bomItems, setBomItems] = useState<ProductBomItem[]>([])
+  const [materialDeductions, setMaterialDeductions] = useState<MaterialDeductionItem[]>([])
+
+  // Fetch Raw materials & BOM items on load
+  useEffect(() => {
+    getManualFgFormData().then(data => {
+      setRawMaterials(data.rawMaterials)
+      setBomItems(data.bomItems)
+    }).catch(err => {
+      console.error('Failed to load raw materials / BOM for manual FG', err)
+    })
+  }, [])
+
+  // Calculate raw material deductions automatically whenever addedItems changes
+  useEffect(() => {
+    if (addedItems.length === 0) {
+      setMaterialDeductions([])
+      return
+    }
+
+    const materialReqs: Record<string, number> = {}
+
+    const fallbackWire = rawMaterials.find(r => r.category === 'ลวด' || r.name.toLowerCase().includes('ลวด') || r.name.toLowerCase().includes('pc wire'))
+    const fallbackMesh = rawMaterials.find(r => r.category === 'เมช' || r.name.includes('เมช') || r.category === 'Mesh')
+    const fallbackRebar = rawMaterials.find(r => r.category === 'เหล็กเส้น' || r.name.includes('เหล็กเส้น'))
+
+    addedItems.forEach(item => {
+      const product = products.find(p => p.id === item.productId)
+      if (!product) return
+
+      const boms = bomItems.filter(b => b.product_id === item.productId)
+      if (boms.length > 0) {
+        boms.forEach(bom => {
+          const rmId = bom.raw_material_id
+          const needed = (Number(bom.qty_per_unit) || 0) * item.qty
+          if (needed > 0 && rmId) {
+            materialReqs[rmId] = (materialReqs[rmId] || 0) + needed
+          }
+        })
+      } else {
+        const wireNeeded = (product.wire_per_unit || product.length || 0) * item.qty
+        if (wireNeeded > 0) {
+          const specificWire = rawMaterials.find(r => r.name === product.bom_code)
+          const wireId = specificWire?.id || fallbackWire?.id
+          if (wireId) materialReqs[wireId] = (materialReqs[wireId] || 0) + wireNeeded
+        }
+
+        const meshNeeded = (product.mesh_per_unit || 0) * item.qty
+        if (meshNeeded > 0) {
+          const specificMesh = rawMaterials.find(r => r.name === product.bom_code)
+          const meshId = specificMesh?.id || fallbackMesh?.id
+          if (meshId) materialReqs[meshId] = (materialReqs[meshId] || 0) + meshNeeded
+        }
+
+        const rebarNeeded = (product.rebar_per_unit || 0) * item.qty
+        if (rebarNeeded > 0) {
+          const specificRebar = rawMaterials.find(r => r.name === product.bom_code)
+          const rebarId = specificRebar?.id || fallbackRebar?.id
+          if (rebarId) materialReqs[rebarId] = (materialReqs[rebarId] || 0) + rebarNeeded
+        }
+      }
+    })
+
+    setMaterialDeductions(prev => {
+      const prevMap = new Map(prev.map(p => [p.rawMaterialId, p.deductQty]))
+      
+      return Object.entries(materialReqs).map(([rmId, calculatedQty]) => {
+        const rm = rawMaterials.find(r => r.id === rmId)
+        const userOverriddenDeduct = prevMap.get(rmId)
+        const calcVal = Number(calculatedQty.toFixed(2))
+        return {
+          rawMaterialId: rmId,
+          name: rm?.name || 'ไม่ระบุชื่อวัตถุดิบ',
+          code: rm?.material_code || '-',
+          unit: rm?.unit || 'หน่วย',
+          currentStock: rm?.qty_on_hand ?? 0,
+          calculatedQty: calcVal,
+          deductQty: userOverriddenDeduct !== undefined ? userOverriddenDeduct : calcVal
+        }
+      })
+    })
+  }, [addedItems, bomItems, rawMaterials, products])
 
   // Cascades
   const cats = CATEGORIES
@@ -163,11 +280,16 @@ export default function FgInventoryClient({
         bed: item.bed
       }))
 
-      const newOrder = await createManualFgOrder(payloadItems, notes)
+      const deductionsPayload = materialDeductions.map(m => ({
+        rawMaterialId: m.rawMaterialId,
+        qtyToDeduct: m.deductQty
+      }))
+
+      const newOrder = await createManualFgOrder(payloadItems, notes, deductionsPayload)
       if (!newOrder) {
         throw new Error('ไม่สามารถดึงข้อมูลใบสั่งผลิตที่สร้างขึ้นใหม่ได้')
       }
-      toast.success(`เพิ่มสินค้าสำเร็จ! เลขที่ใบสั่งสินค้า: ${newOrder.order_number}`)
+      toast.success(`เพิ่มสินค้าและหักสต็อกสำเร็จ! เลขที่ใบสั่งสินค้า: ${newOrder.order_number}`)
       
       // Update local state
       setOrders(prev => [newOrder as ProductionOrder, ...prev])
@@ -180,6 +302,7 @@ export default function FgInventoryClient({
       setQty(1)
       setNotes('')
       setAddedItems([])
+      setMaterialDeductions([])
       setShowAddModal(false)
     } catch (e: any) {
       toast.error('เกิดข้อผิดพลาด: ' + e.message)
@@ -668,7 +791,7 @@ export default function FgInventoryClient({
                     ยังไม่มีรายการสินค้า — กรุณาเลือกรายละเอียดสินค้าด้านบนแล้วกด "เพิ่มรายการ"
                   </div>
                 ) : (
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', maxHeight: 200, overflowY: 'auto' }}>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', maxHeight: 180, overflowY: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                       <thead style={{ background: 'var(--bg)' }}>
                         <tr>
@@ -706,6 +829,88 @@ export default function FgInventoryClient({
                 )}
               </div>
 
+              {/* Raw Material Deduction Table */}
+              {addedItems.length > 0 && (
+                <div style={{ marginTop: 4, padding: '14px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12 }}>
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, color: '#1E293B', margin: 0 }}>
+                      <i className="fas fa-cubes-stacked" style={{ color: 'var(--accent)' }}></i>
+                      รายการวัตถุดิบที่จะตัดออกจากระบบ ({materialDeductions.length} รายการ)
+                    </label>
+                    <p style={{ fontSize: 11, color: '#64748B', margin: '2px 0 0' }}>
+                      คำนวณตามสูตร BOM โดยอัตโนมัติ คุณสามารถแก้ไขจำนวนที่จะตัดสต็อกจริงได้ที่ช่องป้อนข้อมูลด้านขวา
+                    </p>
+                  </div>
+
+                  {materialDeductions.length === 0 ? (
+                    <div style={{ padding: '12px', background: '#FFFFFF', border: '1px dashed #CBD5E1', borderRadius: 8, textAlign: 'center', fontSize: 12, color: '#64748B' }}>
+                      สินค้ารายการนี้ยังไม่มีสูตรวัตถุดิบ (BOM) บันทึกในระบบ
+                    </div>
+                  ) : (
+                    <div style={{ border: '1px solid #E2E8F0', borderRadius: 8, overflow: 'hidden', background: '#FFFFFF', maxHeight: 180, overflowY: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead style={{ background: '#F1F5F9' }}>
+                          <tr>
+                            <th style={{ padding: '8px 12px', textAlign: 'left', color: '#475569', borderBottom: '1px solid #E2E8F0' }}>วัตถุดิบ</th>
+                            <th style={{ padding: '8px 12px', textAlign: 'center', color: '#475569', borderBottom: '1px solid #E2E8F0' }}>สต็อกคงเหลือ</th>
+                            <th style={{ padding: '8px 12px', textAlign: 'center', color: '#475569', borderBottom: '1px solid #E2E8F0' }}>คำนวณตามสูตร</th>
+                            <th style={{ padding: '8px 12px', textAlign: 'right', color: '#475569', borderBottom: '1px solid #E2E8F0', width: 140 }}>จำนวนที่จะตัดจริง</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {materialDeductions.map((mat, idx) => {
+                            const isInsufficient = mat.currentStock < mat.deductQty
+                            return (
+                              <tr key={mat.rawMaterialId} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                                <td style={{ padding: '8px 12px' }}>
+                                  <div style={{ fontWeight: 700, color: '#0F172A' }}>{mat.name}</div>
+                                  <div style={{ fontSize: 10, color: '#64748B' }}>รหัส: {mat.code}</div>
+                                </td>
+                                <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                  <span style={{ fontWeight: 600, color: isInsufficient ? '#EF4444' : '#10B981' }}>
+                                    {mat.currentStock.toLocaleString()} {mat.unit}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 600, color: '#475569' }}>
+                                  {mat.calculatedQty} {mat.unit}
+                                </td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={mat.deductQty}
+                                      onChange={e => {
+                                        const val = parseFloat(e.target.value) || 0
+                                        setMaterialDeductions(prev => prev.map((m, i) => i === idx ? { ...m, deductQty: val } : m))
+                                      }}
+                                      style={{
+                                        width: 85,
+                                        padding: '4px 8px',
+                                        border: isInsufficient ? '1px solid #FCA5A5' : '1px solid #CBD5E1',
+                                        borderRadius: 6,
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                        textAlign: 'right',
+                                        outline: 'none',
+                                        background: isInsufficient ? '#FEF2F2' : '#FFFFFF',
+                                        color: isInsufficient ? '#DC2626' : '#0F172A'
+                                      }}
+                                    />
+                                    <span style={{ fontSize: 11, color: '#64748B', minWidth: 24 }}>{mat.unit}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Textarea for Notes */}
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>หมายเหตุ / สาเหตุการปรับปรุง</label>
@@ -732,6 +937,7 @@ export default function FgInventoryClient({
                   setQty(1)
                   setNotes('')
                   setAddedItems([])
+                  setMaterialDeductions([])
                   setShowAddModal(false)
                 }} 
                 style={{ padding: '10px 20px', border: '1px solid var(--border)', borderRadius: 8, background: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}

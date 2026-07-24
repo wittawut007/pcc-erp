@@ -95,6 +95,21 @@ export async function startCuring(jobOrderId: string, photoUrl: string, phase: '
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
 
+  // Check if job order has preparation photo before allowing curing
+  const { data: targetJob } = await supabase
+    .from('job_orders')
+    .select('cast_at, photo_ready_url, photo_counterfort_url')
+    .eq('id', jobOrderId)
+    .single()
+
+  const hasPrepPhoto = phase === 'stem' 
+    ? (!!targetJob?.photo_counterfort_url || !!targetJob?.photo_ready_url)
+    : !!targetJob?.photo_ready_url
+
+  if (!hasPrepPhoto) {
+    throw new Error('ไม่สามารถบันทึกเริ่มบ่มได้ เนื่องจากยังไม่มีการอัปโหลดรูปถ่ายเตรียมการก่อนสั่งคอนกรีต กรุณาแจ้งพนักงานอัปโหลดรูปถ่ายก่อน')
+  }
+
   const now = new Date().toISOString()
 
   // กำหนด payload ตาม phase
@@ -113,14 +128,9 @@ export async function startCuring(jobOrderId: string, photoUrl: string, phase: '
     }
   } else {
     // main flow (เดิม)
-    const { data: job } = await supabase
-      .from('job_orders')
-      .select('cast_at')
-      .eq('id', jobOrderId)
-      .single()
     jobUpdatePayload = {
       status: 'curing',
-      cast_at: job?.cast_at || now,
+      cast_at: targetJob?.cast_at || now,
       photo_cast_url: photoUrl,
     }
   }

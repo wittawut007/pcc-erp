@@ -21,8 +21,10 @@ const ACTION_COLORS: Record<string, { bg: string; color: string; icon: string }>
   'เทคอนกรีต':                 { bg: 'var(--indigo-light)', color: 'var(--indigo)',   icon: 'fa-industry' },
   'สั่งคอนกรีต':               { bg: '#EEF2FF',             color: '#4F46E5',        icon: 'fa-truck-monster' },
   'สั่งคอนกรีต (Mobile)':      { bg: '#EEF2FF',             color: '#4F46E5',        icon: 'fa-truck-monster' },
+  'สั่งคอนกรีต (Worker)':      { bg: '#EEF2FF',             color: '#4F46E5',        icon: 'fa-truck-monster' },
   'จ่ายคอนกรีต':               { bg: '#FEF3C7',             color: '#D97706',        icon: 'fa-fill-drip' },
   'รับคอนกรีต':               { bg: '#ECFDF5',             color: '#059669',        icon: 'fa-check-circle' },
+  'ปรับปริมาณคอนกรีตรอบสุดท้าย':{ bg: '#FEF3C7',             color: '#D97706',        icon: 'fa-sliders' },
   'เริ่มการบ่ม':               { bg: '#FEF3C7',             color: '#B45309',        icon: 'fa-clock' },
   'เบิกวัตถุดิบ':               { bg: 'var(--amber-light)',  color: '#B45309',        icon: 'fa-box-open' },
   'รับวัตถุดิบ (เพิ่ม)':         { bg: '#ECFDF5',             color: '#10B981',        icon: 'fa-plus' },
@@ -32,6 +34,8 @@ const ACTION_COLORS: Record<string, { bg: string; color: string; icon: string }>
   'บันทึกแผนการผลิต (draft)':     { bg: '#F3F4F6',             color: '#6B7280',        icon: 'fa-file-signature' },
   'DELETE_PLAN_BY_PO':         { bg: '#FEF2F2',             color: '#EF4444',        icon: 'fa-trash-can' },
   'รับสินค้า FG (FG In)':       { bg: '#ECFDF5',             color: '#059669',        icon: 'fa-box' },
+  'ยืนยัน ERP (Warehouse)':   { bg: '#F5F3FF',             color: '#6D28D9',        icon: 'fa-file-export' },
+  'หักสต็อกวัตถุดิบ (ปรับเพิ่ม FG นอกแผน)': { bg: '#FFF7ED', color: '#C2410C',     icon: 'fa-cubes-stacked' },
 }
 const DEFAULT_ACTION = { bg: 'var(--bg)', color: 'var(--text-muted)', icon: 'fa-circle-dot' }
 
@@ -162,12 +166,23 @@ export default function LogsClient({ logs }: { logs: ActivityLog[] }) {
 
   // Role summary based on filteredWithoutRole to keep pill counts stable
   const roleSummary = useMemo(() => {
-    const map: Record<string, number> = {}
+    const map: Record<string, number> = {
+      qc: 0,
+      admin: 0,
+      material: 0,
+      planner: 0,
+      concrete: 0,
+      worker: 0,
+      warehouse: 0,
+    }
     filteredWithoutRole.forEach(l => {
-      const r = l.profile?.role ?? 'worker'
-      map[r] = (map[r] ?? 0) + 1
+      const r = l.profile?.role
+      if (r && map[r] !== undefined) {
+        map[r] += 1
+      } else if (r) {
+        map[r] = (map[r] ?? 0) + 1
+      }
     })
-    // Sort roles by count descending
     return Object.entries(map).sort((a, b) => b[1] - a[1])
   }, [filteredWithoutRole])
 
@@ -204,6 +219,13 @@ export default function LogsClient({ logs }: { logs: ActivityLog[] }) {
             <input type="text" placeholder="ค้นหาชื่อ, กิจกรรม, รายละเอียด..." value={search} onChange={e => setSearch(e.target.value)}
               style={{ width: '100%', paddingLeft: 33, paddingRight: 12, paddingTop: 8, paddingBottom: 8, border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
           </div>
+          <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
+            style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white', maxWidth: 160 }}>
+            <option value="ทั้งหมด">บทบาท: ทั้งหมด</option>
+            {Object.entries(ROLE_LABELS).map(([rKey, rLabel]) => (
+              <option key={rKey} value={rKey}>{rLabel}</option>
+            ))}
+          </select>
           <select value={filterAction} onChange={e => setFilterAction(e.target.value)}
             style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white', maxWidth: 180 }}>
             {actionTypes.map(a => <option key={a} value={a}>{a === 'ทั้งหมด' ? 'กิจกรรม: ทั้งหมด' : a}</option>)}

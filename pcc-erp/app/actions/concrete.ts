@@ -21,6 +21,17 @@ export async function requestConcrete(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
 
+  // ตรวจสอบว่ามีการอัปโหลดรูปถ่ายเตรียมการก่อนสั่งคอนกรีตหรือไม่
+  const { data: targetJob } = await supabase
+    .from('job_orders')
+    .select('photo_ready_url')
+    .eq('id', jobOrderId)
+    .single()
+
+  if (!targetJob?.photo_ready_url) {
+    throw new Error('ไม่สามารถสั่งคอนกรีตได้ เนื่องจากยังไม่มีการอัปโหลดรูปถ่ายเตรียมการก่อนสั่งคอนกรีต')
+  }
+
   const roundData = calculateConcreteRounds(qtyRequested)
   const roundCount = roundData.length
   const now = new Date().toISOString()
@@ -160,25 +171,36 @@ export async function supplyConcreteRound(roundId: string) {
   try {
     const { data: roundDetails } = await supabase
       .from('concrete_rounds')
-      .select('round_number, qty_per_round, concrete_orders(bed, job_orders(plan_item(product(name))))')
+      .select('round_number, qty_per_round, concrete_order_id')
       .eq('id', roundId)
       .single()
-    
-    if (roundDetails) {
-      const orderData = roundDetails.concrete_orders as any
-      const jobData = orderData?.job_orders as any
-      const planItem = jobData?.plan_item as any
-      const product = planItem?.product as any
-      const detailText = `จ่ายคอนกรีตรอบที่ ${roundDetails.round_number} จำนวน ${roundDetails.qty_per_round} Q ไปยังโรงผลิต ${orderData?.bed || '-'} (สินค้า: ${product?.name ?? 'ไม่ระบุ'})`
-      
-      await supabase.from('activity_logs').insert({
-        user_id: user.id,
-        action_type: 'จ่ายคอนกรีต',
-        entity_type: 'concrete_round',
-        entity_id: roundId,
-        detail: detailText,
-      })
+
+    let bedName = '-'
+    let productName = 'ไม่ระบุ'
+
+    if (roundDetails?.concrete_order_id) {
+      const { data: orderData } = await supabase
+        .from('concrete_orders')
+        .select('bed, job_order:job_orders(plan_item:production_plan_items(product:products(name)))')
+        .eq('id', roundDetails.concrete_order_id)
+        .single()
+
+      bedName = (orderData as any)?.bed || '-'
+      const jobObj = Array.isArray((orderData as any)?.job_order) ? (orderData as any)?.job_order[0] : (orderData as any)?.job_order
+      const planItemObj = Array.isArray(jobObj?.plan_item) ? jobObj?.plan_item[0] : jobObj?.plan_item
+      const productObj = Array.isArray(planItemObj?.product) ? planItemObj?.product[0] : planItemObj?.product
+      productName = productObj?.name || 'ไม่ระบุ'
     }
+
+    const detailText = `จ่ายคอนกรีตรอบที่ ${roundDetails?.round_number || 1} จำนวน ${roundDetails?.qty_per_round || 0} Q ไปยังโรงผลิต ${bedName} (สินค้า: ${productName})`
+    
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: 'จ่ายคอนกรีต',
+      entity_type: 'concrete_round',
+      entity_id: roundId,
+      detail: detailText,
+    })
   } catch (err) {
     await logError({ action: 'supplyConcreteRound/activityLog', error: err, context: { roundId } })
   }
@@ -273,25 +295,36 @@ export async function receiveConcreteRound(roundId: string) {
   try {
     const { data: roundDetails } = await supabase
       .from('concrete_rounds')
-      .select('round_number, qty_per_round, concrete_orders(bed, job_orders(plan_item(product(name))))')
+      .select('round_number, qty_per_round, concrete_order_id')
       .eq('id', roundId)
       .single()
 
-    if (roundDetails) {
-      const orderData = roundDetails.concrete_orders as any
-      const jobData = orderData?.job_orders as any
-      const planItem = jobData?.plan_item as any
-      const product = planItem?.product as any
-      const detailText = `ยืนยันรับคอนกรีตรอบที่ ${roundDetails.round_number} จำนวน ${roundDetails.qty_per_round} Q ที่โรงผลิต ${orderData?.bed || '-'} (สินค้า: ${product?.name ?? 'ไม่ระบุ'})`
+    let bedName = '-'
+    let productName = 'ไม่ระบุ'
 
-      await supabase.from('activity_logs').insert({
-        user_id: user.id,
-        action_type: 'รับคอนกรีต',
-        entity_type: 'concrete_round',
-        entity_id: roundId,
-        detail: detailText,
-      })
+    if (roundDetails?.concrete_order_id) {
+      const { data: orderData } = await supabase
+        .from('concrete_orders')
+        .select('bed, job_order:job_orders(plan_item:production_plan_items(product:products(name)))')
+        .eq('id', roundDetails.concrete_order_id)
+        .single()
+
+      bedName = (orderData as any)?.bed || '-'
+      const jobObj = Array.isArray((orderData as any)?.job_order) ? (orderData as any)?.job_order[0] : (orderData as any)?.job_order
+      const planItemObj = Array.isArray(jobObj?.plan_item) ? jobObj?.plan_item[0] : jobObj?.plan_item
+      const productObj = Array.isArray(planItemObj?.product) ? planItemObj?.product[0] : planItemObj?.product
+      productName = productObj?.name || 'ไม่ระบุ'
     }
+
+    const detailText = `ยืนยันรับคอนกรีตรอบที่ ${roundDetails?.round_number || 1} จำนวน ${roundDetails?.qty_per_round || 0} Q ที่โรงผลิต ${bedName} (สินค้า: ${productName})`
+
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: 'รับคอนกรีต',
+      entity_type: 'concrete_round',
+      entity_id: roundId,
+      detail: detailText,
+    })
   } catch (err) {
     await logError({ action: 'receiveConcreteRound/activityLog', error: err, context: { roundId } })
   }
@@ -583,6 +616,18 @@ export async function adjustLastRoundQty(lastRoundId: string, newQty: number) {
     .eq('id', round.concrete_order_id)
 
   if (updateOrderErr) throw new Error('ไม่สามารถอัปเดตยอดรวมคำสั่งซื้อได้: ' + updateOrderErr.message)
+
+  try {
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: 'ปรับปริมาณคอนกรีตรอบสุดท้าย',
+      entity_type: 'concrete_round',
+      entity_id: lastRoundId,
+      detail: `ปรับปริมาณคอนกรีตรอบที่ ${round.round_number} เป็น ${newQty.toFixed(2)} Q (ยอดรวมคำสั่งใหม่: ${newTotalQty.toFixed(2)} Q)`,
+    })
+  } catch (err) {
+    await logError({ action: 'adjustLastRoundQty/activityLog', error: err, context: { lastRoundId } })
+  }
 
   revalidatePath('/worker')
   revalidatePath('/concrete')

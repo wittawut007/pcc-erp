@@ -41,6 +41,92 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
   const [saving, setSaving] = useState(false)
   const [newForm, setNewForm] = useState({ material_code: '', name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0, weight_per_meter: '' })
 
+  // Batch Stock Adjust States
+  const [showBatchModal, setShowBatchModal] = useState(false)
+  const [batchDraft, setBatchDraft] = useState<Record<string, number>>({})
+  const [batchNote, setBatchNote] = useState('')
+  const [batchSearch, setBatchSearch] = useState('')
+  const [batchCat, setBatchCat] = useState('ทั้งหมด')
+  const [batchSaving, setBatchSaving] = useState(false)
+
+  const handleOpenBatchModal = () => {
+    const draft: Record<string, number> = {}
+    materials.forEach(m => {
+      draft[m.id] = m.qty_on_hand
+    })
+    setBatchDraft(draft)
+    setBatchNote('')
+    setBatchSearch('')
+    setBatchCat('ทั้งหมด')
+    setShowBatchModal(true)
+  }
+
+  const handleSaveBatchAdjust = async () => {
+    setBatchSaving(true)
+    try {
+      const modifiedItems: { material: RawMaterial; oldQty: number; newQty: number }[] = []
+      for (const m of materials) {
+        const newQty = batchDraft[m.id]
+        if (newQty !== undefined && newQty !== m.qty_on_hand) {
+          modifiedItems.push({
+            material: m,
+            oldQty: m.qty_on_hand,
+            newQty: Math.max(0, Number(newQty.toFixed(2)))
+          })
+        }
+      }
+
+      if (modifiedItems.length === 0) {
+        toast('ไม่มีรายการวัตถุดิบที่ถูกปรับเปลี่ยนยอด', { icon: 'ℹ️' })
+        setShowBatchModal(false)
+        return
+      }
+
+      const now = new Date().toISOString()
+
+      const updates = modifiedItems.map(item =>
+        supabase
+          .from('raw_materials')
+          .update({ qty_on_hand: item.newQty, updated_at: now })
+          .eq('id', item.material.id)
+      )
+      const results = await Promise.all(updates)
+      const hasErr = results.find(r => r.error)
+      if (hasErr?.error) throw hasErr.error
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const summaryLines = modifiedItems.slice(0, 10).map(i => `- [${i.material.material_code || '-'}] ${i.material.name}: ${i.oldQty} → ${i.newQty} ${i.material.unit}`).join('\n')
+        const overflow = modifiedItems.length > 10 ? `\n...และอีก ${modifiedItems.length - 10} รายการ` : ''
+        const noteStr = batchNote ? ` | หมายเหตุ: ${batchNote}` : ''
+        const detailText = `ปรับสต็อกวัตถุดิบรวม ${modifiedItems.length} รายการ:\n${summaryLines}${overflow}${noteStr}`
+
+        await supabase.from('activity_logs').insert({
+          user_id: user.id,
+          action_type: 'ปรับสต็อกทั้งหมด (Batch)',
+          entity_type: 'raw_materials',
+          entity_id: null,
+          detail: detailText,
+        })
+      }
+
+      setMaterials(prev => prev.map(m => {
+        const newQty = batchDraft[m.id]
+        if (newQty !== undefined && newQty !== m.qty_on_hand) {
+          return { ...m, qty_on_hand: Math.max(0, Number(newQty.toFixed(2))), updated_at: now }
+        }
+        return m
+      }))
+
+      toast.success(`ปรับสต็อกวัตถุดิบสำเร็จ ${modifiedItems.length} รายการ!`)
+      setShowBatchModal(false)
+    } catch (e: any) {
+      toast.error('เกิดข้อผิดพลาดในการปรับสต็อก: ' + e.message)
+    } finally {
+      setBatchSaving(false)
+    }
+  }
+
   const filtered = materials.filter(m => {
     const matchCat = filterCat === 'ทั้งหมด' || m.category === filterCat
     const q = search.toLowerCase()
@@ -297,6 +383,9 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
           <option value="active">เปิดใช้งาน (Active)</option>
           <option value="inactive">ปิดใช้งาน (Inactive)</option>
         </select>
+        <button onClick={handleOpenBatchModal} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: '#4F46E5', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(79,70,229,0.2)' }}>
+          <i className="fas fa-boxes-stacked"></i> ปรับสต็อกทั้งหมด
+        </button>
         <button onClick={() => { setEditMaterial(null); setNewForm({ material_code: '', name: '', category: 'เหล็กเส้น', unit: '', qty_on_hand: 0, min_stock: 0, weight_per_meter: '' }); setAddModal(true); }} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
           <i className="fas fa-plus"></i> เพิ่มวัตถุดิบ
         </button>
@@ -512,6 +601,177 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
               <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: '11px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                 {saving ? 'กำลังบันทึก...' : editMaterial ? <><i className="fas fa-save" style={{ marginRight: 6 }}></i>บันทึกการแก้ไข</> : <><i className="fas fa-plus" style={{ marginRight: 6 }}></i>เพิ่มวัตถุดิบ</>}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Stock Adjustment Modal */}
+      {showBatchModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div style={{ background: 'white', borderRadius: 16, width: 920, maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
+            
+            {/* Modal Header */}
+            <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F8FAFC' }}>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 800, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <i className="fas fa-boxes-stacked" style={{ color: '#4F46E5' }}></i>
+                  ปรับสต็อกวัตถุดิบทั้งหมด (Batch Adjustment)
+                </h2>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  ดึงรายการวัตถุดิบทั้งหมดมาแสดงเพื่อปรับปรุงตัวเลขสต็อกคงเหลือพร้อมกันในครั้งเดียว
+                </div>
+              </div>
+              <button onClick={() => setShowBatchModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)' }}>✕</button>
+            </div>
+
+            {/* Filter Bar & Quick Stats inside Modal */}
+            <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--border)', background: 'white', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+                <i className="fas fa-search" style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12 }}></i>
+                <input type="text" placeholder="ค้นหาตามชื่อ หรือรหัสวัตถุดิบ..." value={batchSearch} onChange={e => setBatchSearch(e.target.value)}
+                  style={{ width: '100%', paddingLeft: 32, paddingRight: 12, paddingTop: 7, paddingBottom: 7, border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none' }} />
+              </div>
+              <select value={batchCat} onChange={e => setBatchCat(e.target.value)}
+                style={{ padding: '7px 12px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white' }}>
+                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+
+              {/* Modified Items Counter Badge */}
+              {(() => {
+                const count = materials.filter(m => batchDraft[m.id] !== undefined && batchDraft[m.id] !== m.qty_on_hand).length
+                return (
+                  <div style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: count > 0 ? '#FEF3C7' : '#F1F5F9', color: count > 0 ? '#B45309' : '#64748B', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <i className={count > 0 ? 'fas fa-pen' : 'fas fa-check-double'} />
+                    มีการแก้ไข: {count} รายการ
+                  </div>
+                )
+              })()}
+
+              <button 
+                onClick={() => {
+                  const draft: Record<string, number> = {}
+                  materials.forEach(m => { draft[m.id] = m.qty_on_hand })
+                  setBatchDraft(draft)
+                }}
+                style={{ padding: '6px 12px', border: '1px solid var(--border)', borderRadius: 7, background: 'white', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <i className="fas fa-undo" style={{ marginRight: 5 }} />คืนค่าเดิมทั้งหมด
+              </button>
+            </div>
+
+            {/* Modal Table Content */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead style={{ position: 'sticky', top: 0, background: 'white', zIndex: 10 }}>
+                  <tr>
+                    {['รหัสวัตถุดิบ', 'ชื่อวัตถุดิบ', 'หมวดหมู่', 'สต็อกปัจจุบัน', 'สต็อกใหม่ (แก้ไขได้)', 'ผลต่าง', 'หน่วย'].map((h, i) => (
+                      <th key={h} style={{ padding: '12px 10px', textAlign: i >= 3 && i <= 5 ? 'right' : i === 6 ? 'center' : 'left', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', background: '#F8FAFC', borderBottom: '2px solid var(--border)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {materials
+                    .filter(m => {
+                      const matchCat = batchCat === 'ทั้งหมด' || m.category === batchCat
+                      const q = batchSearch.toLowerCase()
+                      const matchSearch = !batchSearch || m.name.toLowerCase().includes(q) || (m.material_code ?? '').toLowerCase().includes(q)
+                      return matchCat && matchSearch
+                    })
+                    .map(m => {
+                      const currentVal = batchDraft[m.id] !== undefined ? batchDraft[m.id] : m.qty_on_hand
+                      const isModified = currentVal !== m.qty_on_hand
+                      const diff = currentVal - m.qty_on_hand
+
+                      return (
+                        <tr key={m.id} style={{ borderBottom: '1px solid var(--border)', background: isModified ? '#FFFBEB' : 'transparent' }}>
+                          <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)' }}>{m.material_code || '-'}</td>
+                          <td style={{ padding: '10px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {m.name}
+                            {isModified && <span style={{ marginLeft: 6, fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#F59E0B', color: 'white', fontWeight: 700 }}>แก้ไข</span>}
+                          </td>
+                          <td style={{ padding: '10px', color: 'var(--text-muted)' }}>{m.category}</td>
+                          <td style={{ padding: '10px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>{m.qty_on_hand.toLocaleString()}</td>
+                          <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                            <input
+                              type="number"
+                              step="any"
+                              value={currentVal}
+                              onChange={e => {
+                                const val = parseFloat(e.target.value)
+                                setBatchDraft(prev => ({ ...prev, [m.id]: isNaN(val) ? 0 : val }))
+                              }}
+                              style={{
+                                width: 120,
+                                padding: '6px 10px',
+                                border: isModified ? '2px solid #F59E0B' : '1px solid var(--border)',
+                                borderRadius: 6,
+                                fontSize: 13,
+                                fontWeight: 700,
+                                textAlign: 'right',
+                                background: isModified ? '#FEF3C7' : 'white',
+                                outline: 'none'
+                              }}
+                            />
+                          </td>
+                          <td style={{ padding: '10px', textAlign: 'right', fontWeight: 700, color: diff > 0 ? '#059669' : diff < 0 ? '#DC2626' : 'var(--text-muted)' }}>
+                            {diff > 0 ? `+${diff.toFixed(2)}` : diff < 0 ? diff.toFixed(2) : '0'}
+                          </td>
+                          <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-muted)' }}>{m.unit}</td>
+                        </tr>
+                      )
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Note & Footer */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', background: '#F8FAFC', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                  หมายเหตุการปรับปรุงสต็อก (ถ้ามี)
+                </label>
+                <input
+                  type="text"
+                  placeholder="เช่น: ตรวจนับสต็อกประจำเดือน, ปรับปรุงยอดยกมา..."
+                  value={batchNote}
+                  onChange={e => setBatchNote(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center' }}>
+                <button
+                  onClick={() => setShowBatchModal(false)}
+                  style={{ padding: '10px 18px', border: '1px solid var(--border)', borderRadius: 8, background: 'white', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={handleSaveBatchAdjust}
+                  disabled={batchSaving}
+                  style={{
+                    padding: '10px 24px',
+                    border: 'none',
+                    borderRadius: 8,
+                    background: '#4F46E5',
+                    color: 'white',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    boxShadow: '0 4px 12px rgba(79,70,229,0.25)'
+                  }}
+                >
+                  {batchSaving ? (
+                    <><i className="fas fa-spinner fa-spin" /> กำลังบันทึกการปรับสต็อก...</>
+                  ) : (
+                    <><i className="fas fa-save" /> ยืนยันปรับสต็อกทั้งหมด</>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
