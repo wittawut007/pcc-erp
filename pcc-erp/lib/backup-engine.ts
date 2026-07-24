@@ -36,22 +36,17 @@ export async function runDatabaseBackup(triggeredBy: string): Promise<BackupResu
     const { data: metadataRaw } = await adminClient.rpc('get_backup_metadata_snapshot')
     const metadata = metadataRaw as Record<string, unknown>
 
-    // 3. Export ข้อมูลจากทุก table สำคัญ
-    const [
-      { data: profiles },
-      { data: products },
-      { data: bomItems },
-      { data: rawMaterials },
-      { data: rawTransactions },
-      { data: productionPlans },
-      { data: planItems },
-      { data: productionOrders },
-      { data: jobOrders },
-      { data: demolRecords },
-      { data: qcInspections },
-      { data: fgInventory },
-      { data: concreteMixOrders },
-    ] = await Promise.all([
+    // 3. Export ข้อมูลจากทุก table ที่มีอยู่จริง (ตาม migrations 001–015)
+    // ใช้ allSettled เพื่อให้ 1 table ล้มเหลวไม่กระทบ table อื่น
+    const tableKeys = [
+      'profiles', 'products', 'bom_items', 'raw_materials',
+      'raw_material_transactions', 'production_plans', 'production_plan_items',
+      'production_orders', 'job_orders', 'demolding_records',
+      'qc_inspections', 'job_order_defects', 'fg_inventory', 'fg_receipts',
+      'wip_inventory', 'concrete_orders', 'plan_materials', 'activity_logs',
+    ] as const
+
+    const tablePromises = [
       adminClient.from('profiles').select('id, email, full_name, role, employee_code, is_active, created_at'),
       adminClient.from('products').select('*'),
       adminClient.from('bom_items').select('*'),
@@ -63,31 +58,42 @@ export async function runDatabaseBackup(triggeredBy: string): Promise<BackupResu
       adminClient.from('job_orders').select('*'),
       adminClient.from('demolding_records').select('*'),
       adminClient.from('qc_inspections').select('*'),
+      adminClient.from('job_order_defects').select('*'),
       adminClient.from('fg_inventory').select('*'),
-      adminClient.from('concrete_mix_orders').select('*').limit(10000),
-    ])
+      adminClient.from('fg_receipts').select('*'),
+      adminClient.from('wip_inventory').select('*'),
+      adminClient.from('concrete_orders').select('*'),
+      adminClient.from('plan_materials').select('*'),
+      adminClient.from('activity_logs').select('*').limit(5000),
+    ]
+
+    const results = await Promise.allSettled(tablePromises)
+    const tables: Record<string, unknown[]> = {}
+    const tableErrors: string[] = []
+
+    results.forEach((result, i) => {
+      const key = tableKeys[i]
+      if (result.status === 'fulfilled') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tables[key] = ((result.value as any).data ?? []) as unknown[]
+      } else {
+        tables[key] = []
+        tableErrors.push(`${key}: ${String(result.reason)}`)
+        console.warn(`[BACKUP] Table "${key}" skipped (non-fatal):`, result.reason)
+      }
+    })
+
 
     // 4. สร้าง JSON payload
     const backupPayload = {
-      version: '1.0',
+      version: '1.1',
       exported_at: new Date().toISOString(),
       project_ref: process.env.NEXT_PUBLIC_SUPABASE_URL?.split('//')[1]?.split('.')[0] ?? 'unknown',
-      tables: {
-        profiles:                  profiles ?? [],
-        products:                  products ?? [],
-        bom_items:                 bomItems ?? [],
-        raw_materials:             rawMaterials ?? [],
-        raw_material_transactions: rawTransactions ?? [],
-        production_plans:          productionPlans ?? [],
-        production_plan_items:     planItems ?? [],
-        production_orders:         productionOrders ?? [],
-        job_orders:                jobOrders ?? [],
-        demolding_records:         demolRecords ?? [],
-        qc_inspections:            qcInspections ?? [],
-        fg_inventory:              fgInventory ?? [],
-        concrete_mix_orders:       concreteMixOrders ?? [],
+      tables,
+      metadata: {
+        ...metadata,
+        table_errors: tableErrors.length > 0 ? tableErrors : undefined,
       },
-      metadata,
     }
 
     // 5. แปลงเป็น JSON string และคำนวณขนาด
