@@ -36,36 +36,7 @@ const DEFECT_REASONS: Record<string, { label: string; color: string }> = {
 
 
 
-function getLocalDateString(d: Date) {
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function getTodayRange() {
-  const t = new Date()
-  const d = getLocalDateString(t)
-  return { start: d, end: d }
-}
-
-function getThisWeekRange() {
-  const t = new Date()
-  const day = t.getDay()
-  const diffToMonday = t.getDate() - day + (day === 0 ? -6 : 1)
-  const start = new Date(t)
-  start.setDate(diffToMonday)
-  const end = new Date(start)
-  end.setDate(start.getDate() + 6)
-  return { start: getLocalDateString(start), end: getLocalDateString(end) }
-}
-
-function getThisMonthRange() {
-  const t = new Date()
-  const start = new Date(t.getFullYear(), t.getMonth(), 1)
-  const end = new Date(t.getFullYear(), t.getMonth() + 1, 0)
-  return { start: getLocalDateString(start), end: getLocalDateString(end) }
-}
+import FilterBar, { isDateInRange } from '@/components/shared/FilterBar'
 
 export default function QcClient({ records, summary }: { records: DemoldingRecord[]; summary: SummaryRecord[] }) {
   const [search, setSearch] = useState('')
@@ -78,14 +49,7 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
   // Filter Summary
   const filteredSummary = useMemo(() => {
     if (!dateRange.start && !dateRange.end) return displaySummary
-    return displaySummary.filter(r => {
-      const createdDate = r.created_at.split('T')[0]
-      let matchDate = true
-      if (dateRange.start && dateRange.end) {
-        if (createdDate < dateRange.start || createdDate > dateRange.end) matchDate = false
-      }
-      return matchDate
-    })
+    return displaySummary.filter(r => isDateInRange(r.created_at, dateRange))
   }, [displaySummary, dateRange])
 
   const filtered = useMemo(() => displayRecords.filter(r => {
@@ -100,12 +64,7 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
       orderNumber?.toLowerCase().includes(search.toLowerCase())
 
     const matchReason = filterReason === 'ทั้งหมด' || (filterReason === 'none' ? r.demold_qty_defect === 0 : r.defect_reason === filterReason)
-
-    let matchDate = true
-    const createdDate = r.created_at.split('T')[0]
-    if (dateRange.start && dateRange.end) {
-      if (createdDate < dateRange.start || createdDate > dateRange.end) matchDate = false
-    }
+    const matchDate = isDateInRange(r.created_at, dateRange)
 
     return matchSearch && matchReason && matchDate
   }), [displayRecords, search, filterReason, dateRange])
@@ -191,6 +150,29 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
         ))}
       </div>
 
+      {/* Filter Bar */}
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="ค้นหาสินค้า, รหัส, โรงผลิต, หรือเลขที่ PO..."
+        countLabel={`${filtered.length} รายการ จาก ${planGroups.length} ใบสั่งผลิต`}
+        dateLabel="วันที่:"
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+        style={{ marginBottom: 20 }}
+        extraFilters={
+          <select
+            value={filterReason}
+            onChange={e => setFilterReason(e.target.value)}
+            style={{ padding: '6px 10px', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 12, outline: 'none', background: '#F9FAFB', color: '#374151', cursor: 'pointer' }}
+          >
+            <option value="ทั้งหมด">สาเหตุ: ทั้งหมด</option>
+            <option value="none">ไม่มีของเสีย</option>
+            {Object.entries(DEFECT_REASONS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        }
+      />
+
       {/* Mid: Bar Chart + Table */}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2.5fr)', gap: 16, marginBottom: 20 }}>
 
@@ -226,63 +208,6 @@ export default function QcClient({ records, summary }: { records: DemoldingRecor
 
         {/* Table */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-          {/* Toolbar */}
-          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
-              <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 11 }}></i>
-              <input type="text" placeholder="ค้นหาสินค้า..." value={search} onChange={e => setSearch(e.target.value)}
-                style={{ width: '100%', paddingLeft: 30, paddingRight: 10, paddingTop: 7, paddingBottom: 7, border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
-            </div>
-            <select value={filterReason} onChange={e => setFilterReason(e.target.value)}
-              style={{ padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white' }}>
-              <option value="ทั้งหมด">สาเหตุ: ทั้งหมด</option>
-              <option value="none">ไม่มีของเสีย</option>
-              {Object.entries(DEFECT_REASONS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-            
-            {/* Date Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 8px' }}>
-                <input 
-                  type="date" 
-                  value={dateRange.start} 
-                  onChange={e => setDateRange(p => ({ ...p, start: e.target.value }))}
-                  style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: 'var(--text-main)', cursor: 'pointer' }}
-                />
-                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>-</span>
-                <input 
-                  type="date" 
-                  value={dateRange.end} 
-                  onChange={e => setDateRange(p => ({ ...p, end: e.target.value }))}
-                  style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: 'var(--text-main)', cursor: 'pointer' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  onClick={() => setDateRange(getTodayRange())}
-                  style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
-                >วันนี้</button>
-                <button
-                  onClick={() => setDateRange(getThisWeekRange())}
-                  style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
-                >สัปดาห์นี้</button>
-                <button
-                  onClick={() => setDateRange(getThisMonthRange())}
-                  style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-main)', cursor: 'pointer', transition: 'all 0.15s' }}
-                >เดือนนี้</button>
-                {(dateRange.start || dateRange.end) && (
-                  <button
-                    onClick={() => setDateRange({ start: '', end: '' })}
-                    style={{ padding: '6px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', background: 'var(--red-light)', color: 'var(--red)', cursor: 'pointer', marginLeft: 4 }}
-                    title="ล้างตัวกรอง"
-                  >
-                    <i className="fas fa-times" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '16px' }}>
             {planGroups.length === 0 ? (

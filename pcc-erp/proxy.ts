@@ -177,6 +177,7 @@ export async function proxy(request: NextRequest) {
       return redirectWithCookies(new URL('/login', request.url), supabaseResponseMobile)
     }
 
+    let role: UserRole = (user.user_metadata?.role as UserRole) || 'worker'
     try {
       const { data: profile } = await supabaseMobile
         .from('profiles')
@@ -184,18 +185,18 @@ export async function proxy(request: NextRequest) {
         .eq('id', user.id)
         .single()
 
-      if (!profile || !profile.is_active) {
-        return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponseMobile)
+      if (profile?.role) {
+        role = profile.role as UserRole
       }
+    } catch (e) {
+      console.warn('Profile query failed in proxy Case C:', e)
+    }
 
-      // Check specific role
-      if (path.startsWith('/qc-inspect') && profile.role !== 'qc' && profile.role !== 'admin') {
-        return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponseMobile)
-      }
-      if (path.startsWith('/worker') && profile.role !== 'worker' && profile.role !== 'admin') {
-        return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponseMobile)
-      }
-    } catch {
+    // Check specific role
+    if (path.startsWith('/qc-inspect') && role !== 'qc' && role !== 'admin') {
+      return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponseMobile)
+    }
+    if (path.startsWith('/worker') && role !== 'worker' && role !== 'admin') {
       return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponseMobile)
     }
 
@@ -235,56 +236,57 @@ export async function proxy(request: NextRequest) {
 
   // ไม่ได้ Login และพยายามเข้าหน้าอื่น → redirect /login
   if (!user && path !== '/login' && path !== '/unauthorized') {
-    // ในกรณี dev mode และฐานข้อมูลเชื่อมต่อไม่ได้ ให้ผ่านไปก่อน
-    if (process.env.NODE_ENV === 'development') {
-      return supabaseResponse
-    }
     return redirectWithCookies(new URL('/login', request.url), supabaseResponse)
   }
 
   // Login แล้วเข้า /login → redirect ไปหน้าที่เหมาะสมตาม role
   if (user && path === '/login') {
+    let role: UserRole = (user.user_metadata?.role as UserRole) || 'admin'
     try {
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
-      const role = (profile?.role ?? 'admin') as UserRole
-      const defaultPath = getDefaultPath(role)
-      return redirectWithCookies(new URL(defaultPath, request.url), supabaseResponse)
+      if (profile?.role) {
+        role = profile.role as UserRole
+      }
     } catch {
-      return redirectWithCookies(new URL('/dashboard', request.url), supabaseResponse)
+      // fallback to user_metadata or admin
     }
+    const defaultPath = getDefaultPath(role)
+    return redirectWithCookies(new URL(defaultPath, request.url), supabaseResponse)
   }
 
   // Login แล้วเข้า route ที่ต้องตรวจสิทธิ์
   if (user && path !== '/login' && path !== '/unauthorized') {
+    let role: UserRole = (user.user_metadata?.role as UserRole) || 'admin'
     try {
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
-
-      const role = (profile?.role ?? 'admin') as UserRole
-
-      // Worker → redirect ไป mobile route
-      if (role === 'worker') {
-        return redirectWithCookies(new URL('/worker', request.url), supabaseResponse)
+      if (profile?.role) {
+        role = profile.role as UserRole
       }
+    } catch (e) {
+      console.warn('Profile fetch failed in proxy:', e)
+    }
 
-      // QC → redirect ไป mobile route
-      if (role === 'qc') {
-        return redirectWithCookies(new URL('/qc-inspect', request.url), supabaseResponse)
-      }
+    // Worker → redirect ไป mobile route
+    if (role === 'worker' && !path.startsWith('/worker')) {
+      return redirectWithCookies(new URL('/worker', request.url), supabaseResponse)
+    }
 
-      // ตรวจสิทธิ์ตาม role
-      if (!canAccess(role, path)) {
-        return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponse)
-      }
-    } catch {
-      // ถ้า query ไม่ได้ให้ผ่านไปก่อน (เช่น ตอน dev)
+    // QC → redirect ไป mobile route
+    if (role === 'qc' && !path.startsWith('/qc-inspect')) {
+      return redirectWithCookies(new URL('/qc-inspect', request.url), supabaseResponse)
+    }
+
+    // ตรวจสิทธิ์ตาม role
+    if (!canAccess(role, path)) {
+      return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponse)
     }
   }
 

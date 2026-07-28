@@ -11,10 +11,11 @@ type ConcreteData = Awaited<ReturnType<typeof getConcreteSummary>>
 export default async function RawMaterialsPage() {
   const supabase = await createClient()
 
-  // Fetch materials
+  // Fetch materials (exclude SFG components as they are managed in /inventory/component)
   const { data: materials } = await supabase
     .from('raw_materials')
     .select('*')
+    .neq('category', 'ชิ้นส่วน SFG')
     .order('category')
     .order('name')
 

@@ -22,7 +22,7 @@ interface RawMaterial {
   updated_at: string
 }
 
-const CATEGORIES = ['ทั้งหมด', 'เหล็กเส้น', 'ลวด', 'น้ำยา', 'ปูน', 'เมช', 'อื่นๆ']
+const CATEGORIES = ['ทั้งหมด', 'เหล็กเส้น', 'ลวด', 'น้ำยา', 'ปูน', 'เมช', 'ชิ้นส่วน CF', 'อื่นๆ']
 
 export default function RawMaterialsClient({ materials: initial, summaryData = [], concreteData = [] }: { materials: RawMaterial[]; summaryData?: SummaryItem[]; concreteData?: ConcreteOrder[] }) {
   const supabase = createClient()
@@ -51,7 +51,7 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
 
   const handleOpenBatchModal = () => {
     const draft: Record<string, number> = {}
-    materials.forEach(m => {
+    materials.filter(m => m.category !== 'ชิ้นส่วน SFG' && m.is_active !== false).forEach(m => {
       draft[m.id] = m.qty_on_hand
     })
     setBatchDraft(draft)
@@ -64,8 +64,9 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
   const handleSaveBatchAdjust = async () => {
     setBatchSaving(true)
     try {
+      const activeNonSfg = materials.filter(m => m.category !== 'ชิ้นส่วน SFG' && m.is_active !== false)
       const modifiedItems: { material: RawMaterial; oldQty: number; newQty: number }[] = []
-      for (const m of materials) {
+      for (const m of activeNonSfg) {
         const newQty = batchDraft[m.id]
         if (newQty !== undefined && newQty !== m.qty_on_hand) {
           modifiedItems.push({
@@ -127,7 +128,9 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
     }
   }
 
-  const filtered = materials.filter(m => {
+  const nonSfgMaterials = materials.filter(m => m.category !== 'ชิ้นส่วน SFG')
+
+  const filtered = nonSfgMaterials.filter(m => {
     const matchCat = filterCat === 'ทั้งหมด' || m.category === filterCat
     const q = search.toLowerCase()
     const matchSearch = !search
@@ -137,7 +140,7 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
     return matchCat && matchSearch && matchActive
   })
 
-  const activeMaterials = materials.filter(m => m.is_active !== false)
+  const activeMaterials = nonSfgMaterials.filter(m => m.is_active !== false)
   const normalStock = activeMaterials.filter(m => m.qty_on_hand > m.min_stock)
   const lowStock = activeMaterials.filter(m => m.qty_on_hand <= m.min_stock && m.qty_on_hand > m.min_stock * 0.5)
   const criticalStock = activeMaterials.filter(m => m.qty_on_hand <= m.min_stock * 0.5)
@@ -458,10 +461,12 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
                             <button onClick={() => openEdit(m)} style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--bg)', color: 'var(--text-secondary)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} title="แก้ไขข้อมูล">
                               <i className="fas fa-edit" style={{ fontSize: 11 }}></i>
                             </button>
-                            <button onClick={() => { setAdjustModal(m); setAdjustQty(0); setAdjustMinStock(m.min_stock); setAdjustMode('add'); setAdjustNote('') }}
-                              style={{ padding: '6px 12px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} title="ปรับสต็อก">
-                              <i className="fas fa-sliders-h" style={{ fontSize: 11 }}></i>ปรับสต็อก
-                            </button>
+                            {m.category !== 'ชิ้นส่วน SFG' && m.category !== 'ชิ้นส่วน CF' && (
+                              <button onClick={() => { setAdjustModal(m); setAdjustQty(0); setAdjustMinStock(m.min_stock); setAdjustMode('add'); setAdjustNote('') }}
+                                style={{ padding: '6px 12px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} title="ปรับสต็อก">
+                                <i className="fas fa-sliders-h" style={{ fontSize: 11 }}></i>ปรับสต็อก
+                              </button>
+                            )}
                             <button onClick={() => handleToggleActive(m)} style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--amber-light)', color: 'var(--amber)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} title="ปิดใช้งาน">
                               <i className="fas fa-power-off" style={{ fontSize: 11 }}></i>
                             </button>
@@ -568,13 +573,17 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
                   onChange={e => setNewForm(p => ({ ...p, material_code: e.target.value }))}
                   style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box', fontFamily: 'monospace' }} />
               </div>
-              {/* น้ำหนัก/ม. */}
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>น้ำหนัก/เมตร (kg/m) — สำหรับลวด</label>
-                <input type="number" step="0.0001" placeholder="เช่น 0.0989" value={newForm.weight_per_meter}
-                  onChange={e => setNewForm(p => ({ ...p, weight_per_meter: e.target.value }))}
-                  style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
-              </div>
+              {/* น้ำหนัก/ม. — แสดงเฉพาะหมวดที่ไม่ใช่ ชิ้นส่วน CF/SFG */}
+              {newForm.category !== 'ชิ้นส่วน SFG' && newForm.category !== 'ชิ้นส่วน CF' ? (
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>น้ำหนัก/เมตร (kg/m) — สำหรับลวด</label>
+                  <input type="number" step="0.0001" placeholder="เช่น 0.0989" value={newForm.weight_per_meter}
+                    onChange={e => setNewForm(p => ({ ...p, weight_per_meter: e.target.value }))}
+                    style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+              ) : (
+                <div />
+              )}
               {([
                 { label: 'ชื่อวัตถุดิบ *', key: 'name', colSpan: 2, type: 'text', placeholder: 'เช่น ลวด PC-Wire 4 มม.' },
                 { label: 'หน่วย *', key: 'unit', type: 'text', placeholder: 'กก. / เมตร / ตร.ม.' },
@@ -639,7 +648,7 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
 
               {/* Modified Items Counter Badge */}
               {(() => {
-                const count = materials.filter(m => batchDraft[m.id] !== undefined && batchDraft[m.id] !== m.qty_on_hand).length
+                const count = materials.filter(m => m.category !== 'ชิ้นส่วน SFG' && m.is_active !== false && batchDraft[m.id] !== undefined && batchDraft[m.id] !== m.qty_on_hand).length
                 return (
                   <div style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: count > 0 ? '#FEF3C7' : '#F1F5F9', color: count > 0 ? '#B45309' : '#64748B', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <i className={count > 0 ? 'fas fa-pen' : 'fas fa-check-double'} />
@@ -651,7 +660,7 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
               <button 
                 onClick={() => {
                   const draft: Record<string, number> = {}
-                  materials.forEach(m => { draft[m.id] = m.qty_on_hand })
+                  materials.filter(m => m.category !== 'ชิ้นส่วน SFG' && m.is_active !== false).forEach(m => { draft[m.id] = m.qty_on_hand })
                   setBatchDraft(draft)
                 }}
                 style={{ padding: '6px 12px', border: '1px solid var(--border)', borderRadius: 7, background: 'white', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer' }}
@@ -673,10 +682,12 @@ export default function RawMaterialsClient({ materials: initial, summaryData = [
                 <tbody>
                   {materials
                     .filter(m => {
+                      const notSfg = m.category !== 'ชิ้นส่วน SFG'
+                      const isActive = m.is_active !== false
                       const matchCat = batchCat === 'ทั้งหมด' || m.category === batchCat
                       const q = batchSearch.toLowerCase()
                       const matchSearch = !batchSearch || m.name.toLowerCase().includes(q) || (m.material_code ?? '').toLowerCase().includes(q)
-                      return matchCat && matchSearch
+                      return notSfg && isActive && matchCat && matchSearch
                     })
                     .map(m => {
                       const currentVal = batchDraft[m.id] !== undefined ? batchDraft[m.id] : m.qty_on_hand

@@ -3,6 +3,7 @@
 import { useState, useMemo, useTransition } from 'react'
 import { resetJobOrder } from '@/app/actions/concrete'
 import toast from 'react-hot-toast'
+import FilterBar, { isDateInRange } from '@/components/shared/FilterBar'
 
 interface ConcreteOrder {
   id: string
@@ -316,11 +317,7 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
       }),
     })).filter(g => {
       if (g.jobs.length === 0) return false;
-      if (dateRange.start && dateRange.end) {
-        const pDate = g.planDate.split('T')[0];
-        if (pDate < dateRange.start || pDate > dateRange.end) return false;
-      }
-      return true;
+      return isDateInRange(g.planDate, dateRange)
     })
   }, [planGroups, filterStatus, search, dateRange])
 
@@ -380,11 +377,7 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
       }),
     })).filter(g => {
       if (g.jobs.length === 0) return false
-      if (dateRange.start && dateRange.end) {
-        const pDate = g.planDate.split('T')[0]
-        if (pDate < dateRange.start || pDate > dateRange.end) return false
-      }
-      return true
+      return isDateInRange(g.planDate, dateRange)
     })
   }, [historyPlanGroups, search, dateRange])
 
@@ -443,75 +436,19 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
       </div>
 
       {/* Filters (Search & Date) */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        {/* Search Bar */}
-        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#9CA3AF' }} />
-            <input
-              type="text"
-              placeholder="ค้นหาสินค้า, รหัส, โรงผลิต, เลขที่ PO..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{ paddingLeft: 32, paddingRight: 12, height: 36, width: '100%', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 12, outline: 'none', color: '#374151', background: '#F9FAFB', boxSizing: 'border-box' }}
-            />
-          </div>
-          <span style={{ fontSize: 12, color: '#9CA3AF', whiteSpace: 'nowrap' }}>
-            {tab === 'queue'
-              ? `${filteredGroups.reduce((s, g) => s + g.jobs.length, 0)} รายการ จาก ${filteredGroups.length} ใบสั่งผลิต`
-              : `${filteredHistoryGroups.reduce((s, g) => s + g.jobs.length, 0)} รายการ จาก ${filteredHistoryGroups.length} ใบสั่งผลิต`
-            }
-          </span>
-        </div>
-
-        {/* Date Filter */}
-        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <i className="fas fa-calendar-alt" style={{ color: '#9CA3AF', fontSize: 14 }} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>วันที่แผน:</span>
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 8, padding: '4px 8px' }}>
-            <input 
-              type="date" 
-              value={dateRange.start} 
-              onChange={e => setDateRange(p => ({ ...p, start: e.target.value }))}
-              style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: '#374151', cursor: 'pointer' }}
-            />
-            <span style={{ color: '#9CA3AF', fontSize: 12 }}>-</span>
-            <input 
-              type="date" 
-              value={dateRange.end} 
-              onChange={e => setDateRange(p => ({ ...p, end: e.target.value }))}
-              style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: '#374151', cursor: 'pointer' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button
-              onClick={() => setDateRange(getTodayRange())}
-              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
-            >วันนี้</button>
-            <button
-              onClick={() => setDateRange(getThisWeekRange())}
-              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
-            >สัปดาห์นี้</button>
-            <button
-              onClick={() => setDateRange(getThisMonthRange())}
-              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
-            >เดือนนี้</button>
-            {(dateRange.start || dateRange.end) && (
-              <button
-                onClick={() => setDateRange({ start: '', end: '' })}
-                style={{ padding: '6px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', background: '#FEE2E2', color: '#DC2626', cursor: 'pointer', marginLeft: 4 }}
-                title="ล้างตัวกรอง"
-              >
-                <i className="fas fa-times" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="ค้นหาสินค้า, รหัส, โรงผลิต, เลขที่ PO..."
+        countLabel={
+          tab === 'queue'
+            ? `${filteredGroups.reduce((s, g) => s + g.jobs.length, 0)} รายการ จาก ${filteredGroups.length} ใบสั่งผลิต`
+            : `${filteredHistoryGroups.reduce((s, g) => s + g.jobs.length, 0)} รายการ จาก ${filteredHistoryGroups.length} ใบสั่งผลิต`
+        }
+        dateLabel="วันที่แผน:"
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+      />
 
       {/* Tabs + Content */}
       <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>

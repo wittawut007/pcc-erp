@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import type { UserRole, AuthUpdatePayload, ProfileUpdatePayload } from '@/lib/types'
 
 /**
- * Helper: ตรวจสอบ Session การเข้าสู่ระบบและสิทธิ์การใช้งานระดับ Admin
+ * Helper: ตรวจสอบ Session การเข้าสู่ระบบและสิทธิ์การใช้งานระดับ Admin / Super Admin
  */
 async function assertAdminUser() {
   const supabase = await createClient()
@@ -16,15 +16,15 @@ async function assertAdminUser() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role, is_active')
+    .select('id, role, is_active')
     .eq('id', user.id)
     .single()
 
-  if (!profile || !profile.is_active || profile.role !== 'admin') {
-    throw new Error('ไม่มีสิทธิ์ใช้งานการดำเนินการนี้ (Forbidden: Admin role required)')
+  if (!profile || !profile.is_active || (profile.role !== 'admin' && profile.role !== 'super_admin')) {
+    throw new Error('ไม่มีสิทธิ์ใช้งานการดำเนินการนี้ (Forbidden: Admin or Super Admin role required)')
   }
 
-  return user
+  return { user, profile }
 }
 
 export async function createUserAction(formData: FormData) {
@@ -37,6 +37,11 @@ export async function createUserAction(formData: FormData) {
 
   try {
     await assertAdminUser()
+
+    if (role === 'super_admin') {
+      throw new Error('ไม่สามารถสร้างผู้ใช้งานระดับ Super Admin ผ่าน UI ได้ (ต้องดำเนินการผ่านฐานข้อมูลเท่านั้น)')
+    }
+
     const supabaseAdmin = createAdminClient()
 
     // 1. Create User in Supabase Auth
@@ -51,19 +56,18 @@ export async function createUserAction(formData: FormData) {
 
     if (authData.user) {
       // 2. upsert แทน update เพื่อรองรับทั้งกรณีที่ trigger สร้าง profile ไว้แล้ว
-      //    และกรณีที่ยังไม่มี profile row เลย (ป้องกัน silent fail)
       const { error: profileError } = await supabaseAdmin
         .from('profiles')
         .upsert({
           id: authData.user.id,
           email: email,
           full_name: fullName,
-          role: role,
+          role: role as UserRole,
           employee_code: employeeCode,
           avatar_url: avatarUrl || null,
           is_active: true,
         }, {
-          onConflict: 'id',  // ถ้า id ซ้ำ (trigger สร้างไว้แล้ว) ให้ update แทน
+          onConflict: 'id',
         })
 
       if (profileError) throw new Error(`สร้าง profile ไม่สำเร็จ: ${profileError.message}`)
@@ -86,12 +90,36 @@ export async function updateUserAction(formData: FormData) {
   const avatarUrl = formData.get('avatarUrl') as string | null
 
   try {
-    await assertAdminUser()
+    const { profile: callerProfile } = await assertAdminUser()
     const supabaseAdmin = createAdminClient()
+
+    // Check if target user is Super Admin
+    const { data: targetProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('role, email, full_name')
+      .eq('id', userId)
+      .single()
+
+    // Admin ปกติไม่สามารถแก้ไขข้อมูล Super Admin ได้
+    if (targetProfile?.role === 'super_admin' && callerProfile.role !== 'super_admin') {
+      throw new Error('Admin ปกติไม่มีสิทธิ์แก้ไขข้อมูลของผู้ใช้งานระดับ Super Admin')
+    }
+
+    // ห้ามระงับสิทธิ์ Super Admin
+    if (targetProfile?.role === 'super_admin' && !isActive) {
+      throw new Error('ไม่สามารถระงับการใช้งานสิทธิ์ Super Admin ได้ (Protected User)')
+    }
+
+    // ห้ามปรับสิทธิ์ user ปกติให้เป็น super_admin ผ่าน UI
+    if (role === 'super_admin' && targetProfile?.role !== 'super_admin') {
+      throw new Error('ไม่สามารถกำหนดสิทธิ์เป็น Super Admin ผ่าน UI ได้ (ต้องดำเนินการผ่านฐานข้อมูลเท่านั้น)')
+    }
+
+    const finalRole = targetProfile?.role === 'super_admin' ? 'super_admin' : role
 
     // Update Auth Data (Email / Password / Ban state)
     const updatePayload: AuthUpdatePayload = {
-      user_metadata: { full_name: fullName, role: role as UserRole, employee_code: employeeCode },
+      user_metadata: { full_name: fullName, role: finalRole as UserRole, employee_code: employeeCode },
       ban_duration: isActive ? 'none' : '876000h', // Ban for 100 years if inactive
     }
     if (password) (updatePayload as AuthUpdatePayload & { password?: string }).password = password
@@ -102,7 +130,7 @@ export async function updateUserAction(formData: FormData) {
     // Update Profile
     const profileData: ProfileUpdatePayload = {
       full_name: fullName,
-      role: role as UserRole,
+      role: finalRole as UserRole,
       employee_code: employeeCode,
       is_active: isActive,
     }
@@ -148,6 +176,41 @@ export async function deleteUserAction(userId: string) {
   try {
     await assertAdminUser()
     const supabaseAdmin = createAdminClient()
+
+    // Protected Check: Disallow deleting super_admin or wittawut.abm@gmail.com
+    const { data: targetProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('role, email, full_name')
+      .eq('id', userId)
+      .single()
+
+    if (
+      targetProfile?.role === 'super_admin' ||
+      targetProfile?.email === 'wittawut.abm@gmail.com' ||
+      targetProfile?.email?.includes('wittawut.abm')
+    ) {
+      throw new Error('ไม่อนุญาตให้ลบผู้ใช้งานระดับ Super Admin ออกจากระบบ (Protected Super Admin User)')
+    }
+
+    // เคลียร์ความสัมพันธ์ในตารางต่างๆ ป้องกันปัญหา Foreign Key
+    await Promise.allSettled([
+      supabaseAdmin.from('activity_logs').update({ user_id: null }).eq('user_id', userId),
+      supabaseAdmin.from('production_plans').update({ created_by: null }).eq('created_by', userId),
+      supabaseAdmin.from('production_orders').update({ confirmed_by: null }).eq('confirmed_by', userId),
+      supabaseAdmin.from('job_orders').update({ worker_id: null }).eq('worker_id', userId),
+      supabaseAdmin.from('demolding_records').update({ worker_id: null }).eq('worker_id', userId),
+      supabaseAdmin.from('fg_inventory').update({ last_updated_by: null }).eq('last_updated_by', userId),
+      supabaseAdmin.from('plan_materials').update({ dispensed_by: null }).eq('dispensed_by', userId),
+      supabaseAdmin.from('concrete_orders').update({ requested_by: null }).eq('requested_by', userId),
+      supabaseAdmin.from('concrete_orders').update({ supplied_by: null }).eq('supplied_by', userId),
+      supabaseAdmin.from('qc_inspections').update({ qc_id: null }).eq('qc_id', userId),
+      supabaseAdmin.from('fg_receipts').update({ warehouse_id: null }).eq('warehouse_id', userId),
+    ])
+
+    // ลบข้อมูลจาก public.profiles ก่อน
+    await supabaseAdmin.from('profiles').delete().eq('id', userId)
+
+    // ลบข้อมูลจาก Supabase Auth
     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId)
     if (authError) throw authError
     return { success: true }

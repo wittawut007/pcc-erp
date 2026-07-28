@@ -49,19 +49,7 @@ export default async function FgPrintPage({ params }: PageProps) {
             wire_per_unit,
             rebar_per_unit,
             mesh_per_unit,
-            length,
-            product_bom_items(
-              id,
-              qty_per_unit,
-              raw_materials(
-                id,
-                name,
-                category,
-                unit,
-                material_code,
-                weight_per_meter
-              )
-            )
+            length
           )
         )
       )
@@ -72,6 +60,16 @@ export default async function FgPrintPage({ params }: PageProps) {
   if (error || !order) {
     console.error('Fetch order error:', error)
     notFound()
+  }
+
+  const productId = (order as any).plan_item?.product?.id
+  if (productId && (order as any).plan_item?.product) {
+    const { data: bomData } = await supabase
+      .from('product_bom_items')
+      .select('id, qty_per_unit, raw_materials(id, name, category, unit, material_code, weight_per_meter)')
+      .eq('product_id', productId)
+
+    ;(order as any).plan_item.product.product_bom_items = bomData || []
   }
 
   // Handle plan object/array mapping and fetch actual materials

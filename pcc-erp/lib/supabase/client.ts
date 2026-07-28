@@ -40,5 +40,5 @@ export function createClient() {
 
 export function isSupabaseConfigured(): boolean {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  return !!(url && url.startsWith('https://') && !url.includes('placeholder'))
+  return !!(url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('placeholder'))
 }

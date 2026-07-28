@@ -1,7 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { getCachedUser, getCachedProfile } from '@/lib/supabase/server'
-import type { Profile } from '@/lib/supabase/types'
+import type { Profile, UserRole } from '@/lib/supabase/types'
+import { ROLE_LABEL } from '@/lib/rbac'
 import MobileLogoutButton from '@/components/shared/MobileLogoutButton'
 
 interface HeaderProps {
@@ -16,26 +17,23 @@ export default async function Header({ title, subtitle, rightContent }: HeaderPr
 
   let profile: Profile | null = null
   let userEmail: string | null = null
+  let userRole: UserRole | null = null
   const cacheBuster = Date.now()
 
   if (isConfigured) {
     try {
       const { user } = await getCachedUser()
       userEmail = user?.email ?? null
+      userRole = (user?.user_metadata?.role as UserRole) ?? null
       if (user) {
         const { data } = await getCachedProfile(user.id)
-        profile = data
+        if (data) {
+          profile = data
+        }
       }
     } catch {
       // Supabase not yet configured
     }
-  }
-
-  const roleLabel: Record<string, string> = {
-    admin: 'ผู้ดูแลระบบ (Admin)',
-    planner: 'ผู้วางแผนผลิต (Planner)',
-    worker: 'พนักงานผลิต (Worker)',
-    qc: 'ฝ่าย QC',
   }
 
   const now = new Date()
@@ -75,7 +73,7 @@ export default async function Header({ title, subtitle, rightContent }: HeaderPr
         <div className="flex items-center gap-3 cursor-pointer">
           <div className="w-[36px] h-[36px] rounded-full overflow-hidden shrink-0 border-2 border-erp-border">
             <img
-              src={profile?.avatar_url ? `${profile.avatar_url}?t=${cacheBuster}` : 'https://i.pravatar.cc/150?img=11'}
+              src={profile?.avatar_url ? `${profile.avatar_url}?t=${cacheBuster}` : `/avatars/${profile?.role || 'admin'}.png`}
               alt="Profile"
               className="w-full h-full object-cover"
             />
@@ -85,7 +83,7 @@ export default async function Header({ title, subtitle, rightContent }: HeaderPr
               {profile?.full_name || userEmail || 'วริศรา ผู้ดูแล'}
             </span>
             <span className="text-[11px] text-erp-text-muted leading-[1.2] mt-0.5">
-              {roleLabel[profile?.role || 'admin']}
+              {ROLE_LABEL[(profile?.role || userRole || 'admin') as UserRole] || 'ผู้ดูแลระบบ (Admin)'}
             </span>
           </div>
         </div>

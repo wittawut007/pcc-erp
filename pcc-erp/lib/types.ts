@@ -7,6 +7,7 @@
 
 // ─── User / Profile ───────────────────────────────────
 export type UserRole =
+  | 'super_admin'
   | 'admin'
   | 'planner'
   | 'warehouse'
@@ -31,6 +32,12 @@ export type PlanStatus = 'draft' | 'confirmed' | 'in_progress' | 'completed' | '
 export type PlanItemStatus = 'pending' | 'casting' | 'cast' | 'curing' | 'demolded' | 'completed'
 export type OrderStatus = 'active' | 'completed' | 'erp_synced' | 'cancelled'
 
+/** ประเภทแผนผลิต: fg = สินค้าสำเร็จรูป, component = ชิ้นส่วน Counterfort SFG */
+export type PlanType = 'fg' | 'component'
+
+/** ประเภท Job Order: fg = งานปกติ, component = ผลิต Counterfort เข้าคลัง */
+export type JobType = 'fg' | 'component'
+
 export interface PlanItem {
   id: string
   plan_id: string
@@ -46,6 +53,7 @@ export interface ProductionPlan {
   plan_date: string
   created_by: string
   status: PlanStatus
+  plan_type: PlanType
   total_qty: number
   total_concrete?: number | null
   items?: PlanItem[]
@@ -73,6 +81,7 @@ export interface JobOrder {
   qty_target: number
   qty_cast: number
   status: string
+  job_type: JobType
   started_at?: string | null
   cast_at?: string | null
   demolded_at?: string | null
@@ -104,7 +113,23 @@ export interface Product {
   rebar_per_unit?: number | null
   mesh_per_unit?: number | null
   length?: number | null
+  /** FK → raw_materials.id ของ Counterfort SFG ที่ใช้ประกอบ (A42 เท่านั้น) */
+  counterfort_material_id?: string | null
+  /** จำนวน Counterfort ต่อ 1 ชิ้น L-Wall */
+  counterfort_qty_per_unit?: number
   product_bom_items?: BomItem[]
+}
+
+// ─── Counterfort Stock Check ──────────────────────────
+export interface CounterfortStockCheck {
+  productId: string
+  productName: string
+  cfMaterialId: string
+  cfMaterialName: string
+  cfMaterialCode: string | null
+  qtyRequired: number
+  qtyAvailable: number
+  sufficient: boolean
 }
 
 export interface BomItem {

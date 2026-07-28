@@ -5,41 +5,44 @@ import type { UserRole } from './supabase/types'
 // []    = ไม่มีสิทธิ์ใน admin/desktop routes (ใช้ mobile route แทน)
 // path prefix: ตรวจสอบว่า pathname เริ่มต้นด้วย prefix นั้นหรือไม่
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
-  admin:     ['*'],
-  planner:   ['/dashboard', '/planner', '/production-order', '/job-orders', '/demolding', '/qc', '/products', '/data-catalog'],
-  material:  ['/dashboard', '/material', '/inventory/raw'],
-  concrete:  ['/dashboard', '/concrete'],
-  warehouse: ['/dashboard', '/inventory', '/warehouse'],
-  qc:        [],  // QC ใช้ /(mobile)/qc — ไม่มีสิทธิ์ใน admin routes
-  worker:    [],  // Worker ใช้ QR Token เข้า /(worker)/worker
+  super_admin: ['*'],
+  admin:       ['*'],
+  planner:     ['/dashboard', '/planner', '/production-order'],
+  material:    ['/dashboard', '/material', '/inventory/raw', '/inventory/component'],
+  concrete:    ['/dashboard', '/concrete'],
+  warehouse:   ['/dashboard', '/inventory/fg'],
+  qc:          [],  // QC ใช้ /(mobile)/qc — ไม่มีสิทธิ์ใน admin routes
+  worker:      [],  // Worker ใช้ QR Token เข้า /(worker)/worker
 }
 
 // Default redirect path หลัง login สำเร็จ
 export const DEFAULT_PATH: Record<UserRole, string> = {
-  admin:     '/dashboard',
-  planner:   '/dashboard',
-  material:  '/dashboard',
-  concrete:  '/dashboard',
-  warehouse: '/dashboard',
-  qc:        '/qc-inspect',    // redirect ไป mobile QC layout
-  worker:    '/worker',        // redirect ไป mobile Worker layout
+  super_admin: '/dashboard',
+  admin:       '/dashboard',
+  planner:     '/planner',
+  material:    '/material',
+  concrete:    '/concrete',
+  warehouse:   '/inventory/fg',
+  qc:          '/qc-inspect',    // redirect ไป mobile QC layout
+  worker:      '/worker',        // redirect ไป mobile Worker layout
 }
 
 // Roles ที่ใช้ Desktop/Admin layout (มี Sidebar)
-export const DESKTOP_ROLES: UserRole[] = ['admin', 'planner', 'material', 'concrete', 'warehouse']
+export const DESKTOP_ROLES: UserRole[] = ['super_admin', 'admin', 'planner', 'material', 'concrete', 'warehouse']
 
 // Roles ที่ใช้ Mobile layout
 export const MOBILE_ROLES: UserRole[] = ['worker', 'qc']
 
 // Label สำหรับแสดงใน UI
 export const ROLE_LABEL: Record<UserRole, string> = {
-  admin:     'ผู้ดูแลระบบ (Admin)',
-  planner:   'ผู้วางแผนการผลิต (Planner)',
-  material:  'พนักงานคลังวัตถุดิบ (Material)',
-  concrete:  'พนักงานผสมคอนกรีต (Concrete)',
-  warehouse: 'พนักงานคลังสินค้า (Warehouse)',
-  qc:        'พนักงาน QC',
-  worker:    'พนักงานหน้างาน (Worker)',
+  super_admin: 'Super Admin (ผู้ดูแลระบบสูงสุด)',
+  admin:       'ผู้ดูแลระบบ (Admin)',
+  planner:     'ผู้วางแผนการผลิต (Planner)',
+  material:    'พนักงานคลังวัตถุดิบ (Material)',
+  concrete:    'พนักงานผสมคอนกรีต (Concrete)',
+  warehouse:   'พนักงานคลังสินค้า (Warehouse)',
+  qc:          'พนักงาน QC',
+  worker:      'พนักงานหน้างาน (Worker)',
 }
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────

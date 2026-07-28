@@ -31,7 +31,7 @@ export async function getErrorLogs(): Promise<{ logs: ErrorLog[]; error?: string
       .eq('id', user.id)
       .single()
 
-    if (profile?.role !== 'admin') return { logs: [], error: 'Forbidden' }
+    if (profile?.role !== 'admin' && profile?.role !== 'super_admin') return { logs: [], error: 'Forbidden' }
 
     const { data, error } = await supabase
       .from('error_logs')

@@ -13,12 +13,13 @@ function QRImage({ value, size = 180 }: { value: string; size?: number }) {
   return <img src={url} alt="QR Code" width={size} height={size} style={{ borderRadius: 6, display: 'block', margin: '0 auto' }} />
 }
 
-export default function UsersClient({ initialUsers }: { initialUsers: UserProfile[] }) {
+export default function UsersClient({ initialUsers, currentUserRole }: { initialUsers: UserProfile[]; currentUserRole?: string }) {
   const router = useRouter()
   const [users, setUsers] = useState(initialUsers)
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('ทั้งหมด')
-  
+  const isSuperAdmin = currentUserRole === 'super_admin'
+
   useEffect(() => {
     setUsers(initialUsers)
   }, [initialUsers])
@@ -50,10 +51,11 @@ export default function UsersClient({ initialUsers }: { initialUsers: UserProfil
     setCacheBuster(Date.now().toString())
   }, [])
 
-  const rolesList = ['ทั้งหมด', 'Admin', 'Planner', 'Warehouse', 'QC', 'Worker', 'Material', 'Concrete']
+  const rolesList = ['ทั้งหมด', 'Super Admin', 'Admin', 'Planner', 'Warehouse', 'QC', 'Worker', 'Material', 'Concrete']
 
   const filtered = users.filter(u => {
     const roleMap: Record<string, string> = {
+      'super_admin': 'Super Admin',
       'admin': 'Admin',
       'planner': 'Planner',
       'warehouse': 'Warehouse',
@@ -222,10 +224,8 @@ export default function UsersClient({ initialUsers }: { initialUsers: UserProfil
     total: users.length,
     active: users.filter(u => u.is_active).length,
     suspended: users.filter(u => !u.is_active).length,
-    admins: users.filter(u => ['admin', 'planner'].includes(u.role)).length,
+    admins: users.filter(u => ['super_admin', 'admin', 'planner'].includes(u.role)).length,
   }
-
-
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
@@ -288,11 +288,18 @@ export default function UsersClient({ initialUsers }: { initialUsers: UserProfil
                         <img src={`${u.avatar_url}?t=${cacheBuster}`} alt={u.full_name ?? ''} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />
                       ) : (
                         <div style={{ width: 34, height: 34, borderRadius: '50%', background: rStyle.bg, color: rStyle.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
-                          {u.role === 'admin' ? 'AD' : initials}
+                          {u.role === 'super_admin' ? 'SA' : u.role === 'admin' ? 'AD' : initials}
                         </div>
                       )}
                       <div>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.full_name || 'ไม่ระบุชื่อ'} {u.role === 'admin' && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>(Admin)</span>}</div>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {u.full_name || 'ไม่ระบุชื่อ'}{' '}
+                          {u.role === 'super_admin' ? (
+                            <span style={{ fontSize: 10, color: '#991B1B', fontWeight: 700, background: '#FEE2E2', padding: '1px 5px', borderRadius: 3 }}>(Super Admin)</span>
+                          ) : u.role === 'admin' ? (
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>(Admin)</span>
+                          ) : null}
+                        </div>
                         <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{u.is_active ? 'เข้าใช้งานล่าสุด: -' : 'ถูกระงับ'}</div>
                       </div>
                     </div>
@@ -304,7 +311,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: UserProfil
                     <span style={{ background: rStyle.bg, color: rStyle.color, padding: '3px 9px', borderRadius: 4, fontSize: 11, fontWeight: 700 }}>{rStyle.label}</span>
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 11, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>
-                    {u.employee_code || (u.role === 'admin' ? 'IT Department' : '—')}
+                    {u.employee_code || (u.role === 'admin' || u.role === 'super_admin' ? 'IT Department' : '—')}
                   </td>
                   <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                     <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: u.is_active ? 'var(--green-light)' : 'var(--red-light)', color: u.is_active ? 'var(--green)' : 'var(--red)' }}>
@@ -312,29 +319,59 @@ export default function UsersClient({ initialUsers }: { initialUsers: UserProfil
                     </span>
                   </td>
                   <td style={{ padding: '10px 14px', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                      <button onClick={() => openEdit(u)} style={{ padding: '5px 10px', background: 'var(--bg)', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 5, cursor: 'pointer', fontSize: 11, fontWeight: 600 }} title="แก้ไขข้อมูล">
-                        <i className="fas fa-pen"></i>
-                      </button>
-                      
-                      {u.role === 'worker' ? (
-                        <button onClick={() => openQrModal(u)} style={{ padding: '5px 10px', background: u.worker_token ? '#FEF3C7' : 'var(--bg)', color: u.worker_token ? '#D97706' : 'var(--text-muted)', border: `1px solid ${u.worker_token ? '#FDE68A' : 'var(--border)'}`, borderRadius: 5, cursor: 'pointer', fontSize: 11 }} title="QR Code เข้างาน">
-                          <i className="fas fa-qrcode"></i>
-                        </button>
-                      ) : (
-                        <button disabled style={{ padding: '5px 10px', background: 'var(--bg)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 5, opacity: 0.5, cursor: 'not-allowed', fontSize: 11 }}>
-                          <i className="fas fa-key"></i>
-                        </button>
-                      )}
-                      
-                      <button onClick={() => handleToggleStatus(u)} style={{ padding: '5px 10px', background: u.is_active ? 'var(--bg)' : 'var(--green-light)', color: u.is_active ? 'var(--text-muted)' : 'var(--green)', border: `1px solid ${u.is_active ? 'var(--border)' : 'var(--green-light)'}`, borderRadius: 5, cursor: 'pointer', fontSize: 11 }} title={u.is_active ? "ระงับสิทธิ์" : "เปิดใช้งาน"}>
-                        <i className={`fas ${u.is_active ? 'fa-ban' : 'fa-unlock'}`}></i>
-                      </button>
+                    {u.role === 'super_admin' ? (
+                      isSuperAdmin ? (
+                        /* Super Admin viewing Super Admin: Can EDIT self/super_admin, cannot delete or suspend */
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                          <button onClick={() => openEdit(u)} style={{ padding: '5px 10px', background: 'var(--bg)', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 5, cursor: 'pointer', fontSize: 11, fontWeight: 600 }} title="แก้ไขข้อมูลโปรไฟล์ตนเอง / Super Admin">
+                            <i className="fas fa-pen"></i>
+                          </button>
 
-                      <button onClick={() => handleDeleteUser(u)} style={{ padding: '5px 10px', background: '#FEE2E2', color: '#DC2626', border: '1px solid #FCA5A5', borderRadius: 5, cursor: 'pointer', fontSize: 11 }} title="ลบผู้ใช้งาน">
-                        <i className="fas fa-trash-alt"></i>
-                      </button>
-                    </div>
+                          <button disabled style={{ padding: '5px 10px', background: '#F3F4F6', color: '#9CA3AF', border: '1px solid #E5E7EB', borderRadius: 5, cursor: 'not-allowed', fontSize: 11 }} title="Super Admin ไม่สามารถระงับสิทธิ์ได้">
+                            <i className="fas fa-shield-alt"></i>
+                          </button>
+
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 8px', background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', borderRadius: 5, fontSize: 10, fontWeight: 700 }} title="Super Admin ไม่สามารถลบออกจากระบบได้">
+                            <i className="fas fa-lock"></i> ป้องกันการลบ
+                          </span>
+                        </div>
+                      ) : (
+                        /* Normal Admin viewing Super Admin: Cannot edit or delete Super Admin */
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
+                          <button disabled style={{ padding: '5px 10px', background: '#F3F4F6', color: '#9CA3AF', border: '1px solid #E5E7EB', borderRadius: 5, cursor: 'not-allowed', fontSize: 11 }} title="Admin ปกติไม่สามารถแก้ไขข้อมูล Super Admin ได้">
+                            <i className="fas fa-lock"></i>
+                          </button>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 8px', background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', borderRadius: 5, fontSize: 10, fontWeight: 700 }} title="Admin ปกติไม่สามารถแก้ไขหรือลบ Super Admin ได้">
+                            <i className="fas fa-shield-alt"></i> สิทธิ์สูงสุด (ป้องกันการแก้ไข)
+                          </span>
+                        </div>
+                      )
+                    ) : (
+                      /* Managing normal users/admins: Admin & Super Admin can edit, toggle status, and delete */
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                        <button onClick={() => openEdit(u)} style={{ padding: '5px 10px', background: 'var(--bg)', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 5, cursor: 'pointer', fontSize: 11, fontWeight: 600 }} title="แก้ไขข้อมูล">
+                          <i className="fas fa-pen"></i>
+                        </button>
+                        
+                        {u.role === 'worker' ? (
+                          <button onClick={() => openQrModal(u)} style={{ padding: '5px 10px', background: u.worker_token ? '#FEF3C7' : 'var(--bg)', color: u.worker_token ? '#D97706' : 'var(--text-muted)', border: `1px solid ${u.worker_token ? '#FDE68A' : 'var(--border)'}`, borderRadius: 5, cursor: 'pointer', fontSize: 11 }} title="QR Code เข้างาน">
+                            <i className="fas fa-qrcode"></i>
+                          </button>
+                        ) : (
+                          <button disabled style={{ padding: '5px 10px', background: 'var(--bg)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 5, opacity: 0.5, cursor: 'not-allowed', fontSize: 11 }}>
+                            <i className="fas fa-key"></i>
+                          </button>
+                        )}
+
+                        <button onClick={() => handleToggleStatus(u)} style={{ padding: '5px 10px', background: u.is_active ? 'var(--bg)' : 'var(--green-light)', color: u.is_active ? 'var(--text-muted)' : 'var(--green)', border: `1px solid ${u.is_active ? 'var(--border)' : 'var(--green-light)'}`, borderRadius: 5, cursor: 'pointer', fontSize: 11 }} title={u.is_active ? "ระงับสิทธิ์" : "เปิดใช้งาน"}>
+                          <i className={`fas ${u.is_active ? 'fa-ban' : 'fa-unlock'}`}></i>
+                        </button>
+
+                        <button onClick={() => handleDeleteUser(u)} style={{ padding: '5px 10px', background: '#FEE2E2', color: '#DC2626', border: '1px solid #FCA5A5', borderRadius: 5, cursor: 'pointer', fontSize: 11 }} title="ลบผู้ใช้งาน">
+                          <i className="fas fa-trash-alt"></i>
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               )
@@ -464,8 +501,14 @@ export default function UsersClient({ initialUsers }: { initialUsers: UserProfil
 
                <div>
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>สิทธิ์การใช้งาน (Role)</label>
-                <select value={form.role} onChange={e => setForm(prev => ({ ...prev, role: e.target.value }))}
-                  style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--accent)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white', color: 'var(--accent)', fontWeight: 700 }}>
+                <select 
+                  value={form.role} 
+                  disabled={form.role === 'super_admin'}
+                  onChange={e => setForm(prev => ({ ...prev, role: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--accent)', borderRadius: 7, fontSize: 12, outline: 'none', background: form.role === 'super_admin' ? '#F3F4F6' : 'white', color: form.role === 'super_admin' ? '#991B1B' : 'var(--accent)', fontWeight: 700, cursor: form.role === 'super_admin' ? 'not-allowed' : 'pointer' }}>
+                  {form.role === 'super_admin' && (
+                    <option value="super_admin">Super Admin (สิทธิ์สูงสุด - ปรับจาก DB เท่านั้น)</option>
+                  )}
                   <option value="admin">ผู้ดูแลระบบ (Admin)</option>
                   <option value="planner">ส่วนวางแผนผลิต (Planner)</option>
                   <option value="warehouse">คลังสินค้า (Warehouse)</option>

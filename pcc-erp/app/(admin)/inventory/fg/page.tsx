@@ -8,7 +8,7 @@ export default async function FgInventoryPage() {
   const supabase = await createClient()
 
   // Fetch production orders that have demolded jobs or are completed
-  const { data: productionOrders } = await supabase
+  let { data: productionOrders, error: poErr } = await supabase
     .from('production_orders')
     .select(`
       id,
@@ -19,6 +19,7 @@ export default async function FgInventoryPage() {
       plan:production_plans(plan_date),
       job_orders(
         id,
+        bed,
         status,
         qty_target,
         qty_cast,
@@ -29,6 +30,31 @@ export default async function FgInventoryPage() {
       )
     `)
     .order('created_at', { ascending: false })
+
+  if (poErr) {
+    const { data: fallbackOrders } = await supabase
+      .from('production_orders')
+      .select(`
+        id,
+        order_number,
+        status,
+        created_at,
+        plan:production_plans(plan_date),
+        job_orders(
+          id,
+          bed,
+          status,
+          qty_target,
+          qty_cast,
+          demolding_records(qty_good, qty_defect),
+          plan_item:production_plan_items(
+            product:products(id, code, name, category, unit, size)
+          )
+        )
+      `)
+      .order('created_at', { ascending: false })
+    productionOrders = (fallbackOrders || []).map(o => ({ ...o, erp_reference: null }))
+  }
 
   // Fetch active products list for manual adjustments
   const { data: products } = await supabase

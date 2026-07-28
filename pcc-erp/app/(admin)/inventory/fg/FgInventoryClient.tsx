@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { saveErpReference, createManualFgOrder, getManualFgFormData } from '@/app/actions/fg'
 import FgDocumentModal from '@/components/shared/FgDocumentModal'
+import FilterBar, { isDateInRange } from '@/components/shared/FilterBar'
 
 interface ProductionOrder {
   id: string
@@ -67,6 +68,31 @@ const CATEGORIES = [
   'A82 เสารั้ว',
 ]
 
+function getOrderDisplayDate(order: ProductionOrder): string {
+  const planObj: any = order.plan
+  let dateStr = ''
+
+  if (Array.isArray(planObj) && planObj.length > 0) {
+    dateStr = planObj[0]?.plan_date
+  } else if (planObj?.plan_date) {
+    dateStr = planObj.plan_date
+  }
+
+  if (!dateStr && order.job_orders && order.job_orders.length > 0) {
+    const firstJobPlan = order.job_orders[0]?.plan_item?.plan?.plan_date
+    if (firstJobPlan) dateStr = firstJobPlan
+  }
+
+  if (!dateStr) dateStr = order.created_at
+
+  if (!dateStr) return '-'
+
+  const cleanDate = dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`
+  const d = new Date(cleanDate)
+  if (isNaN(d.getTime())) return dateStr
+  return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
 export default function FgInventoryClient({ 
   productionOrders: initialOrders,
   products
@@ -75,7 +101,26 @@ export default function FgInventoryClient({
   products: Product[]
 }) {
   const [orders, setOrders] = useState<ProductionOrder[]>(initialOrders)
+
+  // Sync state when initialOrders prop updates from server revalidation
+  useEffect(() => {
+    setOrders(initialOrders)
+  }, [initialOrders])
   const [search, setSearch] = useState('')
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' })
+  const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(new Set())
+
+  const toggleExpand = (orderId: string) => {
+    setExpandedOrderIds(prev => {
+      const next = new Set(prev)
+      if (next.has(orderId)) {
+        next.delete(orderId)
+      } else {
+        next.add(orderId)
+      }
+      return next
+    })
+  }
   const [manageModal, setManageModal] = useState<ProductionOrder | null>(null)
   const [erpRef, setErpRef] = useState('')
   const [saving, setSaving] = useState(false)
@@ -324,40 +369,54 @@ export default function FgInventoryClient({
   })
 
   // Filter orders (only showing ones that have at least some jobs)
+  const isOrderMatching = (o: ProductionOrder) => {
+    const q = search.trim().toLowerCase()
+    const matchSearch = !q ||
+      o.order_number.toLowerCase().includes(q) ||
+      (o.erp_reference || '').toLowerCase().includes(q) ||
+      (o.job_orders || []).some(j =>
+        (j.plan_item?.product?.name || '').toLowerCase().includes(q) ||
+        (j.plan_item?.product?.code || '').toLowerCase().includes(q)
+      )
+    const planObj: any = o.plan
+    const dateStr = (Array.isArray(planObj) ? planObj[0]?.plan_date : planObj?.plan_date) || o.created_at || ''
+    const matchDate = isDateInRange(dateStr, dateRange)
+    return matchSearch && matchDate
+  }
+
   const filtered = useMemo(() => {
     return orders.filter(o => {
-      const matchSearch = !search || o.order_number.toLowerCase().includes(search.toLowerCase())
       const matchTab = activeTab === 'queue' ? o.status !== 'erp_synced' : o.status === 'erp_synced'
-      return matchSearch && o.job_orders && o.job_orders.length > 0 && matchTab
+      return isOrderMatching(o) && o.job_orders && o.job_orders.length > 0 && matchTab
     })
-  }, [orders, search, activeTab])
+  }, [orders, search, activeTab, dateRange])
 
   // Search-filtered KPI counts
   const totalAllOrders = useMemo(() => {
     return orders.filter(o => 
       o.job_orders && 
       o.job_orders.length > 0 &&
-      (!search || o.order_number.toLowerCase().includes(search.toLowerCase()))
+      isOrderMatching(o)
     ).length
-  }, [orders, search])
+  }, [orders, search, dateRange])
 
   const totalPendingOrders = useMemo(() => {
     return orders.filter(o => 
       o.status !== 'erp_synced' && 
       o.job_orders && 
       o.job_orders.length > 0 &&
-      (!search || o.order_number.toLowerCase().includes(search.toLowerCase()))
+      isOrderMatching(o)
     ).length
-  }, [orders, search])
+  }, [orders, search, dateRange])
 
   const totalCompletedOrders = useMemo(() => {
     return orders.filter(o => 
       o.status === 'erp_synced' && 
       o.job_orders && 
       o.job_orders.length > 0 &&
-      (!search || o.order_number.toLowerCase().includes(search.toLowerCase()))
+      isOrderMatching(o)
     ).length
-  }, [orders, search])
+  }, [orders, search, dateRange])
 
   // Global counts for tab badges
   const globalPendingCount = useMemo(() => {
@@ -422,18 +481,39 @@ export default function FgInventoryClient({
         ))}
       </div>
 
-      {/* Actions */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
-          <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12 }}></i>
-          <input type="text" placeholder="ค้นหาเลขที่ใบสั่งผลิต..." value={search} onChange={e => setSearch(e.target.value)}
-            style={{ width: '100%', paddingLeft: 32, paddingRight: 12, paddingTop: 9, paddingBottom: 9, border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, background: 'var(--surface)', outline: 'none' }} />
-        </div>
-        <button onClick={() => setShowAddModal(true)}
-          style={{ padding: '9px 16px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <i className="fas fa-plus"></i> ปรับขนาดสินค้าเสีย / เพิ่มสินค้าสำเร็จรูปเอง
-        </button>
-      </div>
+      {/* Filters (Search & Date & Action) */}
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="ค้นหาเลขที่ใบสั่งผลิต, รหัสสินค้า, หรืออ้างอิง ERP..."
+        countLabel={`${filtered.length} ใบสั่งผลิต`}
+        dateLabel="วันที่สั่งผลิต:"
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+        style={{ marginBottom: 16 }}
+        actionButton={
+          <button
+            onClick={() => setShowAddModal(true)}
+            style={{
+              padding: '10px 18px',
+              background: 'var(--accent)',
+              color: 'white',
+              border: 'none',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              height: 36,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <i className="fas fa-plus" /> ปรับขนาดสินค้าเสีย / เพิ่มสินค้าสำเร็จรูปเอง
+          </button>
+        }
+      />
 
       {/* Table */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
@@ -468,13 +548,14 @@ export default function FgInventoryClient({
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr>
-              {['วันที่', 'ใบสั่งผลิต', 'จำนวนรายการ (ชิ้น)', 'สถานะ', 'หมายเลขอ้างอิง', 'เอกสาร', 'จัดการ'].map((h, i) => (
-                <th key={h} style={{ padding: '10px 14px', textAlign: i >= 5 ? 'center' : 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>{h}</th>
+              {['', 'วันที่', 'ใบสั่งผลิต', 'จำนวนรายการ (ชิ้น)', 'สถานะ', 'หมายเลขอ้างอิง', 'เอกสาร', 'จัดการ'].map((h, i) => (
+                <th key={i} style={{ padding: '10px 14px', textAlign: i >= 6 ? 'center' : 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {filtered.map(order => {
+              const isExpanded = expandedOrderIds.has(order.id)
               const totalTarget = order.job_orders.reduce((sum, j) => sum + (j.qty_target || 0), 0)
               
               // Count demolded jobs
@@ -494,45 +575,226 @@ export default function FgInventoryClient({
                 statusBg = 'var(--accent-light)'
               }
 
+              const totalGoodAll = order.job_orders.reduce((sum, j) => {
+                const recs = j.demolding_records || []
+                if (recs.length > 0) return sum + recs.reduce((s: number, r: any) => s + (r.qty_good || 0), 0)
+                if (j.status === 'demolded' || j.status === 'qc_passed' || j.status === 'erp_synced' || order.status === 'erp_synced') {
+                  return sum + (j.qty_cast || j.qty_target || 0)
+                }
+                return sum
+              }, 0)
+
+              const totalDefectAll = order.job_orders.reduce((sum, j) => {
+                const recs = j.demolding_records || []
+                if (recs.length > 0) return sum + recs.reduce((s: number, r: any) => s + (r.qty_defect || 0), 0)
+                return sum
+              }, 0)
+
               return (
-                <tr key={order.id} className="hover:bg-[var(--bg)] transition-colors">
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                    {order.plan?.[0]?.plan_date ? new Date(order.plan[0].plan_date).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : '-'}
-                  </td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontWeight: 700, color: 'var(--text)' }}>
-                    {order.order_number}
-                  </td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
-                    {totalTarget} ชิ้น ({order.job_orders.length} รายการ)
-                  </td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, fontWeight: 600, background: statusBg, color: statusColor }}>
-                      {statusText}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
-                    {order.erp_reference ? (
-                      <span style={{ background: '#F1F5F9', padding: '2px 6px', borderRadius: 4, border: '1px solid #E2E8F0' }}>{order.erp_reference}</span>
-                    ) : '-'}
-                  </td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
-                    <button onClick={() => setPrintModalOrderId(order.id)}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
-                      className="hover:bg-slate-100 transition-colors">
-                      <i className="fas fa-print" style={{ color: 'var(--accent)' }}></i> พิมพ์เอกสาร
-                    </button>
-                  </td>
-                  <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
-                    {statusText === 'QC ตรวจสอบแล้ว' ? (
-                      <button onClick={() => handleManage(order)}
-                        style={{ padding: '6px 12px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
-                        <i className="fas fa-tasks" style={{ marginRight: 6 }}></i> จัดการ
+                <React.Fragment key={order.id}>
+                  <tr 
+                    onClick={() => toggleExpand(order.id)}
+                    className="hover:bg-[var(--bg)] transition-colors"
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <td style={{ padding: '10px 8px 10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center', width: 36 }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleExpand(order.id)
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: isExpanded ? 'var(--accent)' : 'var(--text-muted)',
+                          cursor: 'pointer',
+                          fontSize: 11,
+                          width: 24,
+                          height: 24,
+                          borderRadius: 4,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                        title={isExpanded ? 'ย่อรายละเอียด' : 'ขยายดูรายละเอียดสินค้า'}
+                      >
+                        <i className={`fas fa-chevron-${isExpanded ? 'down' : 'right'}`} />
                       </button>
-                    ) : (
-                      <span style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 500 }}>-</span>
-                    )}
-                  </td>
-                </tr>
+                    </td>
+                    <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>
+                      {getOrderDisplayDate(order)}
+                    </td>
+                    <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontWeight: 700, color: 'var(--text)' }}>
+                      {order.order_number}
+                    </td>
+                    <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                      {totalTarget} ชิ้น ({order.job_orders.length} รายการ)
+                      {totalGoodAll > 0 && (
+                        <span style={{ fontSize: 11, marginLeft: 6, color: '#16A34A', fontWeight: 600 }}>
+                          (ดี {totalGoodAll}{totalDefectAll > 0 ? `, เสีย ${totalDefectAll}` : ''})
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, fontWeight: 600, background: statusBg, color: statusColor }}>
+                        {statusText}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                      {order.erp_reference ? (
+                        <span style={{ background: '#F1F5F9', padding: '2px 6px', borderRadius: 4, border: '1px solid #E2E8F0' }}>{order.erp_reference}</span>
+                      ) : '-'}
+                    </td>
+                    <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setPrintModalOrderId(order.id)
+                        }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+                        className="hover:bg-slate-100 transition-colors"
+                      >
+                        <i className="fas fa-print" style={{ color: 'var(--accent)' }}></i> พิมพ์เอกสาร
+                      </button>
+                    </td>
+                    <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', textAlign: 'center' }}>
+                      {statusText === 'QC ตรวจสอบแล้ว' ? (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleManage(order)
+                          }}
+                          style={{ padding: '6px 12px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+                        >
+                          <i className="fas fa-tasks" style={{ marginRight: 6 }}></i> จัดการ
+                        </button>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 500 }}>-</span>
+                      )}
+                    </td>
+                  </tr>
+
+                  {/* Expanded Sub-row details */}
+                  {isExpanded && (
+                    <tr key={`${order.id}-details`} style={{ background: '#F8FAFC' }}>
+                      <td colSpan={8} style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.03)' }}>
+                        <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, padding: 16, overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                            <div style={{ fontWeight: 700, fontSize: 13, color: '#1E293B', display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <i className="fas fa-boxes" style={{ color: 'var(--accent)' }} />
+                              รายละเอียดสินค้าในใบสั่งผลิต {order.order_number}
+                            </div>
+                            <span style={{ fontSize: 11, color: '#64748B' }}>
+                              วันที่: <strong>{getOrderDisplayDate(order)}</strong>
+                            </span>
+                          </div>
+
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                            <thead>
+                              <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1' }}>
+                                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: '#475569', fontSize: 11 }}>ลำดับ</th>
+                                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: '#475569', fontSize: 11 }}>ชื่อสินค้า / รหัส</th>
+                                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: '#475569', fontSize: 11 }}>โรงผลิต / แท่น</th>
+                                <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, color: '#475569', fontSize: 11 }}>จำนวนเป้าหมาย</th>
+                                <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, color: '#475569', fontSize: 11 }}>ชิ้นดี</th>
+                                <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, color: '#475569', fontSize: 11 }}>ของเสีย</th>
+                                <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, color: '#475569', fontSize: 11 }}>สถานะการผลิต</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {order.job_orders.map((job, idx) => {
+                                const product = job.plan_item?.product
+                                const productName = product?.name || 'ไม่ระบุชื่อสินค้า'
+                                const productCode = product?.code ? `(${product.code})` : ''
+                                const unit = product?.unit || 'ชิ้น'
+                                const bed = job.bed ? `โรงผลิต ${job.bed}` : '—'
+                                const targetQty = job.qty_target || 0
+
+                                const records = job.demolding_records || []
+                                const hasRecords = records.length > 0
+                                let goodQty = 0
+                                let defectQty = 0
+
+                                if (hasRecords) {
+                                  goodQty = records.reduce((sum: number, r: any) => sum + (r.qty_good || 0), 0)
+                                  defectQty = records.reduce((sum: number, r: any) => sum + (r.qty_defect || 0), 0)
+                                } else if (job.status === 'demolded' || job.status === 'qc_passed' || job.status === 'erp_synced' || order.status === 'erp_synced') {
+                                  goodQty = job.qty_cast || targetQty
+                                  defectQty = 0
+                                }
+
+                                let jobStatusLabel = 'รอเทคอนกรีต'
+                                let jobStatusBg = '#F3F4F6'
+                                let jobStatusColor = '#6B7280'
+
+                                if (job.status === 'erp_synced' || order.status === 'erp_synced') {
+                                  jobStatusLabel = 'บันทึกเข้าระบบแล้ว'
+                                  jobStatusBg = '#D1FAE5'
+                                  jobStatusColor = '#065F46'
+                                } else if (job.status === 'qc_passed' || job.status === 'demolded') {
+                                  jobStatusLabel = 'ผ่าน QC / ถอดแบบแล้ว'
+                                  jobStatusBg = '#DBEAFE'
+                                  jobStatusColor = '#1D4ED8'
+                                } else if (job.status === 'cast') {
+                                  jobStatusLabel = 'เทคอนกรีตแล้ว'
+                                  jobStatusBg = '#FEF3C7'
+                                  jobStatusColor = '#B45309'
+                                } else if (job.status === 'in_progress') {
+                                  jobStatusLabel = 'กำลังเทคอนกรีต'
+                                  jobStatusBg = '#FFEDD5'
+                                  jobStatusColor = '#C2410C'
+                                }
+
+                                return (
+                                  <tr key={job.id || idx} style={{ borderBottom: '1px solid #E2E8F0', background: idx % 2 === 0 ? '#fff' : '#FAFAFA' }}>
+                                    <td style={{ padding: '8px 12px', color: '#64748B', fontSize: 11 }}>{idx + 1}</td>
+                                    <td style={{ padding: '8px 12px', fontWeight: 600, color: '#1E293B' }}>
+                                      {productName} <span style={{ color: '#64748B', fontWeight: 400, fontSize: 11 }}>{productCode}</span>
+                                      {product?.size && <div style={{ fontSize: 10, color: '#94A3B8' }}>ขนาด: {product.size}</div>}
+                                    </td>
+                                    <td style={{ padding: '8px 12px', color: '#475569', fontWeight: 600 }}>{bed}</td>
+                                    <td style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, color: '#1E293B' }}>
+                                      {targetQty} {unit}
+                                    </td>
+                                    <td style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 800, color: '#16A34A' }}>
+                                      {goodQty} {unit}
+                                    </td>
+                                    <td style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 800, color: defectQty > 0 ? '#DC2626' : '#94A3B8' }}>
+                                      {defectQty} {unit}
+                                    </td>
+                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                      <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 50, fontWeight: 700, background: jobStatusBg, color: jobStatusColor }}>
+                                        {jobStatusLabel}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ background: '#F1F5F9', fontWeight: 700 }}>
+                                <td colSpan={3} style={{ padding: '10px 12px', textAlign: 'right', color: '#334155' }}>
+                                  รวมทั้งหมด ({order.job_orders.length} รายการ):
+                                </td>
+                                <td style={{ padding: '10px 12px', textAlign: 'center', color: '#1E293B', fontWeight: 800 }}>
+                                  {totalTarget} ชิ้น
+                                </td>
+                                <td style={{ padding: '10px 12px', textAlign: 'center', color: '#16A34A', fontWeight: 800 }}>
+                                  {totalGoodAll} ชิ้น
+                                </td>
+                                <td style={{ padding: '10px 12px', textAlign: 'center', color: '#DC2626', fontWeight: 800 }}>
+                                  {totalDefectAll} ชิ้น
+                                </td>
+                                <td style={{ padding: '10px 12px' }} />
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               )
             })}
           </tbody>

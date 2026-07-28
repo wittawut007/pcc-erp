@@ -18,7 +18,7 @@ export default async function PlannerPage({
 
   const { data: products } = await supabase
     .from('products')
-    .select('id, code, name, category, size, concrete_per_unit, unit, bom_code, wip_code, length, wire_per_unit, mesh_per_unit, rebar_per_unit')
+    .select('id, code, name, category, size, concrete_per_unit, unit, bom_code, wip_code, length, wire_per_unit, mesh_per_unit, rebar_per_unit, counterfort_material_id, counterfort_qty_per_unit')
     .eq('is_active', true)
     .order('category')
 
@@ -27,6 +27,21 @@ export default async function PlannerPage({
     .select('id, material_code, name, qty_on_hand, unit, min_stock, weight_per_meter, category')
     .eq('is_active', true)
     .order('category')
+
+  const { data: rawBomData } = await supabase
+    .from('product_bom_items')
+    .select('id, product_id, raw_material_id, qty_per_unit, phase, raw_materials(id, name, category, unit)')
+
+  const bomItems = (rawBomData ?? []).map((b: any) => ({
+    id: b.id,
+    product_id: b.product_id,
+    raw_material_id: b.raw_material_id,
+    qty_per_unit: Number(b.qty_per_unit) || 0,
+    phase: b.phase,
+    raw_materials: Array.isArray(b.raw_materials) ? b.raw_materials[0] : b.raw_materials,
+  }))
+
+
 
   // Fetch recent plans (last 30 days) for the sidebar list
   const thirtyDaysAgo = new Date()
@@ -85,10 +100,12 @@ export default async function PlannerPage({
         editingPlan={editingPlan ?? null}
         recentPlans={recentPlans ?? []}
         rawMaterials={rawMaterials ?? []}
+        bomItems={bomItems ?? []}
         today={today}
         selectedDate={selectedDate}
         workerToken={workerToken}
       />
+
     </>
   )
 }

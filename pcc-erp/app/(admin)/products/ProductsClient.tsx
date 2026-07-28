@@ -78,8 +78,10 @@ const CATEGORIES = [
   'A36 เสา คาน บันได',
   'A41 เสาเข็ม',
   'A42 กำแพงกันดิน',
+  'A42-CF ชิ้นส่วน Counterfort (SFG)',
   'A82 เสารั้ว',
 ]
+
 
 const CAT_STYLES = [
   { prefix: 'A13', short: 'แผ่นพื้น', icon: 'fa-layer-group', pillBg: '#FFF7ED', pillText: '#EA580C', colorCode: '#2563EB' },
@@ -1024,79 +1026,23 @@ export default function ProductsClient({
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, border: '1px solid #BBF7D0', borderRadius: 10, padding: '10px 14px', background: '#F0FDF4' }}>
                   
-                  {/* Two-phase Checkbox */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>ปริมาณคอนกรีต</label>
                     <input
-                      type="checkbox"
-                      id="is_two_phase"
-                      checked={!!(baseForm as any).is_two_phase}
-                      onChange={e => setBaseForm(p => ({ ...p, is_two_phase: e.target.checked }))}
-                      style={{ width: 14, height: 14, cursor: 'pointer' }}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0.0000"
+                      value={baseForm.concrete_per_unit ?? ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === '' || /^[0-9.]*$/.test(val)) {
+                          setBaseForm(p => ({ ...p, concrete_per_unit: val }));
+                        }
+                      }}
+                      style={{ flex: 1, padding: '7px 10px', border: '1px solid #86EFAC', borderRadius: 7, fontSize: 12, outline: 'none', textAlign: 'right', background: 'white', boxSizing: 'border-box' }}
                     />
-                    <label htmlFor="is_two_phase" style={{ fontSize: 11, fontWeight: 700, color: '#166534', cursor: 'pointer' }}>
-                      ผลิตแบบ 2 เฟส (เช่น L-Wall / Retaining Wall)
-                    </label>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0 }}>ม.³ / หน่วย</span>
                   </div>
-
-                  {!(baseForm as any).is_two_phase ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>ปริมาณคอนกรีต</label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0.0000"
-                        value={baseForm.concrete_per_unit ?? ''}
-                        onChange={e => {
-                          const val = e.target.value;
-                          if (val === '' || /^[0-9.]*$/.test(val)) {
-                            setBaseForm(p => ({ ...p, concrete_per_unit: val }));
-                          }
-                        }}
-                        style={{ flex: 1, padding: '7px 10px', border: '1px solid #86EFAC', borderRadius: 7, fontSize: 12, outline: 'none', textAlign: 'right', background: 'white', boxSizing: 'border-box' }}
-                      />
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0 }}>ม.³ / หน่วย</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>คอนกรีต COUNTERFORT</label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder="0.0000"
-                          value={(baseForm as any).concrete_counterfort ?? ''}
-                          onChange={e => {
-                            const val = e.target.value;
-                            if (val === '' || /^[0-9.]*$/.test(val)) {
-                              setBaseForm(p => ({ ...p, concrete_counterfort: val }));
-                            }
-                          }}
-                          style={{ flex: 1, padding: '7px 10px', border: '1px solid #86EFAC', borderRadius: 7, fontSize: 12, outline: 'none', textAlign: 'right', background: 'white', boxSizing: 'border-box' }}
-                        />
-                        <span style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0 }}>ม.³ / หน่วย</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>คอนกรีต STEM</label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder="0.0000"
-                          value={(baseForm as any).concrete_stem ?? ''}
-                          onChange={e => {
-                            const val = e.target.value;
-                            if (val === '' || /^[0-9.]*$/.test(val)) {
-                              setBaseForm(p => ({ ...p, concrete_stem: val }));
-                            }
-                          }}
-                          style={{ flex: 1, padding: '7px 10px', border: '1px solid #86EFAC', borderRadius: 7, fontSize: 12, outline: 'none', textAlign: 'right', background: 'white', boxSizing: 'border-box' }}
-                        />
-                        <span style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0 }}>ม.³ / หน่วย</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 700, color: '#15803d', paddingLeft: 128 }}>
-                        ปริมาณรวม: {((parseFloat((baseForm as any).concrete_counterfort) || 0) + (parseFloat((baseForm as any).concrete_stem) || 0)).toFixed(4)} ม.³
-                      </div>
-                    </>
-                  )}
                   
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <label style={{ fontSize: 12, fontWeight: 600, color: '#166534', flexShrink: 0, minWidth: 120 }}>กลุ่มคอนกรีต</label>
@@ -1121,41 +1067,11 @@ export default function ProductsClient({
                   <span style={{ fontSize: 10, color: '#94A3B8' }}>— เพิ่มหลายรายการได้ต่อกลุ่ม</span>
                 </div>
 
-                {!(baseForm as any).is_two_phase ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {renderBomSection('wire', wireOptions, 'all')}
-                    {renderBomSection('mesh', meshOptions, 'all')}
-                    {renderBomSection('rebar', rebarOptions, 'all')}
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {/* Phase 1: COUNTERFORT */}
-                    <div style={{ border: '1px dashed #3B82F6', borderRadius: 12, padding: 12, background: '#EFF6FF' }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: '#1E3A8A', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ background: '#3B82F6', color: 'white', padding: '2px 8px', borderRadius: 6, fontSize: 10 }}>เฟส 1</span>
-                        วัตถุดิบเฟส COUNTERFORT
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {renderBomSection('wire', wireOptions, 'counterfort')}
-                        {renderBomSection('mesh', meshOptions, 'counterfort')}
-                        {renderBomSection('rebar', rebarOptions, 'counterfort')}
-                      </div>
-                    </div>
-
-                    {/* Phase 2: STEM */}
-                    <div style={{ border: '1px dashed #7C3AED', borderRadius: 12, padding: 12, background: '#F5F3FF' }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: '#5B21B6', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ background: '#7C3AED', color: 'white', padding: '2px 8px', borderRadius: 6, fontSize: 10 }}>เฟส 2</span>
-                        วัตถุดิบเฟส STEM
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {renderBomSection('wire', wireOptions, 'stem')}
-                        {renderBomSection('mesh', meshOptions, 'stem')}
-                        {renderBomSection('rebar', rebarOptions, 'stem')}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {renderBomSection('wire', wireOptions, 'all')}
+                  {renderBomSection('mesh', meshOptions, 'all')}
+                  {renderBomSection('rebar', rebarOptions, 'all')}
+                </div>
               </div>
 
             </div>

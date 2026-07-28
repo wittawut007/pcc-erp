@@ -27,45 +27,46 @@ const allNavItems: NavSection[] = [
         href: '/dashboard',
         icon: 'fa-chart-line',
         label: 'Dashboard',
-        roles: ['admin', 'planner', 'material', 'concrete', 'warehouse'],
+        roles: ['super_admin', 'admin', 'planner', 'material', 'concrete', 'warehouse'],
       },
     ],
   },
   {
     label: 'PRODUCTION',
     links: [
-      { href: '/planner',          icon: 'fa-calendar-alt',   label: 'แผนการผลิต',      roles: ['admin', 'planner'] },
-      { href: '/production-order', icon: 'fa-file-invoice',   label: 'ใบสั่งผลิต',      roles: ['admin', 'planner'], badgeKey: 'productionOrder' },
-      { href: '/job-orders',       icon: 'fa-clipboard-list', label: 'คิวงานเทคอนกรีต', roles: ['admin', 'planner'], badgeKey: 'jobOrders' },
-      { href: '/demolding',        icon: 'fa-hammer',         label: 'งานตัดยก',         roles: ['admin', 'planner'], badgeKey: 'demolding' },
-      { href: '/qc',               icon: 'fa-microscope',     label: 'การจัดการของเสีย', roles: ['admin', 'planner'] },
+      { href: '/planner',          icon: 'fa-calendar-alt',   label: 'แผนการผลิต',      roles: ['super_admin', 'admin', 'planner'] },
+      { href: '/production-order', icon: 'fa-file-invoice',   label: 'ใบสั่งผลิต',      roles: ['super_admin', 'admin', 'planner'], badgeKey: 'productionOrder' },
+      { href: '/job-orders',       icon: 'fa-clipboard-list', label: 'คิวงานเทคอนกรีต', roles: ['super_admin', 'admin'], badgeKey: 'jobOrders' },
+      { href: '/demolding',        icon: 'fa-hammer',         label: 'งานตัดยก',         roles: ['super_admin', 'admin'], badgeKey: 'demolding' },
+      { href: '/qc',               icon: 'fa-microscope',     label: 'การจัดการของเสีย', roles: ['super_admin', 'admin'] },
     ],
   },
   {
     label: 'MATERIAL',
     links: [
-      { href: '/material',         icon: 'fa-dolly',          label: 'เบิกจ่ายวัตถุดิบ', roles: ['admin', 'material'], badgeKey: 'material' },
+      { href: '/material',         icon: 'fa-dolly',          label: 'เบิกจ่ายวัตถุดิบ', roles: ['super_admin', 'admin', 'material'], badgeKey: 'material' },
     ],
   },
   {
     label: 'CONCRETE',
     links: [
-      { href: '/concrete',         icon: 'fa-fill-drip',      label: 'คิวผสมคอนกรีต',  roles: ['admin', 'concrete'], badgeKey: 'concrete' },
+      { href: '/concrete',         icon: 'fa-fill-drip',      label: 'คิวผสมคอนกรีต',  roles: ['super_admin', 'admin', 'concrete'], badgeKey: 'concrete' },
     ],
   },
   {
     label: 'INVENTORY',
     links: [
-      { href: '/inventory/raw', icon: 'fa-layer-group', label: 'คลังวัตถุดิบ',    roles: ['admin', 'material', 'warehouse'] },
-      { href: '/inventory/fg',  icon: 'fa-cubes',       label: 'สินค้าพร้อมขาย',  roles: ['admin', 'warehouse'], badgeKey: 'fgInventory' },
+      { href: '/inventory/raw',       icon: 'fa-layer-group',    label: 'คลังวัตถุดิบ',           roles: ['super_admin', 'admin', 'material'] },
+      { href: '/inventory/component', icon: 'fa-puzzle-piece',   label: 'คลังชิ้นส่วน CF (SFG)',  roles: ['super_admin', 'admin', 'material'] },
+      { href: '/inventory/fg',        icon: 'fa-cubes',          label: 'สินค้าพร้อมขาย',          roles: ['super_admin', 'admin', 'warehouse'], badgeKey: 'fgInventory' },
     ],
   },
   {
     label: 'SYSTEM',
     links: [
-      { href: '/products',     icon: 'fa-box-open',       label: 'ข้อมูลสินค้า',    roles: ['admin', 'planner'] },
-      { href: '/users',        icon: 'fa-users-cog',      label: 'จัดการผู้ใช้งาน', roles: ['admin'] },
-      { href: '/logs',         icon: 'fa-history',        label: 'ประวัติการทำงาน', roles: ['admin'] },
+      { href: '/products',     icon: 'fa-box-open',       label: 'ข้อมูลสินค้า',    roles: ['super_admin', 'admin'] },
+      { href: '/users',        icon: 'fa-users-cog',      label: 'จัดการผู้ใช้งาน', roles: ['super_admin', 'admin'] },
+      { href: '/logs',         icon: 'fa-history',        label: 'ประวัติการทำงาน', roles: ['super_admin', 'admin'] },
     ],
   },
 ]
@@ -353,7 +354,7 @@ export default function Sidebar({ role, badgeCounts }: SidebarProps) {
           {!isCollapsed && <span>ย่อแถบเมนู</span>}
         </button>
 
-        {role === 'admin' && (
+        {(role === 'admin' || role === 'super_admin') && (
           <Link
             href="/settings"
             title={isCollapsed ? 'ตั้งค่า' : undefined}

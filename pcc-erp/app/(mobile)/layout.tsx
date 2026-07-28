@@ -32,11 +32,13 @@ export default async function MobileLayout({
           .eq('id', user.id)
           .single()
 
-        if (!profile || (profile.role !== 'qc' && profile.role !== 'admin')) {
+        const userRole = (profile?.role || user.user_metadata?.role) as UserRole
+
+        if (!userRole || (userRole !== 'qc' && userRole !== 'admin')) {
           shouldRedirectToUnauthorized = true
         } else {
-          role = profile.role as UserRole
-          userName = profile.full_name ?? ''
+          role = userRole
+          userName = profile?.full_name ?? user.email ?? ''
         }
       }
     } catch {

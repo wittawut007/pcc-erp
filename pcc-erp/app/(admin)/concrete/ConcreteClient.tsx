@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useTransition, useCallback, useEffect } from 'react'
+import { useState, useTransition, useCallback, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supplyConcreteRound, deleteConcreteOrder } from '@/app/actions/concrete'
 import toast from 'react-hot-toast'
+import FilterBar, { isDateInRange } from '@/components/shared/FilterBar'
 
 interface RoundItem {
   id: string
@@ -110,8 +111,8 @@ function RoundRow({
         <span style={{ fontSize: 16, fontWeight: 800, color: isLocked ? '#9CA3AF' : '#2563EB', marginLeft: 10 }}>
           ({round.qty_per_round.toFixed(2)} คิว)
         </span>
-        {isNext && !supplied && <div style={{ fontSize: 11, color: '#3B82F6', fontWeight: 600, marginTop: 2 }}>รอบถัดไป</div>}
-        {isLocked && <div style={{ fontSize: 11, color: '#D1D5DB', fontWeight: 600, marginTop: 2 }}>รอรอบก่อนหน้า</div>}
+        {isNext && !supplied && <div style={{ fontSize: 11, color: '#3B82F6', fontWeight: 600, marginTop: 2 }}>รอบถัดไป — กดยืนยันจ่ายได้เลย</div>}
+        {isLocked && <div style={{ fontSize: 11, color: '#F59E0B', fontWeight: 600, marginTop: 2 }}>🔒 รอ Worker ยืนยันรับรอบก่อนหน้า</div>}
       </div>
 
       {supplied ? (
@@ -124,7 +125,12 @@ function RoundRow({
           {round.supplier?.full_name && <div style={{ fontSize: 11, color: '#94A3B8' }}>โดย {round.supplier.full_name}</div>}
         </div>
       ) : isLocked ? (
-        <div style={{ fontSize: 12, color: '#D1D5DB', fontWeight: 600 }}>ล็อค</div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 11, color: '#F59E0B', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <i className="fas fa-hourglass-half" style={{ fontSize: 10 }} />
+            รอ Worker รับรอบก่อน
+          </div>
+        </div>
       ) : (
         <button
           onClick={() => onSupply(round.id)}
@@ -155,9 +161,14 @@ function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
 }) {
   const [expanded, setExpanded] = useState(true)
   const rounds = order.rounds ?? []
-  const suppliedCount = rounds.filter(r => r.status === 'supplied' || r.status === 'received').length
-  const receivedCount = rounds.filter(r => r.status === 'received').length
-  const totalRounds = order.round_count
+  const totalRounds = (order.round_count && order.round_count > 0) ? order.round_count : (rounds.length > 0 ? rounds.length : 1)
+  const isOrderCompleted = order.status === 'supplied' || order.status === 'received' || order.status === 'completed'
+  const suppliedCount = isOrderCompleted && rounds.length === 0
+    ? totalRounds
+    : rounds.filter(r => r.status === 'supplied' || r.status === 'received').length
+  const receivedCount = isOrderCompleted && rounds.length === 0
+    ? totalRounds
+    : rounds.filter(r => r.status === 'received').length
   const pct = totalRounds > 0 ? Math.round((suppliedCount / totalRounds) * 100) : 0
   const product = order.job_order?.plan_item?.product
   const nextPending = rounds.find(r => r.status === 'pending')
@@ -184,7 +195,7 @@ function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
         {/* Bed badge */}
         <div style={{ backgroundColor: '#2563EB', color: '#fff', padding: '16px 20px', borderRadius: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: '90px' }}>
           <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, opacity: 0.9 }}>โรงผลิต</span>
-          <span style={{ fontSize: 18, lineHeight: 1 }}>{order.bed ?? '?' }</span>
+          <span style={{ fontSize: 18, lineHeight: 1 }}>{order.bed || order.job_order?.bed || '?'}</span>
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -202,7 +213,7 @@ function OrderCard({ order, onSupply, loadingRoundId, onDelete, isDeleting }: {
               })}
             </div>
           ) : (
-            <div style={{ fontWeight: 700, color: '#111827', fontSize: 14 }}>{product?.name ?? `สั่งคอนกรีตรวมโรงผลิต ${order.bed ?? '?'}`}</div>
+            <div style={{ fontWeight: 700, color: '#111827', fontSize: 14 }}>{product?.name ?? `สั่งคอนกรีตรวมโรงผลิต ${order.bed || order.job_order?.bed || '?'}`}</div>
           )}
           <div style={{ fontSize: 12, color: '#6B7280', display: 'flex', gap: 12, marginTop: 4 }}>
             <span><i className="fas fa-user" style={{ marginRight: 4, fontSize: 10 }} />{order.requested_by_profile?.full_name ?? '—'}</span>
@@ -353,12 +364,18 @@ function HistorySection({ orders }: { orders: ConcreteOrder[] }) {
         <tbody>
           {orders.map((o, idx) => {
             const rounds = o.rounds ?? []
-            const suppliedCount = rounds.filter(r => r.status === 'supplied' || r.status === 'received').length
-            const isAllDone = suppliedCount === o.round_count
+            const totalRounds = (o.round_count && o.round_count > 0) ? o.round_count : (rounds.length > 0 ? rounds.length : 1)
+            const isOrderCompleted = o.status === 'supplied' || o.status === 'received' || o.status === 'completed'
+            const suppliedCount = isOrderCompleted && rounds.length === 0
+              ? totalRounds
+              : rounds.filter(r => r.status === 'supplied' || r.status === 'received').length
+            const isAllDone = isOrderCompleted || (totalRounds > 0 && suppliedCount >= totalRounds)
+            const remainingRounds = Math.max(0, totalRounds - suppliedCount)
+
             return (
               <tr key={o.id} style={{ borderBottom: '1px solid #F3F4F6', background: idx % 2 === 0 ? '#fff' : '#FAFAFA' }}>
                 <td style={{ padding: '12px 16px', color: '#6B7280', fontSize: 12 }}>{fmtTime(o.requested_at)}</td>
-                <td style={{ padding: '12px 16px', fontWeight: 700 }}>โรงผลิต {o.bed ?? '?'}</td>
+                <td style={{ padding: '12px 16px', fontWeight: 700 }}>โรงผลิต {o.bed || o.job_order?.bed || '?'}</td>
                 <td style={{ padding: '12px 16px' }}>
                   {o.job_order?.plan_item?.product?.name ?? 'สั่งแบบรวม'}
                   {o.notes && (
@@ -369,7 +386,7 @@ function HistorySection({ orders }: { orders: ConcreteOrder[] }) {
                   )}
                 </td>
                 <td style={{ padding: '12px 16px', fontWeight: 700, color: '#2563EB' }}>{o.qty_requested.toFixed(2)} คิว</td>
-                <td style={{ padding: '12px 16px', textAlign: 'center' }}>{o.round_count}</td>
+                <td style={{ padding: '12px 16px', textAlign: 'center' }}>{totalRounds}</td>
                 <td style={{ padding: '12px 16px', textAlign: 'center', color: isAllDone ? '#059669' : '#D97706', fontWeight: 700 }}>{suppliedCount}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12 }}>{o.requested_by_profile?.full_name ?? '—'}</td>
                 <td style={{ padding: '12px 16px' }}>
@@ -379,7 +396,7 @@ function HistorySection({ orders }: { orders: ConcreteOrder[] }) {
                     color: isAllDone ? '#065F46' : '#B45309',
                     border: `1px solid ${isAllDone ? '#A7F3D0' : '#FDE68A'}`,
                   }}>
-                    {isAllDone ? 'จ่ายครบแล้ว' : `รอจ่าย ${o.round_count - suppliedCount} รอบ`}
+                    {isAllDone ? 'จ่ายครบแล้ว' : `รอจ่าย ${remainingRounds} รอบ`}
                   </span>
                 </td>
               </tr>
@@ -394,12 +411,59 @@ function HistorySection({ orders }: { orders: ConcreteOrder[] }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function ConcreteClient({ pending: initialPending, history: initialHistory, selectedDate, today, userRole }: Props) {
   const router = useRouter()
-  const [tab, setTab] = useState<'queue' | 'today' | 'history'>('queue')
+  const [tab, setTab] = useState<'queue' | 'history'>('queue')
   const [pendingOrders, setPendingOrders] = useState(initialPending)
   const [loadingRoundId, setLoadingRoundId] = useState<string | null>(null)
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
-  const [historyDate, setHistoryDate] = useState(selectedDate)
+  const [search, setSearch] = useState('')
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' })
   const [, startTransition] = useTransition()
+
+  const filteredPendingOrders = useMemo(() => {
+    return pendingOrders.filter(o => {
+      const q = search.trim().toLowerCase()
+      const productName = o.job_order?.plan_item?.product?.name || ''
+      const productCode = o.job_order?.plan_item?.product?.code || ''
+      const orderNumber = o.job_order?.production_order?.order_number || o.bed_jobs?.[0]?.production_order?.order_number || ''
+      const bed = o.bed || ''
+      const requester = o.requested_by_profile?.full_name || ''
+      const notes = o.notes || ''
+
+      const matchSearch = !q ||
+        productName.toLowerCase().includes(q) ||
+        productCode.toLowerCase().includes(q) ||
+        orderNumber.toLowerCase().includes(q) ||
+        bed.toLowerCase().includes(q) ||
+        requester.toLowerCase().includes(q) ||
+        notes.toLowerCase().includes(q)
+
+      const matchDate = isDateInRange(o.requested_at, dateRange)
+      return matchSearch && matchDate
+    })
+  }, [pendingOrders, search, dateRange])
+
+  const filteredHistoryOrders = useMemo(() => {
+    return initialHistory.filter(o => {
+      const q = search.trim().toLowerCase()
+      const productName = o.job_order?.plan_item?.product?.name || ''
+      const productCode = o.job_order?.plan_item?.product?.code || ''
+      const orderNumber = o.job_order?.production_order?.order_number || o.bed_jobs?.[0]?.production_order?.order_number || ''
+      const bed = o.bed || ''
+      const requester = o.requested_by_profile?.full_name || ''
+      const notes = o.notes || ''
+
+      const matchSearch = !q ||
+        productName.toLowerCase().includes(q) ||
+        productCode.toLowerCase().includes(q) ||
+        orderNumber.toLowerCase().includes(q) ||
+        bed.toLowerCase().includes(q) ||
+        requester.toLowerCase().includes(q) ||
+        notes.toLowerCase().includes(q)
+
+      const matchDate = isDateInRange(o.requested_at, dateRange)
+      return matchSearch && matchDate
+    })
+  }, [initialHistory, search, dateRange])
 
   // Sync local state when server data updates via router.refresh()
   useEffect(() => {
@@ -459,11 +523,6 @@ export default function ConcreteClient({ pending: initialPending, history: initi
     })
   }, [router])
 
-  const handleDateChange = (date: string) => {
-    setHistoryDate(date)
-    router.push(`/concrete?date=${date}`)
-  }
-
   const kpis = [
     { label: 'รอบรอจ่าย', value: totalPending, icon: 'fa-hourglass-half', color: '#EA580C', bg: '#FFF7ED' },
     { label: 'จ่ายครบแล้ว', value: todaySupplied, icon: 'fa-check-circle', color: '#16A34A', bg: '#F0FDF4' },
@@ -495,6 +554,21 @@ export default function ConcreteClient({ pending: initialPending, history: initi
         ))}
       </div>
 
+      {/* Filters (Search & Date) */}
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="ค้นหาสินค้า, รหัส, โรงผลิต, เลขที่ PO, หรือผู้สั่ง..."
+        countLabel={
+          tab === 'queue'
+            ? `${filteredPendingOrders.length} รายการ`
+            : `${filteredHistoryOrders.length} รายการ`
+        }
+        dateLabel="วันที่ผสม:"
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+      />
+
       {/* Tabs */}
       <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', gap: 4, background: '#F9FAFB' }}>
@@ -502,53 +576,36 @@ export default function ConcreteClient({ pending: initialPending, history: initi
             <i className="fas fa-fill-drip" style={{ marginRight: 6 }} />
             คิวรออยู่ {totalPending > 0 && <span style={{ background: '#EF4444', color: '#fff', borderRadius: 50, padding: '1px 7px', fontSize: 11, marginLeft: 4 }}>{totalPending}</span>}
           </button>
-          <button style={TAB_STYLE(tab === 'today')} onClick={() => setTab('today')}>
-            <i className="fas fa-calendar-day" style={{ marginRight: 6 }} />
-            วันนี้
-          </button>
           <button style={TAB_STYLE(tab === 'history')} onClick={() => setTab('history')}>
             <i className="fas fa-history" style={{ marginRight: 6 }} />
             ย้อนหลัง
           </button>
-          {tab === 'history' && (
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <i className="fas fa-calendar-alt" style={{ fontSize: 12, color: '#9CA3AF' }} />
-              <input
-                type="date"
-                value={historyDate}
-                max={today}
-                onChange={e => handleDateChange(e.target.value)}
-                style={{ border: '1px solid #E5E7EB', borderRadius: 8, padding: '6px 10px', fontSize: 13, outline: 'none', color: '#374151', background: '#fff' }}
-              />
-            </div>
-          )}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: tab === 'queue' ? '20px' : 0 }}>
           {tab === 'queue' && (
-            pendingOrders.length === 0 ? (
+            filteredPendingOrders.length === 0 ? (
               <div style={{ padding: '80px 24px', textAlign: 'center' }}>
                 <i className="fas fa-check-circle" style={{ fontSize: 48, color: '#10B981', display: 'block', marginBottom: 16 }} />
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#374151' }}>ไม่มีคิวรอดำเนินการ</div>
-                <div style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}>จ่ายคอนกรีตครบทุกรอบแล้ว</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#374151' }}>ไม่มีคิวรอดำเนินการที่ตรงกับเงื่อนไข</div>
+                <div style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}>ลองเปลี่ยนคำค้นหาหรือตัวกรองวันที่</div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {pendingOrders.map(order => (
+                {filteredPendingOrders.map(order => (
                   <OrderCard
                     key={order.id}
                     order={order}
                     onSupply={handleSupply}
                     loadingRoundId={loadingRoundId}
-                    onDelete={userRole === 'admin' ? handleDelete : undefined}
+                    onDelete={userRole === 'admin' || userRole === 'super_admin' || userRole === 'concrete' ? handleDelete : undefined}
                     isDeleting={deletingOrderId === order.id}
                   />
                 ))}
               </div>
             )
           )}
-          {tab === 'today' && <HistorySection orders={initialHistory} />}
-          {tab === 'history' && <HistorySection orders={initialHistory} />}
+          {tab === 'history' && <HistorySection orders={filteredHistoryOrders} />}
         </div>
       </div>
     </div>

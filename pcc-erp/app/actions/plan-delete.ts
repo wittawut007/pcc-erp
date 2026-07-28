@@ -70,7 +70,7 @@ async function getAdminClient() {
     .eq('id', user.id)
     .single()
 
-  if (profile?.role !== 'admin') throw new Error('ไม่มีสิทธิ์ Admin')
+  if (profile?.role !== 'admin' && profile?.role !== 'super_admin') throw new Error('ไม่มีสิทธิ์ Admin')
 
   return { supabase, userProfile: profile }
 }

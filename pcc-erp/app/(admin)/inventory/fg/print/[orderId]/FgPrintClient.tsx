@@ -340,7 +340,7 @@ export default function FgPrintClient({
     const rawMat = pm.rawMaterial || {}
     const category = rawMat.category
     const isWire = category === 'ลวด' || category === 'Wire'
-    const isRebar = category === 'เหล็กเส้น'
+    const isRebar = category === 'เหล็กเส้น' || category === 'Rebar'
     const isMesh = category === 'เมช' || category === 'Mesh'
     const qtyDispensed = pm.qtyDispensed
 
@@ -358,6 +358,50 @@ export default function FgPrintClient({
       totalMeshWeight += qtyDispensed * wpsm
     }
   })
+
+  // หากไม่มีข้อมูลเบิกจ่ายใน planMaterials หรือคำนวณแล้วได้ 0 ให้สรุปยอดรวมจาก BOM ที่ใช้จริง (productMaterials + unallocatedMaterials)
+  if (totalWireWeight === 0 && totalRebarLength === 0 && totalMeshArea === 0) {
+    productMaterials.forEach(pm => {
+      pm.materials.forEach(m => {
+        const category = m.category
+        const isWire = category === 'ลวด' || category === 'Wire'
+        const isRebar = category === 'เหล็กเส้น' || category === 'Rebar'
+        const isMesh = category === 'เมช' || category === 'Mesh'
+
+        if (isWire) {
+          totalWireLength += m.netLengthOrArea || m.netQty
+          totalWireWeight += m.netWeightKg
+        } else if (isRebar) {
+          totalRebarLength += m.netLengthOrArea || m.netQty
+          totalRebarWeight += m.netWeightKg
+        } else if (isMesh) {
+          totalMeshArea += m.netLengthOrArea || m.netQty
+          totalMeshWeight += m.netWeightKg
+        }
+      })
+    })
+
+    unallocatedMaterials.forEach(m => {
+      const category = m.category
+      const isWire = category === 'ลวด' || category === 'Wire'
+      const isRebar = category === 'เหล็กเส้น' || category === 'Rebar'
+      const isMesh = category === 'เมช' || category === 'Mesh'
+      const wpm = getMaterialWeightPerMeter(m.rawMaterial) || 0.888
+      const wpsm = getMaterialWeightPerSquareMeter(m.rawMaterial) || 1.32
+
+      if (isWire) {
+        const len = wpm > 0 ? m.qtyDispensed / wpm : 0
+        totalWireLength += len
+        totalWireWeight += m.qtyDispensed
+      } else if (isRebar) {
+        totalRebarLength += m.qtyDispensed
+        totalRebarWeight += m.qtyDispensed * wpm
+      } else if (isMesh) {
+        totalMeshArea += m.qtyDispensed
+        totalMeshWeight += m.qtyDispensed * wpsm
+      }
+    })
+  }
 
   // ─── การส่งออก PDF & PNG (Multi-Page Capture) ───
   const handleDownloadPDF = async () => {

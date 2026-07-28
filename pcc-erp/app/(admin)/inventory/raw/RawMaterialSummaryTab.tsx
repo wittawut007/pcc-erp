@@ -625,7 +625,7 @@ export default function RawMaterialSummaryTab({ initialData, initialConcrete = [
   const filteredRows = useMemo(() => {
     if (catFilter === 'คอนกรีต') return []
 
-    let rows = Object.values(aggMap)
+    let rows = Object.values(aggMap).filter(r => r.category !== 'ชิ้นส่วน SFG')
     if (catFilter !== 'ทั้งหมด') rows = rows.filter(r => r.category === catFilter)
 
     const showIp = statusFilter === 'ทั้งหมด' || statusFilter === 'กำลังผลิต'

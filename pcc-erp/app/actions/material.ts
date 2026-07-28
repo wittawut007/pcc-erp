@@ -164,6 +164,7 @@ export async function dispenseMaterial(
 
   revalidatePath('/material')
   revalidatePath('/inventory/raw')
+  revalidatePath('/worker')  // ปลดล็อคหน้า Worker เมื่อวัตถุดิบถูกจ่ายครบ
 }
 
 /**
@@ -228,11 +229,7 @@ export async function getMaterialSummary(params?: {
             concrete_per_unit,
             wire_per_unit,
             mesh_per_unit,
-            rebar_per_unit,
-            product_bom_items(
-              qty_per_unit,
-              raw_materials(id, name, material_code, unit)
-            )
+            rebar_per_unit
           )
         )
       ),
@@ -250,8 +247,40 @@ export async function getMaterialSummary(params?: {
   const { data, error } = await query.limit(1000)
   if (error) throw new Error(error.message)
 
-  // ถ้ากรองหมวดหมู่ ทำ filter ฝั่ง JS เพราะ nested filter บน Supabase ทำยาก
   let filtered = data ?? []
+
+  // Extract all unique product IDs to fetch product_bom_items safely
+  const productIds = new Set<string>()
+  filtered.forEach((r: any) => {
+    r.plan?.items?.forEach((item: any) => {
+      if (item.product?.id) productIds.add(item.product.id)
+    })
+  })
+
+  let bomItemsMap: Record<string, any[]> = {}
+  if (productIds.size > 0) {
+    const { data: bomData } = await supabase
+      .from('product_bom_items')
+      .select('product_id, qty_per_unit, raw_materials(id, name, material_code, unit)')
+      .in('product_id', Array.from(productIds))
+
+    if (bomData) {
+      bomData.forEach((b: any) => {
+        if (!bomItemsMap[b.product_id]) bomItemsMap[b.product_id] = []
+        bomItemsMap[b.product_id].push(b)
+      })
+    }
+  }
+
+  filtered.forEach((r: any) => {
+    r.plan?.items?.forEach((item: any) => {
+      if (item.product) {
+        item.product.product_bom_items = bomItemsMap[item.product.id] || []
+      }
+    })
+  })
+
+  // ถ้ากรองหมวดหมู่ ทำ filter ฝั่ง JS เพราะ nested filter บน Supabase ทำยาก
   if (params?.category && params.category !== '') {
     filtered = filtered.filter((r: any) => r.raw_material?.category === params!.category)
   }

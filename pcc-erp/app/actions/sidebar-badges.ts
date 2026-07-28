@@ -78,11 +78,11 @@ export async function getSidebarBadgeCounts(): Promise<SidebarBadgeCounts> {
         .in('status', ['pending', 'partial']),
 
       // 5. คิวผสมคอนกรีต
-      // ดึง concrete_orders ที่รอดำเนินการ (status = 'requested') พร้อม rounds เพื่อใช้นับรอบที่ค้างอยู่
+      // ดึง concrete_rounds ที่ยังค้างอยู่ (status = 'pending')
       supabase
-        .from('concrete_orders')
-        .select('id, rounds:concrete_rounds(status)')
-        .eq('status', 'requested'),
+        .from('concrete_rounds')
+        .select('id')
+        .eq('status', 'pending'),
 
       // 6. สินค้าพร้อมขาย
       // นับ production_orders ที่ยังไม่ erp_synced แต่มี job_orders ที่ถอดแบบแล้ว
@@ -126,13 +126,7 @@ export async function getSidebarBadgeCounts(): Promise<SidebarBadgeCounts> {
     const materialCount = materialPlanIds.size
 
     // ── 5. คิวผสมคอนกรีต — นับจำนวนรอบคอนกรีตที่ยังค้างอยู่ (status = 'pending') ──
-    const concreteOrders = concreteRes.data ?? []
-    let concreteCount = 0
-    for (const order of concreteOrders) {
-      const rounds = order.rounds ?? []
-      const pendingRounds = rounds.filter((r: any) => r.status === 'pending')
-      concreteCount += pendingRounds.length
-    }
+    const concreteCount = concreteRes.data?.length ?? 0
 
     // ── 6. สินค้าพร้อมขาย — count PO โดยตรง ──
     const fgInventoryCount = fgInventoryRes.data?.length ?? 0

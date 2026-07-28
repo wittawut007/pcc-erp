@@ -12,13 +12,13 @@ export default async function DemoldingPage() {
     .select(`
       *,
       plan_item:production_plan_items(
-        product:products(id, code, name, category, unit, concrete_per_unit, is_two_phase),
+        product:products(id, code, name, category, unit, concrete_per_unit),
         plan:production_plans(id, plan_date)
       ),
       worker:profiles(full_name),
       production_order:production_orders(order_number, status)
     `)
-    .in('status', ['ready_demold', 'curing', 'counterfort_curing', 'stem_curing'])
+    .in('status', ['ready_demold', 'curing'])
     .order('expected_demold_at', { ascending: true })
 
   const activeReadyJobs = (readyJobs ?? []).filter(

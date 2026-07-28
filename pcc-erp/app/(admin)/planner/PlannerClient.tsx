@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useTransition, useMemo, useEffect } from 'react'
+import { useState, useTransition, useMemo, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { clearOldPlanData } from '@/app/actions/planner'
+import { checkCounterfortStock } from '@/app/actions/component'
 import toast from 'react-hot-toast'
+import type { CounterfortStockCheck } from '@/lib/types'
 
 interface Product {
   id: string
@@ -49,11 +51,26 @@ interface PlanItem {
   rebar: number
 }
 
+export interface ProductBomItem {
+  id: string
+  product_id: string
+  raw_material_id: string
+  qty_per_unit: number
+  phase?: string
+  raw_materials: {
+    id: string
+    name: string
+    category: string
+    unit: string
+  } | null
+}
+
 interface Props {
   products: Product[]
   editingPlan: any          // plan being viewed/edited (null = new plan)
   recentPlans: any[]        // list of recent plans for the sidebar
   rawMaterials: RawMaterial[]
+  bomItems?: ProductBomItem[]
   today: string
   selectedDate: string
   workerToken?: string
@@ -69,10 +86,12 @@ const CATEGORIES = [
   'A36 เสา คาน บันได',
   'A41 เสาเข็ม',
   'A42 กำแพงกันดิน',
+  'A42-CF ชิ้นส่วน Counterfort (SFG)',
   'A82 เสารั้ว',
 ]
 
-export default function PlannerClient({ products, editingPlan, recentPlans, rawMaterials, today, selectedDate, workerToken = '' }: Props) {
+export default function PlannerClient({ products, editingPlan, recentPlans, rawMaterials, bomItems = [], today, selectedDate, workerToken = '' }: Props) {
+
   const supabase = createClient()
   const [isPending, startTransition] = useTransition()
   const supabaseRouter = useRouter()
@@ -92,7 +111,6 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
   const [planItems, setPlanItems] = useState<PlanItem[]>(
     editingPlan?.items?.map((item: any) => {
       const p = item.product || {};
-      const wireVal = p.wire_per_unit || p.length || 0;
       return {
         id: item.id,
         productId: item.product_id,
@@ -104,15 +122,118 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
         bed: item.bed,
         qty: item.qty_target,
         concrete: (p.concrete_per_unit ?? 0) * item.qty_target,
-        wire: wireVal * item.qty_target,
-        mesh: (p.mesh_per_unit ?? 0) * item.qty_target,
-        rebar: (p.rebar_per_unit ?? 0) * item.qty_target,
+        wire: 0,
+        mesh: 0,
+        rebar: 0,
       }
     }) ?? []
   )
 
+  // คำนวณ BOM (ลวด, เมช, เหล็กเส้น) จาก product_bom_items
+  const calculateProductBom = useCallback((productId: string, targetQty: number) => {
+    const product = products.find(p => p.id === productId)
+    if (!product) return { wire: 0, mesh: 0, rebar: 0, materialBreakdown: [] }
+
+    const productBoms = bomItems.filter(b => b.product_id === productId)
+
+    if (productBoms.length > 0) {
+      let wire = 0
+      let mesh = 0
+      let rebar = 0
+
+      const breakdown: { name: string; category: string; qty: number; unit: string }[] = []
+
+      productBoms.forEach(b => {
+        const cat = b.raw_materials?.category || ''
+        const name = b.raw_materials?.name || ''
+        const unit = b.raw_materials?.unit || 'หน่วย'
+        const qtyPerUnit = Number(b.qty_per_unit) || 0
+        const totalNeeded = qtyPerUnit * targetQty
+
+        if (totalNeeded > 0) {
+          breakdown.push({ name: name || 'วัตถุดิบ', category: cat, qty: totalNeeded, unit })
+        }
+
+        const isWire = cat === 'ลวด' || name.includes('ลวด') || name.toLowerCase().includes('wire')
+        const isMesh = cat === 'เมช' || name.includes('เมช') || name.includes('ตะแกรง') || name.toLowerCase().includes('mesh')
+        const isRebar = cat === 'เหล็กเส้น' || name.includes('เหล็ก') || name.includes('RB') || name.includes('DB')
+
+        if (isWire) wire += totalNeeded
+        else if (isMesh) mesh += totalNeeded
+        else if (isRebar) rebar += totalNeeded
+        else rebar += totalNeeded
+      })
+
+      return { wire, mesh, rebar, materialBreakdown: breakdown }
+    }
+
+    // Fallback if no product_bom_items
+    const wireVal = Number(product.wire_per_unit || product.length || 0)
+    const meshVal = Number(product.mesh_per_unit || 0)
+    const rebarVal = Number(product.rebar_per_unit || 0)
+
+    return {
+      wire: wireVal * targetQty,
+      mesh: meshVal * targetQty,
+      rebar: rebarVal * targetQty,
+      materialBreakdown: [],
+    }
+  }, [products, bomItems])
+
+  // คำนวณ BOM คอนกรีต ลวด เมช เหล็ก ให้ planItems เมื่อโหลดแผนหรือ bomItems เปลี่ยน
+  useEffect(() => {
+    if (planItems.length === 0) return
+    setPlanItems(prevItems =>
+      prevItems.map(item => {
+        const product = products.find(p => p.id === item.productId)
+        const bomCalc = calculateProductBom(item.productId, item.qty)
+        return {
+          ...item,
+          concrete: item.qty * (product?.concrete_per_unit ?? 0),
+          wire: bomCalc.wire,
+          mesh: bomCalc.mesh,
+          rebar: bomCalc.rebar,
+        }
+      })
+    )
+  }, [products, bomItems, calculateProductBom])
+
+  const detailedMaterialBreakdown = useMemo(() => {
+    const map: Record<string, { name: string; category: string; qty: number; unit: string }> = {}
+    planItems.forEach(item => {
+      const bomCalc = calculateProductBom(item.productId, item.qty)
+      bomCalc.materialBreakdown.forEach(mb => {
+        if (!map[mb.name]) {
+          map[mb.name] = { ...mb }
+        } else {
+          map[mb.name].qty += mb.qty
+        }
+      })
+    })
+    return Object.values(map).sort((a, b) => b.qty - a.qty)
+  }, [planItems, calculateProductBom])
+
+
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [cfStockChecks, setCfStockChecks] = useState<CounterfortStockCheck[]>([])
+  const [cfStockLoading, setCfStockLoading] = useState(false)
+
+  // ตรวจ Counterfort Stock เมื่อมีสินค้า A42 ในแผน
+  const checkCfStock = useCallback(async (items: PlanItem[]) => {
+    const a42Items = items.filter(i => i.category.startsWith('A42'))
+    if (a42Items.length === 0) { setCfStockChecks([]); return }
+    setCfStockLoading(true)
+    try {
+      const planItemsForCheck = a42Items.map(i => ({ productId: i.productId, qty: i.qty }))
+      const results = await checkCounterfortStock(planItemsForCheck)
+      setCfStockChecks(results)
+    } catch (e) {
+      // ไม่แสดง error เพื่อไม่รบกวน UX — stock check เป็นข้อมูลเสริม
+    } finally {
+      setCfStockLoading(false)
+    }
+  }, [])
 
   // Derived cascade options
   const cats = CATEGORIES
@@ -194,19 +315,28 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
   const totalRebar = planItems.reduce((s, i) => s + i.rebar, 0)
   const totalQty = planItems.reduce((s, i) => s + i.qty, 0)
 
+  // ตรวจ CF Stock เมื่อ planItems เปลี่ยน
+  useEffect(() => {
+    checkCfStock(planItems)
+  }, [planItems, checkCfStock])
+
+  const cfStockInsufficient = cfStockChecks.some(c => !c.sufficient)
+
   const handleAddProduct = () => {
     if (!selectedProduct) return
-    const wireVal = selectedProduct.wire_per_unit || selectedProduct.length || 0;
     const existing = planItems.findIndex(i => i.productId === selectedProduct.id && i.bed === selectedBed)
     if (existing >= 0) {
       const updated = [...planItems]
-      updated[existing].qty += qty
-      updated[existing].concrete = updated[existing].qty * selectedProduct.concrete_per_unit
-      updated[existing].wire = updated[existing].qty * wireVal
-      updated[existing].mesh = updated[existing].qty * selectedProduct.mesh_per_unit
-      updated[existing].rebar = updated[existing].qty * selectedProduct.rebar_per_unit
+      const newQty = updated[existing].qty + qty
+      const bomCalc = calculateProductBom(selectedProduct.id, newQty)
+      updated[existing].qty = newQty
+      updated[existing].concrete = newQty * selectedProduct.concrete_per_unit
+      updated[existing].wire = bomCalc.wire
+      updated[existing].mesh = bomCalc.mesh
+      updated[existing].rebar = bomCalc.rebar
       setPlanItems(updated)
     } else {
+      const bomCalc = calculateProductBom(selectedProduct.id, qty)
       setPlanItems([...planItems, {
         productId: selectedProduct.id,
         productCode: selectedProduct.code,
@@ -217,15 +347,16 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
         bed: selectedBed,
         qty,
         concrete: qty * selectedProduct.concrete_per_unit,
-        wire: qty * wireVal,
-        mesh: qty * selectedProduct.mesh_per_unit,
-        rebar: qty * selectedProduct.rebar_per_unit,
+        wire: bomCalc.wire,
+        mesh: bomCalc.mesh,
+        rebar: bomCalc.rebar,
       }])
     }
     setQty(1)
     // reset product selector but keep category
     setSelName(''); setSelSize(''); setSelCode('');
   }
+
 
   const handleRemove = (idx: number) => {
     setPlanItems(planItems.filter((_, i) => i !== idx))
@@ -237,12 +368,16 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
 
     let plan: any
 
+    const hasComponentItem = planItems.some(i => i.category.includes('CF') || i.category.includes('Counterfort'))
+    const planType = hasComponentItem ? 'component' : 'fg'
+
     if (editingPlan?.id) {
       // UPDATE existing plan
       const { data: updated, error: planError } = await supabase
         .from('production_plans')
         .update({
           status,
+          plan_type: planType,
           total_qty: totalQty,
           total_concrete: totalConcrete,
         })
@@ -262,6 +397,7 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
           plan_date: planDate,
           created_by: user.id,
           status,
+          plan_type: planType,
           total_qty: totalQty,
           total_concrete: totalConcrete,
         })
@@ -270,6 +406,7 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
       if (planError) throw planError
       plan = inserted
     }
+
 
     let createdItems: any[] = []
     if (planItems.length > 0) {
@@ -427,16 +564,22 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
 
       if (items && items.length > 0 && finalOrderId) {
         const { error: orderError } = await supabase.from('job_orders').insert(
-          items.map(item => ({
-            plan_item_id: item.id,
-            bed: item.bed,
-            qty_target: item.qty_target,
-            status: 'pending',
-            order_id: finalOrderId
-          }))
+          items.map(item => {
+            const prod = products.find(p => p.id === item.product_id)
+            const isComp = prod?.category.includes('CF') || prod?.category.includes('Counterfort')
+            return {
+              plan_item_id: item.id,
+              bed: item.bed,
+              qty_target: item.qty_target,
+              status: 'pending',
+              order_id: finalOrderId,
+              job_type: isComp ? 'component' : 'fg',
+            }
+          })
         )
         if (orderError && !orderError.message.includes('duplicate')) throw orderError
       }
+
 
       toast.success('ยืนยันแผนการผลิตและสร้างคิวงานเทปูนแล้ว!')
       supabaseRouter.push(`/production-order/${plan.id}`)
@@ -623,6 +766,66 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
           </div>
         </div>
 
+          {/* COUNTERFORT STOCK CHECK BANNER */}
+          {cfStockChecks.length > 0 && (
+            <div style={{
+              borderRadius: 12, padding: '16px 20px',
+              background: cfStockInsufficient ? '#FEF2F2' : '#F0FDF4',
+              border: `1.5px solid ${cfStockInsufficient ? '#FECACA' : '#A7F3D0'}`,
+              display: 'flex', flexDirection: 'column', gap: 10,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <i className={`fas ${cfStockInsufficient ? 'fa-exclamation-triangle' : 'fa-check-circle'}`}
+                  style={{ fontSize: 18, color: cfStockInsufficient ? '#DC2626' : '#059669' }} />
+                <div style={{ fontWeight: 700, fontSize: 14, color: cfStockInsufficient ? '#991B1B' : '#065F46' }}>
+                  {cfStockInsufficient
+                    ? '⚠️ Stock Counterfort ไม่เพียงพอ — กรุณาผลิต Counterfort เพิ่มก่อนยืนยันแผน'
+                    : '✅ Stock Counterfort เพียงพอสำหรับแผนนี้'}
+                </div>
+                {cfStockLoading && <i className="fas fa-spinner fa-spin" style={{ color: '#6B7280', fontSize: 12 }} />}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {cfStockChecks.map(c => (
+                  <div key={c.cfMaterialId} style={{
+                    display: 'flex', alignItems: 'center', gap: 12, fontSize: 12,
+                    padding: '8px 12px', borderRadius: 8,
+                    background: c.sufficient ? 'rgba(5,150,105,0.08)' : 'rgba(220,38,38,0.08)',
+                  }}>
+                    <span style={{ flex: 1, color: '#374151', fontWeight: 600 }}>{c.cfMaterialName}</span>
+                    <span style={{ color: '#6B7280' }}>ต้องการ: <strong>{c.qtyRequired} ชิ้น</strong></span>
+                    <span style={{ color: '#6B7280' }}>มีในคลัง: <strong style={{ color: c.sufficient ? '#059669' : '#DC2626' }}>{c.qtyAvailable} ชิ้น</strong></span>
+                    {!c.sufficient && (
+                      <span style={{ color: '#DC2626', fontWeight: 700 }}>
+                        ขาด {c.qtyRequired - c.qtyAvailable} ชิ้น
+                      </span>
+                    )}
+                    <span style={{
+                      padding: '2px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+                      background: c.sufficient ? '#DCFCE7' : '#FEE2E2',
+                      color: c.sufficient ? '#065F46' : '#991B1B',
+                    }}>
+                      {c.sufficient ? 'พร้อม' : 'ไม่พอ'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {cfStockInsufficient && (
+                <a
+                  href="/inventory/component"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, width: 'fit-content',
+                    padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                    background: '#DC2626', color: '#fff', textDecoration: 'none',
+                    border: 'none', cursor: 'pointer',
+                  }}
+                >
+                  <i className="fas fa-boxes" />
+                  ไปที่หน้าคลังชิ้นส่วน CF เพื่อตรวจสอบ / สั่งผลิตเพิ่ม
+                </a>
+              )}
+            </div>
+          )}
+
           {/* NEXT STEPS (DARK THEME) */}
           <div style={{ background: '#1C1F26', borderRadius: 12, padding: '20px 24px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'row', gap: 28, color: '#fff', position: 'relative', overflow: 'hidden', alignItems: 'center' }}>
              
@@ -726,7 +929,30 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
                     <div style={{ fontSize: 20, fontWeight: 800, color: '#2563EB', lineHeight: 1 }}>{totalRebar.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} <span style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF' }}>เมตร</span></div>
                   </div>
                </div>
+
+               {/* Detailed Raw Material Breakdown List */}
+               {detailedMaterialBreakdown.length > 0 && (
+                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed #E5E7EB' }}>
+                   <div style={{ fontSize: 11, fontWeight: 700, color: '#4B5563', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                     <i className="fas fa-list-check" style={{ color: '#2563EB', fontSize: 10 }} />
+                     รายละเอียดวัตถุดิบที่ต้องใช้จริง:
+                   </div>
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
+                     {detailedMaterialBreakdown.map(m => (
+                       <div key={m.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '6px 10px', background: '#F8FAFC', borderRadius: 6, border: '1px solid #F1F5F9' }}>
+                         <span style={{ fontWeight: 600, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 170 }}>
+                           {m.name}
+                         </span>
+                         <span style={{ fontWeight: 800, color: '#1E40AF' }}>
+                           {m.qty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })} <span style={{ fontSize: 10, color: '#64748B', fontWeight: 500 }}>{m.unit}</span>
+                         </span>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+               )}
             </div>
+
          </div>
 
           {/* Date Picker + New Plan */}

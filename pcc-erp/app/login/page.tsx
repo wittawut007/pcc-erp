@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { getDefaultPath } from '@/lib/rbac'
+import type { UserRole } from '@/lib/supabase/types'
 
 const REMEMBER_ME_KEY = 'pcc_remember_username'
 const ERP_EMAIL_DOMAIN = '@pcc-erp.local'
@@ -67,13 +69,8 @@ export default function LoginPage() {
       role = profile?.role
     }
 
-    if (role === 'qc') {
-      router.push('/qc-inspect')
-    } else if (role === 'worker') {
-      router.push('/worker')
-    } else {
-      router.push('/dashboard')
-    }
+    const targetPath = getDefaultPath((role || 'admin') as UserRole)
+    router.push(targetPath)
     router.refresh()
   }
 
@@ -303,38 +300,12 @@ export default function LoginPage() {
 
             {/* Quick Login for Dev */}
             {process.env.NODE_ENV === 'development' && (
-              <div className="mt-4 border-t border-slate-200 pt-6">
-                <div className="text-center mb-4">
-                  <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
-                    Dev Mode Active
-                  </span>
-                  <p className="text-slate-500 text-xs mt-2.5 font-medium">เข้าสู่ระบบด่วนสำหรับทดสอบ</p>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {[
-                    { username: 'somchai.admin',  password: 'Admin@2026', label: 'Admin',     icon: 'fa-user-shield',    color: 'bg-slate-800 text-white hover:bg-slate-700' },
-                    { username: 'wiphada.plan',   password: 'Plan@2026',  label: 'Planner',   icon: 'fa-calendar-check', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
-                    { username: 'thanakorn.mat',  password: 'Mat@2026x',  label: 'Material',  icon: 'fa-boxes-stacked',  color: 'bg-teal-100 text-teal-700 hover:bg-teal-200' },
-                    { username: 'rattana.conc',   password: 'Conc@2026',  label: 'Concrete',  icon: 'fa-industry',       color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
-                    { username: 'ekkachai.ware',  password: 'Ware@2026',  label: 'Warehouse', icon: 'fa-warehouse',      color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
-                    { username: 'nongnuch.qc',    password: 'Qc12@2026',  label: 'QC',        icon: 'fa-clipboard-check',color: 'bg-rose-100 text-rose-700 hover:bg-rose-200' },
-                    { username: 'prasit.work',    password: 'Work@2026',  label: 'Worker',    icon: 'fa-hard-hat',       color: 'bg-amber-100 text-amber-700 hover:bg-amber-200' },
-                  ].map((t) => (
-                    <button
-                      key={t.username}
-                      type="button"
-                      onClick={() => {
-                        setUsername(t.username)
-                        setPassword(t.password)
-                      }}
-                      className={`text-[11px] font-bold py-2.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 ${t.color}`}
-                    >
-                      <i className={`fas ${t.icon}`}></i>
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <DevQuickLogin
+                onSelectUser={(u, p) => {
+                  setUsername(u)
+                  setPassword(p)
+                }}
+              />
             )}
           </form>
 
@@ -350,3 +321,82 @@ export default function LoginPage() {
     </div>
   )
 }
+
+function DevQuickLogin({ onSelectUser }: { onSelectUser: (username: string, password: string) => void }) {
+  const [activeTab, setActiveTab] = useState<'all' | 'super_admin' | 'admin' | 'staff'>('all')
+
+  const ALL_DEV_USERS = [
+    // 1. Super Admin (1 บัญชี)
+    { username: 'wittawut.abm@gmail.com', password: 'Admin@2026', label: 'Super Admin (วิทธวัช)', category: 'super_admin', icon: 'fa-shield-halved', color: 'bg-red-100 text-red-800 border border-red-200 hover:bg-red-200 font-extrabold' },
+
+    // 2. Admins (3 บัญชี)
+    { username: 'sarawut.admin@pcc-erp.com', password: 'Admin@2026', label: 'Admin (ศราวุธ)', category: 'admin', icon: 'fa-user-gear', color: 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200' },
+    { username: 'thnk.admin@pcc-erp.com', password: 'Admin@2026', label: 'Admin (ธนกฤต)', category: 'admin', icon: 'fa-user-gear', color: 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200' },
+    { username: 'somchai.admin', password: 'Admin@2026', label: 'Admin (สมชาย)', category: 'admin', icon: 'fa-user-shield', color: 'bg-slate-800 text-white hover:bg-slate-700' },
+
+    // 3. ทีมงานผลิต/ปฏิบัติงาน (6 บัญชี)
+    { username: 'wiphada.plan', password: 'Plan@2026', label: 'Planner (ศราวุธ)', category: 'staff', icon: 'fa-calendar-check', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
+    { username: 'thanakorn.mat', password: 'Mat@2026', label: 'Material (ดาวรุ่ง)', category: 'staff', icon: 'fa-boxes-stacked', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200' },
+    { username: 'rattana.conc', password: 'Conc@2026', label: 'Concrete (รัตนา)', category: 'staff', icon: 'fa-industry', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
+    { username: 'ekkachai.ware', password: 'Ware@2026', label: 'Warehouse (นิตยา)', category: 'staff', icon: 'fa-warehouse', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
+    { username: 'nongnuch.qc', password: 'Qc12@2026', label: 'QC (ศิริศักดิ์)', category: 'staff', icon: 'fa-clipboard-check', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200' },
+    { username: 'prasit.work', password: 'Work@2026', label: 'Worker (สาธร)', category: 'staff', icon: 'fa-hard-hat', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200' },
+  ]
+
+  const filteredUsers = activeTab === 'all'
+    ? ALL_DEV_USERS
+    : ALL_DEV_USERS.filter(u => u.category === activeTab)
+
+  return (
+    <div className="mt-4 border-t border-slate-200 pt-5">
+      <div className="text-center mb-3">
+        <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+          Dev Mode Active
+        </span>
+        <p className="text-slate-500 text-xs mt-2 font-medium">
+          เลือกบัญชีผู้ใช้ในระบบปัจจุบัน ({ALL_DEV_USERS.length} บัญชี)
+        </p>
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="flex justify-center gap-1 mb-3 bg-slate-100 p-1 rounded-lg text-[11px] font-medium">
+        {[
+          { id: 'all', label: `ทั้งหมด (10)` },
+          { id: 'super_admin', label: 'Super Admin (1)' },
+          { id: 'admin', label: 'แอดมิน (3)' },
+          { id: 'staff', label: 'ฝ่ายผลิต (6)' },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`px-2.5 py-1 rounded-md transition ${
+              activeTab === tab.id
+                ? 'bg-white text-slate-900 font-bold shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* User Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto p-1 border border-slate-100 rounded-lg">
+        {filteredUsers.map((t) => (
+          <button
+            key={t.username}
+            type="button"
+            onClick={() => onSelectUser(t.username, t.password)}
+            title={`Username: ${t.username} | Password: ${t.password}`}
+            className={`text-[11px] font-bold py-2 px-2.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 text-center ${t.color}`}
+          >
+            <i className={`fas ${t.icon} text-[10px]`}></i>
+            <span className="truncate">{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+

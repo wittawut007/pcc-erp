@@ -55,7 +55,7 @@ async function requireAdmin() {
     .eq('id', user.id)
     .single()
 
-  if (profile?.role !== 'admin') throw new Error('ไม่มีสิทธิ์ Admin')
+  if (profile?.role !== 'admin' && profile?.role !== 'super_admin') throw new Error('ไม่มีสิทธิ์ Admin')
 
   return { supabase, adminClient: createAdminClient(), userId: user.id }
 }

@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useMemo, useTransition } from 'react'
 import { dispenseMaterial, removePlanMaterial } from '@/app/actions/material'
 import toast from 'react-hot-toast'
 import DispenseConfirmModal from './DispenseConfirmModal'
+import FilterBar, { isDateInRange } from '@/components/shared/FilterBar'
 
 interface RawMaterial {
   id: string
@@ -65,6 +66,8 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'partial' | 'dispensed'>('all')
   const [activeTab, setActiveTab] = useState<'today' | 'history'>('today')
   const [printModalPlanId, setPrintModalPlanId] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' })
 
   // Dispense confirm modal
   const [confirmItem, setConfirmItem] = useState<Requisition | null>(null)
@@ -138,7 +141,23 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
     })
   }
 
-  const filteredItems = items.filter(i => activeFilter === 'all' || i.status === activeFilter)
+  const filteredItems = useMemo(() => {
+    return items.filter(i => {
+      const matchStatus = activeFilter === 'all' || i.status === activeFilter
+      const q = search.trim().toLowerCase()
+      const orderNumbers = i.plan?.production_orders?.map(o => o.order_number).join(' ') || ''
+      const matchSearch = !q ||
+        (i.raw_material?.name || '').toLowerCase().includes(q) ||
+        (i.raw_material?.material_code || '').toLowerCase().includes(q) ||
+        (i.receiver_name || '').toLowerCase().includes(q) ||
+        orderNumbers.toLowerCase().includes(q)
+
+      const planDate = i.plan?.plan_date || i.dispensed_at
+      const matchDate = isDateInRange(planDate, dateRange)
+
+      return matchStatus && matchSearch && matchDate
+    })
+  }, [items, activeFilter, search, dateRange])
 
   if (items.length === 0) {
     return (
@@ -204,6 +223,17 @@ export default function MaterialClient({ initialData, role, userFullName }: Prop
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Filters (Search & Date) */}
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="ค้นหาวัตถุดิบ, รหัส, ผู้รับ, หรือเลขที่ PO..."
+        countLabel={`${filteredItems.length} รายการ จาก ${sortedGroups.length} แผนการผลิต`}
+        dateLabel="วันที่แผน:"
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+      />
+
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid #E5E7EB', paddingBottom: 16 }}>
         <button

@@ -872,6 +872,7 @@ export type Database = {
         | "concrete_ordered"
       plan_status: "draft" | "confirmed" | "completed"
       user_role:
+        | "super_admin"
         | "admin"
         | "planner"
         | "worker"
@@ -1020,6 +1021,7 @@ export const Constants = {
       ],
       plan_status: ["draft", "confirmed", "completed"],
       user_role: [
+        "super_admin",
         "admin",
         "planner",
         "worker",

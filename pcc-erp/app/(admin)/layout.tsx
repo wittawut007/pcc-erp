@@ -10,7 +10,8 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode
 }) {
-  let role: UserRole = 'admin'
+  let user = null
+  let profile = null
   let badgeCounts: SidebarBadgeCounts = {
     productionOrder: 0,
     jobOrders: 0,
@@ -25,40 +26,47 @@ export default async function AdminLayout({
 
   if (isConfigured) {
     try {
-      const { user } = await getCachedUser()
+      const resUser = await getCachedUser()
+      user = resUser.user
 
-      if (!user) {
-        redirect('/login')
+      if (user) {
+        const resProfile = await getCachedProfile(user.id)
+        profile = resProfile.data
       }
 
-      const { data: profile } = await getCachedProfile(user.id)
-
-      const fetchedRole = profile?.role as UserRole | undefined
-
-      // Worker ไม่มีสิทธิ์เข้า admin layout
-      if (fetchedRole === 'worker') {
-        redirect('/unauthorized?reason=worker_login')
-      }
-
-      // QC ใช้ mobile layout → redirect
-      if (fetchedRole === 'qc') {
-        redirect('/qc-inspect')
-      }
-
-      if (fetchedRole) {
-        role = fetchedRole
-      }
-
-      // ดึง badge counts สำหรับ sidebar (parallel, ไม่กระทบ render หากล้มเหลว)
-      badgeCounts = await getSidebarBadgeCounts()
-    } catch {
-      // Supabase ยังไม่ configure → ใช้ default role (admin) เพื่อ dev
+      badgeCounts = await getSidebarBadgeCounts().catch(() => badgeCounts)
+    } catch (e) {
+      console.error('Error in AdminLayout data fetching:', e)
     }
+
+    // Redirects executed OUTSIDE try-catch so Next.js redirects work properly
+    if (!user) {
+      redirect('/login')
+    }
+
+    const effectiveRole: UserRole = (profile?.role || user?.user_metadata?.role || 'admin') as UserRole
+
+    if (effectiveRole === 'worker') {
+      redirect('/unauthorized?reason=worker_login')
+    }
+
+    if (effectiveRole === 'qc') {
+      redirect('/qc-inspect')
+    }
+
+    return (
+      <div className="flex h-screen w-full overflow-hidden bg-erp-bg text-erp-text-primary">
+        <Sidebar role={effectiveRole} badgeCounts={badgeCounts} />
+        <main className="flex-1 flex flex-col overflow-hidden">
+          {children}
+        </main>
+      </div>
+    )
   }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-erp-bg text-erp-text-primary">
-      <Sidebar role={role} badgeCounts={badgeCounts} />
+      <Sidebar role="admin" badgeCounts={badgeCounts} />
       <main className="flex-1 flex flex-col overflow-hidden">
         {children}
       </main>

@@ -113,6 +113,116 @@ export async function requestConcrete(
 }
 
 /**
+ * Worker สั่งคอนกรีตแบบ bed-group — สร้าง concrete_order 1 รายการต่อ 1 bed
+ * รองรับการสั่งหลาย job_orders ในโรงผลิตเดียวกันพร้อมกัน
+ * รูปถ่ายต้อง upload เสร็จก่อน แล้วส่ง photoUrl มา (Client ทำ upload ก่อน)
+ */
+export async function requestConcreteByBed(payload: {
+  bed: string
+  jobOrders: Array<{
+    id: string
+    photoUrl: string
+    qtyTarget: number
+    concretePerUnit: number
+  }>
+  concreteGroup: string | null
+  productionOrderId: string | null
+  notes: string | null
+  extraQty: number
+}) {
+  const supabase = await createClient()
+  const supabaseAdmin = createAdminClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+
+  const { bed, jobOrders, concreteGroup, productionOrderId, notes, extraQty } = payload
+
+  if (jobOrders.length === 0) throw new Error('ไม่มีรายการงานในโรงผลิตนี้')
+
+  const now = new Date().toISOString()
+
+  // อัปเดต job_orders ทุก job ในโรง
+  for (const job of jobOrders) {
+    if (!job.photoUrl) {
+      throw new Error(`กรุณาถ่ายภาพเตรียมงานก่อนสั่งคอนกรีต (Job ID: ${job.id})`)
+    }
+    const { error: jobErr } = await supabase
+      .from('job_orders')
+      .update({
+        status: 'concrete_ordered',
+        cast_at: null,
+        qty_cast: job.qtyTarget,
+        photo_ready_url: job.photoUrl,
+        worker_id: user.id,
+        concrete_requested_at: now,
+      })
+      .eq('id', job.id)
+    if (jobErr) throw new Error(`อัปเดตสถานะงานไม่สำเร็จ: ${jobErr.message}`)
+  }
+
+  // คำนวณปริมาณคอนกรีตรวม
+  const calculatedQty = jobOrders.reduce((sum, j) => sum + j.concretePerUnit * j.qtyTarget, 0)
+  const finalQty = calculatedQty + (extraQty || 0)
+
+  const roundData = calculateConcreteRounds(calculatedQty)
+  if (extraQty > 0 && roundData.length > 0) {
+    roundData[roundData.length - 1] = Number((roundData[roundData.length - 1] + extraQty).toFixed(2))
+  }
+  const roundCount = roundData.length
+
+  const noteText = extraQty > 0
+    ? `สั่งเพิ่มจากที่ระบบคำนวณให้ (คำนวณ: ${calculatedQty.toFixed(2)} คิว, สั่งเพิ่ม: ${extraQty.toFixed(2)} คิว)${notes ? ' | ' + notes : ''}`
+    : notes ?? null
+
+  // ใช้ Admin client เพื่อ bypass PostgREST schema cache สำหรับ bed column (enum type bed_name)
+  const { data: order, error: orderErr } = await supabaseAdmin
+    .from('concrete_orders')
+    .insert({
+      bed,
+      job_order_id: jobOrders[0]?.id ?? null,
+      production_order_id: productionOrderId,
+      requested_by: user.id,
+      qty_requested: finalQty,
+      total_qty_requested: finalQty,
+      round_count: roundCount,
+      status: 'requested',
+      concrete_group: concreteGroup,
+      phase: 'main',
+      notes: noteText,
+      requested_at: now,
+    })
+    .select('id')
+    .single()
+
+  if (orderErr || !order) throw new Error(orderErr?.message ?? 'สร้างคำสั่งคอนกรีตไม่สำเร็จ')
+
+  const rounds = roundData.map((qty, i) => ({
+    concrete_order_id: order.id,
+    round_number: i + 1,
+    qty_per_round: qty,
+    status: 'pending',
+  }))
+  const { error: roundsErr } = await supabaseAdmin.from('concrete_rounds').insert(rounds)
+  if (roundsErr) throw new Error(roundsErr.message)
+
+  try {
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: 'สั่งคอนกรีต (Worker)',
+      entity_type: 'concrete_order',
+      entity_id: order.id,
+      detail: `ส่งคำสั่งคอนกรีตโรงผลิต ${bed} จำนวน ${finalQty.toFixed(2)} Q (${roundCount} รอบ)${noteText ? ' | ' + noteText : ''}`,
+    })
+  } catch (err) {
+    await logError({ action: 'requestConcreteByBed/activityLog', error: err, context: { bed } })
+  }
+
+  revalidatePath('/worker')
+  revalidatePath('/concrete')
+}
+
+
+/**
  * Concrete Staff ยืนยันจ่ายคอนกรีต 1 รอบ
  */
 export async function supplyConcreteRound(roundId: string) {
@@ -181,12 +291,12 @@ export async function supplyConcreteRound(roundId: string) {
     if (roundDetails?.concrete_order_id) {
       const { data: orderData } = await supabase
         .from('concrete_orders')
-        .select('bed, job_order:job_orders(plan_item:production_plan_items(product:products(name)))')
+        .select('*, job_order:job_orders(bed, plan_item:production_plan_items(product:products(name)))')
         .eq('id', roundDetails.concrete_order_id)
         .single()
 
-      bedName = (orderData as any)?.bed || '-'
       const jobObj = Array.isArray((orderData as any)?.job_order) ? (orderData as any)?.job_order[0] : (orderData as any)?.job_order
+      bedName = (orderData as any)?.bed || jobObj?.bed || '-'
       const planItemObj = Array.isArray(jobObj?.plan_item) ? jobObj?.plan_item[0] : jobObj?.plan_item
       const productObj = Array.isArray(planItemObj?.product) ? planItemObj?.product[0] : planItemObj?.product
       productName = productObj?.name || 'ไม่ระบุ'
@@ -305,12 +415,12 @@ export async function receiveConcreteRound(roundId: string) {
     if (roundDetails?.concrete_order_id) {
       const { data: orderData } = await supabase
         .from('concrete_orders')
-        .select('bed, job_order:job_orders(plan_item:production_plan_items(product:products(name)))')
+        .select('*, job_order:job_orders(bed, plan_item:production_plan_items(product:products(name)))')
         .eq('id', roundDetails.concrete_order_id)
         .single()
 
-      bedName = (orderData as any)?.bed || '-'
       const jobObj = Array.isArray((orderData as any)?.job_order) ? (orderData as any)?.job_order[0] : (orderData as any)?.job_order
+      bedName = (orderData as any)?.bed || jobObj?.bed || '-'
       const planItemObj = Array.isArray(jobObj?.plan_item) ? jobObj?.plan_item[0] : jobObj?.plan_item
       const productObj = Array.isArray(planItemObj?.product) ? planItemObj?.product[0] : planItemObj?.product
       productName = productObj?.name || 'ไม่ระบุ'
@@ -343,8 +453,6 @@ export async function getPendingConcreteOrders() {
     .from('concrete_orders')
     .select(`
       *,
-      bed,
-      production_order_id,
       requested_by_profile:profiles!concrete_orders_requested_by_fkey(full_name, employee_code),
       job_order:job_orders(
         id, bed, qty_target, order_id,
@@ -352,16 +460,36 @@ export async function getPendingConcreteOrders() {
         plan_item:production_plan_items(
           product:products(name, code, concrete_per_unit, concrete_group)
         )
-      ),
-      rounds:concrete_rounds(
-        id, round_number, qty_per_round, status, supplied_at,
-        supplier:profiles(full_name)
       )
     `)
     .eq('status', 'requested')
     .order('requested_at', { ascending: true })
 
   if (error) throw new Error(error.message)
+
+  // Fetch concrete_rounds separately to avoid PostgREST schema cache relationship resolution issues
+  const orderIds = (data ?? []).map(o => o.id)
+  let roundsMap: Record<string, any[]> = {}
+  if (orderIds.length > 0) {
+    const chunkSize = 50
+    for (let i = 0; i < orderIds.length; i += chunkSize) {
+      const chunk = orderIds.slice(i, i + chunkSize)
+      const { data: roundsData } = await supabase
+        .from('concrete_rounds')
+        .select(`
+          id, concrete_order_id, round_number, qty_per_round, status, supplied_at,
+          supplier:profiles(full_name)
+        `)
+        .in('concrete_order_id', chunk)
+
+      if (roundsData) {
+        roundsData.forEach(r => {
+          if (!roundsMap[r.concrete_order_id]) roundsMap[r.concrete_order_id] = []
+          roundsMap[r.concrete_order_id].push(r)
+        })
+      }
+    }
+  }
 
   // Fetch all jobs currently waiting for concrete to attach production details
   const { data: jobOrders } = await supabase
@@ -403,27 +531,25 @@ export async function getPendingConcreteOrders() {
   return activeOrders.map(order => {
     const concreteOrder = order as any
     const jo = concreteOrder.job_order
+    const bed = concreteOrder.bed || jo?.bed || null
+    const productionOrderId = concreteOrder.production_order_id || jo?.order_id || null
+
     let bedJobs: any[] = []
 
-    // Priority 1: use production_order_id stored directly in concrete_orders (new records)
-    if (concreteOrder.production_order_id && concreteOrder.bed) {
-      const key = `${concreteOrder.production_order_id}-${concreteOrder.bed}`
+    if (productionOrderId && bed) {
+      const key = `${productionOrderId}-${bed}`
       bedJobs = jobsByPoAndBed[key] || []
+    } else if (bed) {
+      bedJobs = jobsByBedOnly[String(bed)] || []
     }
-    // Priority 2: use order_id from linked job_order (for records that have job_order_id but not production_order_id)
-    else if (jo?.order_id && concreteOrder.bed) {
-      const key = `${jo.order_id}-${concreteOrder.bed}`
-      bedJobs = jobsByPoAndBed[key] || []
-    }
-    // Fallback: bed only (for very old records)
-    else if (concreteOrder.bed) {
-      bedJobs = jobsByBedOnly[String(concreteOrder.bed)] || []
-    }
+
+    const rounds = roundsMap[order.id] || []
 
     return {
       ...order,
+      bed: bed,
       bed_jobs: bedJobs,
-      rounds: (order.rounds ?? []).sort((a: { round_number: number }, b: { round_number: number }) => a.round_number - b.round_number),
+      rounds: rounds.sort((a: { round_number: number }, b: { round_number: number }) => a.round_number - b.round_number),
     }
   })
 }
@@ -431,16 +557,13 @@ export async function getPendingConcreteOrders() {
 /**
  * ดึงประวัติการจ่ายคอนกรีตตามวันที่
  */
-export async function getConcreteHistoryByDate(date: string) {
+export async function getConcreteHistoryByDate(date?: string, dateTo?: string) {
   const supabase = await createClient()
-  const dateStart = `${date}T00:00:00.000Z`
-  const dateEnd = `${date}T23:59:59.999Z`
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('concrete_orders')
     .select(`
       *,
-      bed,
       requested_by_profile:profiles!concrete_orders_requested_by_fkey(full_name),
       supplied_by_profile:profiles!concrete_orders_supplied_by_fkey(full_name),
       job_order:job_orders(
@@ -448,22 +571,52 @@ export async function getConcreteHistoryByDate(date: string) {
         plan_item:production_plan_items(
           product:products(name, concrete_per_unit, concrete_group)
         )
-      ),
-      rounds:concrete_rounds(
-        id, round_number, qty_per_round, status, supplied_at,
-        supplier:profiles(full_name)
       )
     `)
-    .gte('requested_at', dateStart)
-    .lte('requested_at', dateEnd)
     .order('requested_at', { ascending: false })
+
+  if (date) {
+    const dateStart = `${date}T00:00:00.000Z`
+    const dateEnd = `${dateTo || date}T23:59:59.999Z`
+    query = query.gte('requested_at', dateStart).lte('requested_at', dateEnd)
+  }
+
+  const { data, error } = await query.limit(200)
 
   if (error) throw new Error(error.message)
 
-  return (data ?? []).map(order => ({
-    ...order,
-    rounds: (order.rounds ?? []).sort((a: { round_number: number }, b: { round_number: number }) => a.round_number - b.round_number),
-  }))
+  const orderIds = (data ?? []).map(o => o.id)
+  let roundsMap: Record<string, any[]> = {}
+  if (orderIds.length > 0) {
+    const chunkSize = 50
+    for (let i = 0; i < orderIds.length; i += chunkSize) {
+      const chunk = orderIds.slice(i, i + chunkSize)
+      const { data: roundsData } = await supabase
+        .from('concrete_rounds')
+        .select(`
+          id, concrete_order_id, round_number, qty_per_round, status, supplied_at,
+          supplier:profiles(full_name)
+        `)
+        .in('concrete_order_id', chunk)
+
+      if (roundsData) {
+        roundsData.forEach(r => {
+          if (!roundsMap[r.concrete_order_id]) roundsMap[r.concrete_order_id] = []
+          roundsMap[r.concrete_order_id].push(r)
+        })
+      }
+    }
+  }
+
+  return (data ?? []).map(order => {
+    const rounds = roundsMap[order.id] || []
+    const jo = (order as any).job_order
+    return {
+      ...order,
+      bed: (order as any).bed || jo?.bed || null,
+      rounds: rounds.sort((a: { round_number: number }, b: { round_number: number }) => a.round_number - b.round_number),
+    }
+  })
 }
 
 /**

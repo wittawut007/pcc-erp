@@ -10,6 +10,7 @@ export interface RoleStyle {
 }
 
 export const ROLE_STYLE_MAP: Record<string, RoleStyle> = {
+  super_admin: { bg: '#FEE2E2', color: '#991B1B', label: 'Super Admin' },
   admin: { bg: 'var(--accent-light)', color: 'var(--accent)', label: 'Admin' },
   planner: { bg: 'var(--indigo-light)', color: 'var(--indigo)', label: 'Planner' },
   warehouse: { bg: 'var(--amber-light)', color: 'var(--amber)', label: 'Warehouse' },

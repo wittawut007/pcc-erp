@@ -3,6 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { logError } from '@/lib/logger'
+import { receiveCounterfortToStock, deductCounterfortStock } from './component'
+
 
 /**
  * QC ยืนยันการเทคอนกรีต (Pour Inspection)
@@ -252,7 +254,8 @@ export async function recordDemoldInspection(
   if (jobErr) throw new Error(jobErr.message)
 
   // 1. Get job order details for inventory
-  const { data: job } = await supabase.from('job_orders').select('plan_item:production_plan_items(product:products(id, name))').eq('id', jobOrderId).single()
+  const { data: job } = await supabase.from('job_orders').select('job_type, plan_item:production_plan_items(product:products(id, name, code, category, counterfort_material_id, counterfort_qty_per_unit))').eq('id', jobOrderId).single()
+
 
   // 2. Insert into demolding_records
   const { data: record, error: recError } = await supabase.from('demolding_records').insert({
@@ -282,18 +285,50 @@ export async function recordDemoldInspection(
     }
   }
 
-  // 3. Update fg_inventory — plan_item is an array from Supabase join
+  // 3. Update fg_inventory or raw_materials SFG stock — plan_item is an array from Supabase join
   const planItem = Array.isArray(job?.plan_item) ? job.plan_item[0] : job?.plan_item
   const product = Array.isArray(planItem?.product) ? planItem.product[0] : planItem?.product
   const productId = product?.id
   if (productId && demoldQtyGood > 0) {
-    const { data: existingFg } = await supabase.from('fg_inventory').select('id, qty').eq('product_id', productId).single()
-    if (existingFg) {
-      await supabase.from('fg_inventory').update({ qty: existingFg.qty + demoldQtyGood, updated_at: now, last_updated_by: user.id }).eq('id', existingFg.id)
+    const isComponent = (job as any)?.job_type === 'component' || product?.category?.includes('Counterfort') || product?.category?.includes('SFG')
+    if (isComponent) {
+      const cfMaterialId = product?.counterfort_material_id
+      if (cfMaterialId) {
+        await receiveCounterfortToStock(cfMaterialId, demoldQtyGood, jobOrderId)
+      } else {
+        const { data: sfgMat } = await supabase
+          .from('raw_materials')
+          .select('id')
+          .eq('category', 'ชิ้นส่วน SFG')
+          .or(`material_code.eq.${product.code},name.eq.${product.name}`)
+          .maybeSingle()
+        if (sfgMat?.id) {
+          await receiveCounterfortToStock(sfgMat.id, demoldQtyGood, jobOrderId)
+        }
+      }
     } else {
-      await supabase.from('fg_inventory').insert({ product_id: productId, qty: demoldQtyGood, last_updated_by: user.id })
+      const { data: existingFg } = await supabase.from('fg_inventory').select('id, qty').eq('product_id', productId).maybeSingle()
+      if (existingFg) {
+        await supabase.from('fg_inventory').update({ qty: existingFg.qty + demoldQtyGood, updated_at: now, last_updated_by: user.id }).eq('id', existingFg.id)
+      } else {
+        await supabase.from('fg_inventory').insert({ product_id: productId, qty: demoldQtyGood, last_updated_by: user.id })
+      }
+
+      // 3.1 ตัดเบิก Counterfort SFG ออกจากคลัง raw_materials ถ้าสินค้านี้ผูกชิ้นส่วน Counterfort ไว้
+      const cfMaterialId = product?.counterfort_material_id
+      const cfQtyPerUnit = product?.counterfort_qty_per_unit ?? 0
+      if (cfMaterialId && cfQtyPerUnit > 0) {
+        const totalCfToDeduct = demoldQtyGood * cfQtyPerUnit
+        try {
+          await deductCounterfortStock(cfMaterialId, totalCfToDeduct, jobOrderId)
+        } catch (err) {
+          console.error('Failed to deduct counterfort stock:', err)
+          await logError({ action: 'saveDemoldingRecord/deductCounterfortStock', error: err, context: { cfMaterialId, totalCfToDeduct, jobOrderId } })
+        }
+      }
     }
   }
+
 
   // 4. Activity Log
   await supabase.from('activity_logs').insert({
@@ -310,7 +345,7 @@ export async function recordDemoldInspection(
 
 /**
  * ดึงรายการงานที่ QC ต้องตรวจ (สำหรับ QC Mobile)
- * รวม is_two_phase และ phase tracking columns สำหรับ two-phase UI
+ * รองรับทั้ง job_type = 'fg' และ 'component' (Counterfort)
  */
 export async function getQCJobOrders() {
   const supabase = await createClient()
@@ -319,28 +354,19 @@ export async function getQCJobOrders() {
     .from('job_orders')
     .select(`
       *,
-      counterfort_cast_at,
-      counterfort_cured_at,
-      stem_cast_at,
-      stem_cured_at,
-      photo_counterfort_url,
-      photo_stem_url,
       plan_item:production_plan_items(
         bed,
         product:products(
           id, name, code, category, unit, size,
-          is_two_phase, concrete_counterfort, concrete_stem
+          concrete_per_unit, counterfort_material_id
         )
       ),
       worker:profiles!job_orders_worker_id_fkey(full_name),
       qc_inspection:qc_inspections(
         *,
-        counterfort_pour_ok,
-        counterfort_pour_notes,
-        counterfort_inspected_at,
-        stem_pour_ok,
-        stem_pour_notes,
-        stem_inspected_at
+        pour_ok,
+        pour_notes,
+        pour_inspected_at
       ),
       defect_breakdowns:job_order_defects(*),
       production_order:production_orders(order_number, status)
@@ -349,11 +375,14 @@ export async function getQCJobOrders() {
       'concrete_ordered', 'casting', 'curing', 'ready_demold', 'demolded',
       'counterfort_ordered', 'counterfort_curing', 'stem_ordered', 'stem_curing'
     ])
+    .in('job_type', ['fg', 'component'])
     .order('created_at', { ascending: true })
 
   if (error) throw new Error(error.message)
   return data
 }
+
+
 
 /**
  * [TESTING] เร่งเวลาการบ่ม (ลด cast_at ไป 21 ชั่วโมง)

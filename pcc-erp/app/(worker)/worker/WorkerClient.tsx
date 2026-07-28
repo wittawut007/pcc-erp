@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
-import { receiveConcreteRound, adjustLastRoundQty } from '@/app/actions/concrete'
+import { receiveConcreteRound, adjustLastRoundQty, requestConcreteByBed } from '@/app/actions/concrete'
 import { calculateConcreteRounds } from '@/lib/concrete-utils'
 import { compressImage } from '@/lib/utils/compress-image'
 
@@ -18,15 +18,9 @@ interface Job {
   expected_demold_at: string | null
   plan_item_id?: string
   order_id?: string | null
-  // Two-phase tracking columns
-  counterfort_cast_at?: string | null
-  counterfort_cured_at?: string | null
-  stem_cast_at?: string | null
-  stem_cured_at?: string | null
+  job_type?: string
   photo_ready_url?: string | null
   photo_cast_url?: string | null
-  photo_counterfort_url?: string | null
-  photo_stem_url?: string | null
   production_order?: {
     order_number: string
     status: string
@@ -34,12 +28,11 @@ interface Job {
   plan_item: {
     id?: string
     plan_id?: string
-    product: { 
-      id: string; code: string; name: string; size?: string; category: string; unit: string; 
+    product: {
+      id: string; code: string; name: string; size?: string; category: string; unit: string;
       concrete_per_unit?: number; wire_per_unit?: number; mesh_per_unit?: number; rebar_per_unit?: number; concrete_group?: string | null;
-      is_two_phase?: boolean;
-      concrete_counterfort?: number;
-      concrete_stem?: number;
+      counterfort_material_id?: string | null;
+      counterfort_qty_per_unit?: number;
     } | null
   } | null
 }
@@ -68,11 +61,13 @@ export default function WorkerClient({
   planMaterialsMap = {},
   planItemToPlanMap = {},
   productBomByPhase = {},
+  planMaterialDispensedMap = {},
 }: {
   jobOrders: Job[]
   planMaterialsMap?: Record<string, PlanMaterial[]>
   planItemToPlanMap?: Record<string, string>
   productBomByPhase?: Record<string, BomItem[]>
+  planMaterialDispensedMap?: Record<string, boolean>
 }) {
   const supabase = createClient()
   const router = useRouter()
@@ -150,35 +145,19 @@ export default function WorkerClient({
     return Object.keys(groups).sort().map(orderNumber => {
       const jobs = groups[orderNumber]
       
-      // กรองงานที่สามารถสั่งปูนได้จริงในปัจจุบัน (pending หรือ counterfort_curing ที่บ่ม CF เสร็จแล้ว)
-      const activeJobs = jobs.filter(j => {
-        if (j.status === 'pending') return true
-        if (j.status === 'counterfort_curing') {
-          const isTwoPhase = j.plan_item?.product?.is_two_phase ?? false
-          const isCfCuringDone = isTwoPhase && j.counterfort_cast_at
-            ? (new Date(new Date(j.counterfort_cast_at).getTime() + 20 * 60 * 60 * 1000) <= new Date())
-            : false
-          return isCfCuringDone
-        }
-        return false
-      })
+      // กรองงานที่สามารถสั่งปูนได้จริงในปัจจุบัน (เฉพาะ pending เท่านั้น)
+      const activeJobs = jobs.filter(j => j.status === 'pending')
 
       const readyJobs = activeJobs.filter(j => {
         const checks = jobItemChecks[j.id] || { clean: false, wip: false }
         const photo = jobItemPhotos[j.id]
-        return checks.clean && checks.wip && !!photo
+        const jPlanId = j.plan_item?.plan_id || (j.plan_item_id && planItemToPlanMap ? planItemToPlanMap[j.plan_item_id] : null)
+        const jMaterialReady = jPlanId ? (planMaterialDispensedMap[jPlanId] ?? true) : true
+        return jMaterialReady && checks.clean && checks.wip && !!photo
       })
 
       const totalConcrete = readyJobs.reduce((sum, j) => {
-        const isTwoPhase = j.plan_item?.product?.is_two_phase ?? false
-        let concretePerUnit = j.plan_item?.product?.concrete_per_unit || 0
-        if (isTwoPhase) {
-          if (j.status === 'pending') {
-            concretePerUnit = j.plan_item?.product?.concrete_counterfort || 0
-          } else if (j.status === 'counterfort_curing') {
-            concretePerUnit = j.plan_item?.product?.concrete_stem || 0
-          }
-        }
+        const concretePerUnit = j.plan_item?.product?.concrete_per_unit || 0
         return sum + (concretePerUnit * j.qty_target)
       }, 0)
 
@@ -188,14 +167,14 @@ export default function WorkerClient({
       return {
         orderNumber,
         jobs,
-        pendingJobs: activeJobs, // ใช้ pendingJobs เป็น alias สำหรับ activeJobs เพื่อความง่ายในการเข้ากันได้กับโค้ด UI
+        pendingJobs: activeJobs,
         readyJobs,
         totalConcrete,
         totalRoundsCount,
         groupAllReady
       }
     })
-  }, [jobOrders, jobItemChecks, jobItemPhotos])
+  }, [jobOrders, jobItemChecks, jobItemPhotos, planMaterialDispensedMap, planItemToPlanMap])
 
   const confirmJobsByBed = React.useMemo(() => {
     if (!jobsToConfirm) return []
@@ -219,15 +198,7 @@ export default function WorkerClient({
     Object.keys(groups).forEach(bed => {
       const bedJobs = groups[bed]
       const bedQty = bedJobs.reduce((sum, j) => {
-        const isTwoPhase = j.plan_item?.product?.is_two_phase ?? false
-        let concretePerUnit = j.plan_item?.product?.concrete_per_unit || 0
-        if (isTwoPhase) {
-          if (j.status === 'pending') {
-            concretePerUnit = j.plan_item?.product?.concrete_counterfort || 0
-          } else if (j.status === 'counterfort_curing') {
-            concretePerUnit = j.plan_item?.product?.concrete_stem || 0
-          }
-        }
+        const concretePerUnit = j.plan_item?.product?.concrete_per_unit || 0
         return sum + (concretePerUnit * j.qty_target)
       }, 0)
       tQty += bedQty
@@ -250,7 +221,7 @@ export default function WorkerClient({
     return Array.from(
       new Set(
         jobOrders
-          .filter(j => j.status === 'concrete_ordered' || j.status === 'counterfort_ordered' || j.status === 'stem_ordered')
+          .filter(j => j.status === 'concrete_ordered')
           .map(j => j.production_order?.order_number)
           .filter(Boolean)
       )
@@ -322,15 +293,7 @@ export default function WorkerClient({
     let tRounds = 0
     allJobsByBed.forEach(group => {
       const bedQty = group.jobs.reduce((sum, j) => {
-        const isTwoPhase = j.plan_item?.product?.is_two_phase ?? false
-        let concretePerUnit = j.plan_item?.product?.concrete_per_unit || 0
-        if (isTwoPhase) {
-          if (j.status === 'pending') {
-            concretePerUnit = j.plan_item?.product?.concrete_counterfort || 0
-          } else if (j.status === 'counterfort_curing') {
-            concretePerUnit = j.plan_item?.product?.concrete_stem || 0
-          }
-        }
+        const concretePerUnit = j.plan_item?.product?.concrete_per_unit || 0
         return sum + (concretePerUnit * j.qty_target)
       }, 0)
       tQty += bedQty
@@ -356,17 +319,7 @@ export default function WorkerClient({
   const handleOrderConcrete = async (jobsToOrder: Job[]) => {
     setSaving(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
-      // บังคับถ่ายรูปเตรียมงานก่อนสั่งคอนกรีตทุกครั้ง
-      for (const job of jobsToOrder) {
-        const photo = jobItemPhotos[job.id]
-        if (!photo && !job.photo_ready_url) {
-          throw new Error('กรุณาถ่ายภาพเตรียมงานก่อนสั่งคอนกรีต')
-        }
-      }
-
+      // กลุ่มงานตาม bed
       const groups: Record<string, Job[]> = {}
       jobsToOrder.forEach(job => {
         if (!groups[job.bed]) groups[job.bed] = []
@@ -375,81 +328,42 @@ export default function WorkerClient({
 
       for (const bed of Object.keys(groups)) {
         const bedJobs = groups[bed]
-        let totalConcreteQty = 0
-        
-        const isTwoPhase = bedJobs[0]?.plan_item?.product?.is_two_phase ?? false
-        const orderPhase = isTwoPhase
-          ? (bedJobs[0].status === 'pending' ? 'counterfort' : 'stem')
-          : 'main'
+
+        // Upload รูปถ่ายก่อน (client-side)
+        const jobOrdersPayload: Array<{
+          id: string
+          photoUrl: string
+          qtyTarget: number
+          concretePerUnit: number
+        }> = []
 
         for (const job of bedJobs) {
           const photo = jobItemPhotos[job.id]
-          const photoUrl = photo ? await uploadPhoto(photo.file, 'preparation') : (job.photo_ready_url || null)
-          
+          const photoUrl = photo
+            ? await uploadPhoto(photo.file, 'preparation')
+            : (job.photo_ready_url || null)
+
           if (!photoUrl) {
             throw new Error('กรุณาถ่ายภาพเตรียมงานก่อนสั่งคอนกรีต')
           }
 
-          let concretePerUnit = job.plan_item?.product?.concrete_per_unit || 0
-          let newStatus = 'concrete_ordered'
-          
-          if (isTwoPhase) {
-            if (job.status === 'pending') {
-              concretePerUnit = job.plan_item?.product?.concrete_counterfort || 0
-              newStatus = 'counterfort_ordered'
-            } else if (job.status === 'counterfort_curing') {
-              concretePerUnit = job.plan_item?.product?.concrete_stem || 0
-              newStatus = 'stem_ordered'
-            }
-          }
-
-          const jobConcreteQty = concretePerUnit * job.qty_target
-          totalConcreteQty += jobConcreteQty
-
-          await supabase.from('job_orders').update({
-            status: newStatus,
-            cast_at: null,
-            qty_cast: job.qty_target,
-            photo_ready_url: photoUrl,
-            worker_id: user.id,
-          }).eq('id', job.id)
+          jobOrdersPayload.push({
+            id: job.id,
+            photoUrl,
+            qtyTarget: job.qty_target,
+            concretePerUnit: job.plan_item?.product?.concrete_per_unit || 0,
+          })
         }
 
-        const roundsData = calculateConcreteRounds(totalConcreteQty)
-        const bedRounds = roundsData.length
-
-        if (bedRounds > 0) {
-          const productionOrderId = bedJobs[0]?.order_id || null
-          const { data: order } = await supabase.from('concrete_orders').insert({
-            bed,
-            job_order_id: bedJobs[0]?.id || null,
-            production_order_id: productionOrderId,
-            requested_by: user.id,
-            qty_requested: totalConcreteQty,
-            round_count: bedRounds,
-            status: 'requested',
-            concrete_group: bedJobs[0]?.plan_item?.product?.concrete_group || null,
-            phase: orderPhase,
-          }).select('id').single()
-
-          if (order?.id) {
-            const rounds = roundsData.map((qty, i) => ({
-              concrete_order_id: order.id,
-              round_number: i + 1,
-              qty_per_round: qty,
-              status: 'pending',
-            }))
-            await supabase.from('concrete_rounds').insert(rounds)
-
-            await supabase.from('activity_logs').insert({
-              user_id: user.id,
-              action_type: 'สั่งคอนกรีต (Worker)',
-              entity_type: 'concrete_order',
-              entity_id: order.id,
-              detail: `ส่งคำสั่งคอนกรีตโรงผลิต ${bed} จำนวน ${totalConcreteQty.toFixed(2)} Q (${bedRounds} รอบ) (เฟส: ${orderPhase === 'counterfort' ? 'CF' : orderPhase === 'stem' ? 'STEM' : 'ปกติ'})`,
-            })
-          }
-        }
+        // เรียก Server Action
+        await requestConcreteByBed({
+          bed,
+          jobOrders: jobOrdersPayload,
+          concreteGroup: bedJobs[0]?.plan_item?.product?.concrete_group || null,
+          productionOrderId: bedJobs[0]?.order_id || null,
+          notes: null,
+          extraQty: 0,
+        })
       }
 
       setConcreteSent(true)
@@ -475,14 +389,28 @@ export default function WorkerClient({
             id, bed, status,
             production_order:production_orders(status),
             plan_item:production_plan_items(product:products(name, concrete_group))
-          ),
-          rounds:concrete_rounds(id, round_number, qty_per_round, status, supplied_at)`)
+          )`)
         .in('status', ['requested', 'supplied'])
         .order('requested_at', { ascending: true })
       if (data) {
+        const orderIds = data.map((o: any) => o.id)
+        let roundsMap: Record<string, any[]> = {}
+        if (orderIds.length > 0) {
+          const { data: roundsData } = await supabase
+            .from('concrete_rounds')
+            .select('id, concrete_order_id, round_number, qty_per_round, status, supplied_at')
+            .in('concrete_order_id', orderIds)
+          if (roundsData) {
+            roundsData.forEach((r: any) => {
+              if (!roundsMap[r.concrete_order_id]) roundsMap[r.concrete_order_id] = []
+              roundsMap[r.concrete_order_id].push(r)
+            })
+          }
+        }
+
         const sorted = data.map((o: any) => ({
           ...o,
-          rounds: (o.rounds ?? []).sort((a: any, b: any) => a.round_number - b.round_number),
+          rounds: (roundsMap[o.id] ?? []).sort((a: any, b: any) => a.round_number - b.round_number),
         })).filter((o: any) => 
           o.rounds.some((r: any) => r.status !== 'received') &&
           o.job_order?.production_order?.status !== 'erp_synced'
@@ -549,39 +477,47 @@ export default function WorkerClient({
   const handleSubmitConcreteOrder = async () => {
     setSaving(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
       const bedJobs = jobsByBed[confirmingBedIndex].jobs
       const bed = jobsByBed[confirmingBedIndex].bed
 
+      // ตรวจสอบว่ามีรูปถ่ายครบก่อน
       for (const job of bedJobs) {
         const photo = photos[`phase1-${job.id}`]
         if (!photo && !job.photo_ready_url) {
           throw new Error('กรุณาถ่ายภาพเตรียมงานก่อนสั่งคอนกรีต')
         }
       }
-      
-      let totalCalculatedQty = 0
+
+      // Upload รูปถ่ายก่อน (client-side)
+      const jobOrdersPayload: Array<{
+        id: string
+        photoUrl: string
+        qtyTarget: number
+        concretePerUnit: number
+      }> = []
+
       for (const job of bedJobs) {
-        const p1PhotoUrl = photos[`phase1-${job.id}`] ? await uploadPhoto(photos[`phase1-${job.id}`].file, 'preparation') : (job.photo_ready_url || null)
+        const p1PhotoUrl = photos[`phase1-${job.id}`]
+          ? await uploadPhoto(photos[`phase1-${job.id}`].file, 'preparation')
+          : (job.photo_ready_url || null)
+
         if (!p1PhotoUrl) {
           throw new Error('กรุณาถ่ายภาพเตรียมงานก่อนสั่งคอนกรีต')
         }
-        const jobConcreteQty = (job.plan_item?.product?.concrete_per_unit || 0) * job.qty_target
-        totalCalculatedQty += jobConcreteQty
-        await supabase.from('job_orders').update({
-          status: 'concrete_ordered',
-          cast_at: null,
-          qty_cast: job.qty_target,
-          photo_ready_url: p1PhotoUrl,
-          worker_id: user?.id,
-        }).eq('id', job.id)
+
+        jobOrdersPayload.push({
+          id: job.id,
+          photoUrl: p1PhotoUrl,
+          qtyTarget: job.qty_target,
+          concretePerUnit: job.plan_item?.product?.concrete_per_unit || 0,
+        })
       }
 
-      // Check if custom qty is selected and greater than calculated
-      let finalQty = totalCalculatedQty
-      let notes: string | null = null
-      let excess = 0
-
+      // คำนวณ extraQty จาก custom mode
+      const totalCalculatedQty = jobOrdersPayload.reduce(
+        (sum, j) => sum + j.concretePerUnit * j.qtyTarget, 0
+      )
+      let extraQty = 0
       if (orderMoreMode === 'custom') {
         const customQty = parseFloat(customConcreteQty)
         if (isNaN(customQty)) {
@@ -590,60 +526,23 @@ export default function WorkerClient({
         if (customQty < totalCalculatedQty) {
           throw new Error(`จำนวนคอนกรีตที่สั่งเพิ่มต้องไม่น้อยกว่าจำนวนที่คำนวณจากระบบ (${totalCalculatedQty.toFixed(2)} คิว)`)
         }
-        if (customQty > totalCalculatedQty) {
-          excess = customQty - totalCalculatedQty
-          finalQty = customQty
-          notes = `สั่งเพิ่มจากที่ระบบคำนวณให้ (จำนวนคำนวณจากระบบ: ${totalCalculatedQty.toFixed(2)} คิว, สั่งเพิ่ม: ${excess.toFixed(2)} คิว)`
-        }
+        extraQty = Math.max(0, customQty - totalCalculatedQty)
       }
 
-      const roundsData = calculateConcreteRounds(totalCalculatedQty)
-      const bedRounds = roundsData.length
-      if (bedRounds > 0) {
-        // Add excess to the last round
-        if (excess > 0) {
-          roundsData[roundsData.length - 1] = Number((roundsData[roundsData.length - 1] + excess).toFixed(2))
-        }
+      // เรียก Server Action
+      await requestConcreteByBed({
+        bed,
+        jobOrders: jobOrdersPayload,
+        concreteGroup: bedJobs[0]?.plan_item?.product?.concrete_group || null,
+        productionOrderId: bedJobs[0]?.order_id || null,
+        notes: null,
+        extraQty,
+      })
 
-        const productionOrderId = bedJobs[0]?.order_id || null
-        const { data: order } = await supabase.from('concrete_orders').insert({
-          bed,
-          job_order_id: bedJobs[0]?.id || null,
-          production_order_id: productionOrderId,
-          requested_by: user!.id,
-          qty_requested: finalQty,
-          total_qty_requested: finalQty,
-          round_count: bedRounds,
-          status: 'requested',
-          notes: notes,
-          concrete_group: bedJobs[0]?.plan_item?.product?.concrete_group || null,
-        }).select('id').single()
-
-        if (order?.id) {
-          const rounds = roundsData.map((qty, i) => ({
-            concrete_order_id: order.id,
-            round_number: i + 1,
-            qty_per_round: qty,
-            status: 'pending',
-          }))
-          await supabase.from('concrete_rounds').insert(rounds)
-
-          if (user?.id) {
-            await supabase.from('activity_logs').insert({
-              user_id: user.id,
-              action_type: 'สั่งคอนกรีต (Worker)',
-              entity_type: 'concrete_order',
-              entity_id: order.id,
-              detail: `ส่งคำสั่งคอนกรีตโรงผลิต ${bed} จำนวน ${finalQty.toFixed(2)} Q (${bedRounds} รอบ)${notes ? ' | ' + notes : ''}`,
-            })
-          }
-        }
-      }
-
-      // Close modal
+      // ปิด modal
       setShowConcreteConfirmModal(false)
 
-      // Move to next bed or success
+      // ไปยัง bed ถัดไป หรือ success
       if (confirmingBedIndex < jobsByBed.length - 1) {
         setCurrentBedIndex(confirmingBedIndex + 1)
       } else {
@@ -1115,46 +1014,27 @@ export default function WorkerClient({
                               const checks = jobItemChecks[j.id] || { clean: false, wip: false }
                               const photo = jobItemPhotos[j.id]
                               
-                              const isTwoPhase = j.plan_item?.product?.is_two_phase ?? false
-                              const isCfCuring = j.status === 'counterfort_curing'
-                              const isCfCuringDone = isTwoPhase && isCfCuring && j.counterfort_cast_at
-                                ? (new Date(new Date(j.counterfort_cast_at).getTime() + 20 * 60 * 60 * 1000) <= new Date())
-                                : false
-                              const isCuringBlock = isCfCuring && !isCfCuringDone
+                              const isCuringBlock = j.status === 'curing' && j.cast_at &&
+                (new Date(j.cast_at).getTime() + 20 * 60 * 60 * 1000 > Date.now())
 
-                              const isJobReady = !isCuringBlock && checks.clean && checks.wip && !!photo
-                              
+                              // ตรวจสอบว่าแผนผลิตนี้เบิกจ่ายวัตถุดิบครบหรือยัง
                               const planId = j.plan_item?.plan_id || (j.plan_item_id && planItemToPlanMap ? planItemToPlanMap[j.plan_item_id] : null)
+                              const isMaterialReady = planId ? (planMaterialDispensedMap[planId] ?? true) : true
+
+              const isJobReady = isMaterialReady && !isCuringBlock && checks.clean && checks.wip && !!photo
                               const materials = planId ? materialsByPlan[planId] || [] : []
                               
                               const getStatusDisplay = () => {
-                                if (j.status === 'counterfort_curing' && !isCfCuringDone) {
-                                  return { label: '🏗️ CF กำลังบ่ม', bg: '#FFF7ED', color: '#C2410C', border: '#FED7AA' }
-                                }
-                                if (j.status === 'counterfort_curing' && isCfCuringDone) {
-                                  return isJobReady
-                                    ? { label: 'ดำเนินการแล้ว', bg: '#DCFCE7', color: '#166534', border: '#86EFAC' }
-                                    : { label: '🧱 รอสั่ง STEM', bg: '#F5F3FF', color: '#7C3AED', border: '#DDD6FE' }
-                                }
-
                                 let effectiveStatus = j.status
                                 if (effectiveStatus === 'curing') {
                                   const expectedTime = j.expected_demold_at || (j.cast_at ? new Date(new Date(j.cast_at).getTime() + 20 * 60 * 60 * 1000).toISOString() : null)
                                   if (expectedTime && new Date(expectedTime) <= new Date()) {
                                     effectiveStatus = 'ready_demold'
                                   }
-                                } else if (effectiveStatus === 'stem_curing') {
-                                  const stemCastAt = j.stem_cast_at
-                                  if (stemCastAt) {
-                                    const expectedTime = new Date(new Date(stemCastAt).getTime() + 20 * 60 * 60 * 1000).toISOString()
-                                    if (new Date(expectedTime) <= new Date()) {
-                                      effectiveStatus = 'ready_demold'
-                                    }
-                                  }
                                 }
 
                                 if (effectiveStatus === 'pending') {
-                                  return isJobReady 
+                                  return isJobReady
                                     ? { label: 'ดำเนินการแล้ว', bg: '#DCFCE7', color: '#166534', border: '#86EFAC' }
                                     : { label: 'รอดำเนินการ', bg: '#F1F5F9', color: '#475569', border: '#CBD5E1' }
                                 }
@@ -1164,22 +1044,23 @@ export default function WorkerClient({
                                   curing:           { label: 'กำลังบ่ม',     bg: '#EFF6FF', color: '#2563EB', border: '#BFDBFE' },
                                   ready_demold:     { label: 'พร้อมถอดแบบ', bg: '#F0FDF4', color: '#059669', border: '#A7F3D0' },
                                   demolded:         { label: 'เสร็จสิ้น',    bg: '#F8FAFC', color: '#64748B', border: '#E2E8F0' },
-                                  // 2-Phase statuses
-                                  counterfort_ordered: { label: '🏗️ รอคอนกรีต CF', bg: '#FEF3C7', color: '#92400E', border: '#FDE68A' },
-                                  counterfort_curing:  { label: '🏗️ CF กำลังบ่ม',  bg: '#FFF7ED', color: '#C2410C', border: '#FED7AA' },
-                                  stem_ordered:        { label: '🧱 รอคอนกรีต STEM', bg: '#EDE9FE', color: '#6D28D9', border: '#C4B5FD' },
-                                  stem_curing:         { label: '🧱 STEM กำลังบ่ม', bg: '#F5F3FF', color: '#7C3AED', border: '#DDD6FE' },
                                 }
                                 return statusMap[effectiveStatus] || statusMap['demolded']
                               }
                               const s = getStatusDisplay()
                               
                               return (
-                                <div key={j.id} style={{ borderRadius: '20px', overflow: 'hidden', border: isJobReady ? '2px solid #34D399' : '1px solid rgba(0,0,0,0.06)', boxShadow: isJobReady ? '0 4px 20px rgba(16,185,129,0.12)' : '0 4px 12px rgba(0,0,0,0.04)', backgroundColor: '#ffffff' }}>
+                                <div key={j.id} style={{ borderRadius: '20px', overflow: 'hidden', border: !isMaterialReady ? '2px solid #F59E0B' : isJobReady ? '2px solid #34D399' : '1px solid rgba(0,0,0,0.06)', boxShadow: !isMaterialReady ? '0 4px 20px rgba(245,158,11,0.15)' : isJobReady ? '0 4px 20px rgba(16,185,129,0.12)' : '0 4px 12px rgba(0,0,0,0.04)', backgroundColor: '#ffffff' }}>
                                   {/* Card Header */}
                                   <div onClick={() => setExpandedJobId(isExpanded ? null : j.id)}
                                     style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', gap: '12px' }}>
                                     <div style={{ flex: 1, minWidth: 0 }}>
+                                      {!isMaterialReady && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', padding: '4px 8px', backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '8px' }}>
+                                          <i className="fas fa-exclamation-triangle" style={{ color: '#D97706', fontSize: '11px' }} />
+                                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#D97706' }}>รอเบิกจ่ายวัตถุดิบจากคลัง</span>
+                                        </div>
+                                      )}
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                                         {isJobReady && <div style={{ width: '8px', height: '8px', borderRadius: '99px', backgroundColor: '#10B981', flexShrink: 0 }} />}
                                         <h4 style={{ fontSize: '16px', fontWeight: 800, color: '#1E293B', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.plan_item?.product?.name}</h4>
@@ -1203,25 +1084,22 @@ export default function WorkerClient({
                                   {/* Expandable Detail */}
                                   {isExpanded && (
                                     <div style={{ padding: '0 20px 20px', borderTop: '1px solid #F1F5F9' }}>
-                                      {isCuringBlock ? (
-                                        <div style={{ padding: '20px', marginTop: '16px', textAlign: 'center', backgroundColor: '#FFF7ED', borderRadius: '16px', border: '1px solid #FED7AA' }}>
-                                          <i className="fas fa-hourglass-half" style={{ fontSize: '28px', color: '#EA580C', marginBottom: '8px' }}></i>
-                                          <p style={{ fontWeight: 800, color: '#C2410C', fontSize: '15px', margin: 0 }}>อยู่ระหว่างการบ่ม COUNTERFORT (เฟส 1)</p>
-                                          <p style={{ fontSize: '13px', color: '#9A3412', marginTop: '6px', fontWeight: 700 }}>
-                                            {(() => {
-                                              if (!j.counterfort_cast_at) return 'รอเริ่มบ่ม...'
-                                              const diff = new Date(j.counterfort_cast_at).getTime() + 20 * 60 * 60 * 1000 - Date.now()
-                                              if (diff <= 0) return 'บ่มเสร็จสิ้น'
-                                              const hours = Math.floor(diff / (1000 * 60 * 60))
-                                              const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-                                              return `เหลือเวลาบ่ม: ${hours} ชม. ${minutes} นาที`
-                                            })()}
-                                          </p>
+                                      {!isMaterialReady ? (
+                                        <div style={{ padding: '20px', marginTop: '16px', textAlign: 'center', backgroundColor: '#FFFBEB', borderRadius: '16px', border: '1px solid #FDE68A' }}>
+                                          <i className="fas fa-boxes" style={{ fontSize: '28px', color: '#D97706', marginBottom: '8px' }}></i>
+                                          <p style={{ fontWeight: 800, color: '#92400E', fontSize: '15px', margin: 0 }}>รอเบิกจ่ายวัตถุดิบจากคลัง</p>
+                                          <p style={{ fontSize: '13px', color: '#92400E', marginTop: '6px', fontWeight: 700 }}>ไม่สามารถสั่งคอนกรีตหรือเริ่มงานได้ จนกว่าฝ่ายคลังจะจ่ายวัตถุดิบให้ครบถ้วน</p>
+                                        </div>
+                                      ) : isCuringBlock ? (
+                                        <div style={{ padding: '20px', marginTop: '16px', textAlign: 'center', backgroundColor: '#EFF6FF', borderRadius: '16px', border: '1px solid #BFDBFE' }}>
+                                          <i className="fas fa-hourglass-half" style={{ fontSize: '28px', color: '#2563EB', marginBottom: '8px' }}></i>
+                                          <p style={{ fontWeight: 800, color: '#1E40AF', fontSize: '15px', margin: 0 }}>อยู่ระหว่างการบ่มคอนกรีต</p>
+                                          <p style={{ fontSize: '13px', color: '#1E40AF', marginTop: '6px', fontWeight: 700 }}>กรุณารอจนกว่าจะครบกำหนดบ่ม</p>
                                         </div>
                                       ) : (
                                         <>
                                           <p style={{ fontSize: '11px', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px' }}>
-                                            ตรวจสอบความพร้อม {isTwoPhase ? (j.status === 'pending' ? '(เฟส 1: CF)' : '(เฟส 2: STEM)') : ''}
+                                            ตรวจสอบความพร้อม
                                           </p>
                                           <div style={{ backgroundColor: '#F8FAFC', borderRadius: '16px', padding: '8px', marginBottom: '14px' }}>
                                             <label style={{ display: 'flex', alignItems: 'flex-start', padding: '14px', borderRadius: '12px', cursor: 'pointer', borderBottom: '1px solid #F1F5F9' }}>
@@ -1244,20 +1122,10 @@ export default function WorkerClient({
                                                   const product = j.plan_item?.product
                                                   if (!product) return null
                                                   
-                                                  const currentPhase = isTwoPhase
-                                                    ? (j.status === 'pending' ? 'counterfort' : 'stem')
-                                                    : 'main'
- 
                                                   const bomItems = productBomByPhase[product.id] || []
-                                                  const filteredBom = bomItems.filter(b => {
-                                                    if (currentPhase === 'counterfort') {
-                                                      return b.phase === 'counterfort' || b.phase === 'all'
-                                                    }
-                                                    if (currentPhase === 'stem') {
-                                                      return b.phase === 'stem'
-                                                    }
-                                                    return b.phase === 'main' || b.phase === 'all' || b.phase === 'all_phase'
-                                                  })
+                                                  const filteredBom = bomItems.filter(b =>
+                                                    b.phase === 'main' || b.phase === 'all' || b.phase === 'all_phase'
+                                                  )
  
                                                   if (filteredBom.length === 0) {
                                                     const hasWire = product.wire_per_unit && product.wire_per_unit > 0
@@ -1620,39 +1488,39 @@ export default function WorkerClient({
                     </div>
                     <div style={{ padding: '8px 0' }}>
                       {order.rounds.map((r, idx) => {
-                        const isSupplied = r.status === 'supplied' || r.status === 'received'
                         const isReceived = r.status === 'received'
-                        const isNext = !isSupplied && (idx === 0 || order.rounds[idx - 1]?.status === 'received')
-                        const isLocked = !isSupplied && !isNext
-                        
+                        const isSupplied = r.status === 'supplied'  // admin จ่ายแล้ว รอ worker รับ
+                        const isPending = r.status === 'pending'    // ยังรออยู่ในคิวผสม
+                        const isDone = isReceived || isSupplied
+
                         const isSecondToLast = order.rounds.length >= 2 && idx === order.rounds.length - 2
                         const lastRound = order.rounds[order.rounds.length - 1]
                         const concreteGroup = order.concrete_group || (order.job_order as any)?.plan_item?.product?.concrete_group
 
                         return (
-                          <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', borderBottom: idx < order.rounds.length - 1 ? '1px solid #F8FAFC' : 'none', background: isReceived ? '#F0FDF4' : isSupplied ? '#FFFBEB' : 'transparent', opacity: isLocked ? 0.4 : 1 }}>
-                            <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, background: isReceived ? '#D1FAE5' : isSupplied ? '#FEF3C7' : isNext ? '#DBEAFE' : '#F3F4F6', color: isReceived ? '#059669' : isSupplied ? '#D97706' : isNext ? '#2563EB' : '#9CA3AF' }}>
-                              {isReceived ? <i className="fas fa-check-double" style={{ fontSize: 10 }} /> : isSupplied ? <i className="fas fa-truck" style={{ fontSize: 10 }} /> : isLocked ? <i className="fas fa-lock" style={{ fontSize: 9 }} /> : r.round_number}
+                          <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', borderBottom: idx < order.rounds.length - 1 ? '1px solid #F8FAFC' : 'none', background: isReceived ? '#F0FDF4' : isSupplied ? '#FFFBEB' : 'transparent', opacity: isPending ? 0.55 : 1 }}>
+                            <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, background: isReceived ? '#D1FAE5' : isSupplied ? '#FEF3C7' : '#DBEAFE', color: isReceived ? '#059669' : isSupplied ? '#D97706' : '#3B82F6' }}>
+                              {isReceived ? <i className="fas fa-check-double" style={{ fontSize: 10 }} /> : isSupplied ? <i className="fas fa-truck" style={{ fontSize: 10 }} /> : r.round_number}
                             </div>
                             <div style={{ flex: 1 }}>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: isReceived ? '#047857' : isLocked ? '#9CA3AF' : '#1E293B' }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: isReceived ? '#047857' : isPending ? '#94A3B8' : '#1E293B' }}>
                                 รอบที่ {r.round_number}
                                 {concreteGroup && (
-                                  <span style={{ fontWeight: 600, color: isReceived ? '#059669' : isLocked ? '#9CA3AF' : '#4B5563', marginLeft: 4 }}>
+                                  <span style={{ fontWeight: 600, color: isReceived ? '#059669' : isPending ? '#9CA3AF' : '#4B5563', marginLeft: 4 }}>
                                     ({concreteGroup})
                                   </span>
                                 )}
                               </span>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: isReceived ? '#047857' : isLocked ? '#9CA3AF' : '#1E293B', marginLeft: 6 }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: isReceived ? '#047857' : isPending ? '#94A3B8' : '#1E293B', marginLeft: 6 }}>
                                 {Number(r.qty_per_round).toFixed(2)} คิว
                               </span>
                               {isReceived ? (
-                                <div style={{ fontSize: 10, color: '#10B981', fontWeight: 700, marginTop: 1 }}>รับเรียบร้อยแล้ว</div>
+                                <div style={{ fontSize: 10, color: '#10B981', fontWeight: 700, marginTop: 1 }}>✅ รับเรียบร้อยแล้ว</div>
                               ) : isSupplied ? (
-                                <div style={{ fontSize: 10, color: '#D97706', fontWeight: 700, marginTop: 1 }}>คอนกรีตมาถึงแล้ว! กรุณากดรับ</div>
-                              ) : isNext ? (
-                                <div style={{ fontSize: 10, color: '#60A5FA', fontWeight: 700, marginTop: 1 }}>รอฝ่ายผสมยืนยัน...</div>
-                              ) : null}
+                                <div style={{ fontSize: 10, color: '#D97706', fontWeight: 800, marginTop: 1 }}>🚛 คอนกรีตมาถึงแล้ว! กรุณากดรับ</div>
+                              ) : (
+                                <div style={{ fontSize: 10, color: '#60A5FA', fontWeight: 700, marginTop: 1 }}>🕐 รอฝ่ายผสมคอนกรีต...</div>
+                              )}
                             </div>
                             {isSupplied && !isReceived ? (
                               <button
@@ -1687,12 +1555,28 @@ export default function WorkerClient({
                 )
               })}
 
-              {activeConcreteOrders.length > 0 && !allDone && (
-                <div style={{ padding: '12px 16px', backgroundColor: '#FFFBEB', borderRadius: 14, border: '1px solid #FDE68A', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <i className="fas fa-info-circle" style={{ color: '#D97706', flexShrink: 0, marginTop: 1 }} />
-                  <p style={{ margin: 0, fontSize: 12, color: '#92400E', fontWeight: 600 }}>สถานะอัปเดตอัตโนมัติหลังฝ่ายผสมกดยืนยันจ่ายแต่ละรอบ ไม่ต้องกดรีเฟรช</p>
-                </div>
-              )}
+              {activeConcreteOrders.length > 0 && !allDone && (() => {
+                const pendingRounds = activeConcreteOrders.reduce((s, o) => s + o.rounds.filter(r => r.status === 'pending').length, 0)
+                const suppliedRounds = activeConcreteOrders.reduce((s, o) => s + o.rounds.filter(r => r.status === 'supplied').length, 0)
+                return (
+                  <div style={{ padding: '12px 16px', backgroundColor: suppliedRounds > 0 ? '#FFFBEB' : '#EFF6FF', borderRadius: 14, border: `1px solid ${suppliedRounds > 0 ? '#FDE68A' : '#BFDBFE'}`, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <i className={`fas ${suppliedRounds > 0 ? 'fa-truck' : 'fa-clock'}`} style={{ color: suppliedRounds > 0 ? '#D97706' : '#3B82F6', flexShrink: 0, marginTop: 1 }} />
+                    <div>
+                      {suppliedRounds > 0 && (
+                        <p style={{ margin: '0 0 2px', fontSize: 12, color: '#92400E', fontWeight: 800 }}>
+                          มีคอนกรีต {suppliedRounds} รอบรอการยืนยันรับ — กรุณากดปุ่มยืนยันรับด้านบน
+                        </p>
+                      )}
+                      {pendingRounds > 0 && (
+                        <p style={{ margin: 0, fontSize: 12, color: suppliedRounds > 0 ? '#92400E' : '#1D4ED8', fontWeight: 600 }}>
+                          อีก {pendingRounds} รอบอยู่ในคิวผสม — ระบบจะแจ้งเตือนอัตโนมัติทุก 8 วินาที
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+
             </div>
             )
           })()}

@@ -1,12 +1,14 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { translateDefectReason } from '@/lib/utils/defects'
 import type { FgPrintData, FgPrintItem, PrintBomItem, PrintPlanMaterial, MaterialStatus, OrderStatus } from '@/lib/types'
 
 export async function saveErpReference(orderId: string, erpReference: string) {
   const supabase = await createClient()
+  const adminClient = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
   
   const { data: order } = await supabase
@@ -15,7 +17,7 @@ export async function saveErpReference(orderId: string, erpReference: string) {
     .eq('id', orderId)
     .single()
 
-  const { error } = await supabase
+  const { error } = await adminClient
     .from('production_orders')
     .update({ 
       erp_reference: erpReference,
@@ -23,7 +25,59 @@ export async function saveErpReference(orderId: string, erpReference: string) {
     })
     .eq('id', orderId)
 
-  if (error) throw new Error(error.message)
+  if (error) {
+    // Fallback if PostgREST schema cache has issues with erp_reference column
+    const { error: fallbackErr } = await adminClient
+      .from('production_orders')
+      .update({ status: 'erp_synced' })
+      .eq('id', orderId)
+    if (fallbackErr) throw new Error(fallbackErr.message)
+  }
+
+  // 1. Fetch job orders belonging to this production order
+  const { data: jobOrders } = await adminClient
+    .from('job_orders')
+    .select(`
+      id,
+      plan_item:production_plan_items(product_id),
+      demolding_records(qty_good, qty_defect)
+    `)
+    .eq('order_id', orderId)
+
+  if (jobOrders && jobOrders.length > 0) {
+    const jobOrderIds = jobOrders.map(j => j.id)
+    const now = new Date().toISOString()
+
+    // 2. Update job_orders status to 'completed'
+    await adminClient
+      .from('job_orders')
+      .update({ status: 'completed' })
+      .in('id', jobOrderIds)
+
+    // 3. Create fg_receipts entries for items that don't have receipt yet
+    const receiptsToInsert = []
+    for (const job of jobOrders) {
+      const planItem = Array.isArray(job.plan_item) ? job.plan_item[0] : job.plan_item
+      const productId = planItem?.product_id
+      const demoldingRecord = Array.isArray(job.demolding_records) ? job.demolding_records[0] : job.demolding_records
+
+      if (productId) {
+        receiptsToInsert.push({
+          job_order_id: job.id,
+          product_id: productId,
+          warehouse_id: user?.id || null,
+          qty_good: demoldingRecord?.qty_good || 0,
+          qty_defect: demoldingRecord?.qty_defect || 0,
+          notes: `ยืนยันเข้าระบบ ERP (${erpReference})`,
+          confirmed_at: now
+        })
+      }
+    }
+
+    if (receiptsToInsert.length > 0) {
+      await adminClient.from('fg_receipts').insert(receiptsToInsert)
+    }
+  }
 
   if (user) {
     await supabase.from('activity_logs').insert({
@@ -261,7 +315,7 @@ export async function createManualFgOrder(
   revalidatePath('/dashboard')
 
   // Fetch full details of the newly created order to return to client
-  const { data: fullOrder } = await supabase
+  let { data: fullOrder, error: fullOrderErr } = await supabase
     .from('production_orders')
     .select(`
       id,
@@ -284,6 +338,31 @@ export async function createManualFgOrder(
     .eq('id', order.id)
     .single()
 
+  if (fullOrderErr) {
+    const res = await supabase
+      .from('production_orders')
+      .select(`
+        id,
+        order_number,
+        status,
+        created_at,
+        plan:production_plans(plan_date),
+        job_orders(
+          id,
+          status,
+          qty_target,
+          qty_cast,
+          demolding_records(qty_good, qty_defect),
+          plan_item:production_plan_items(
+            product:products(id, code, name, category, unit, size)
+          )
+        )
+      `)
+      .eq('id', order.id)
+      .single()
+    fullOrder = res.data ? ({ ...res.data, erp_reference: null } as any) : null
+  }
+
   return fullOrder
 }
 
@@ -291,7 +370,7 @@ export async function getFgPrintData(orderId: string) {
   const supabase = await createClient()
 
   // Fetch the production order with all details
-  const { data: order, error } = await supabase
+  let { data: order, error } = await supabase
     .from('production_orders')
     .select(`
       id,
@@ -326,19 +405,7 @@ export async function getFgPrintData(orderId: string) {
             wire_per_unit,
             rebar_per_unit,
             mesh_per_unit,
-            length,
-            product_bom_items(
-              id,
-              qty_per_unit,
-              raw_materials(
-                id,
-                name,
-                category,
-                unit,
-                material_code,
-                weight_per_meter
-              )
-            )
+            length
           )
         )
       )
@@ -346,9 +413,66 @@ export async function getFgPrintData(orderId: string) {
     .eq('id', orderId)
     .single()
 
+  if (error) {
+    const res = await supabase
+      .from('production_orders')
+      .select(`
+        id,
+        order_number,
+        status,
+        created_at,
+        confirmed_by:profiles(full_name, role),
+        plan:production_plans(id, plan_date, total_concrete),
+        job_orders(
+          id,
+          bed,
+          qty_target,
+          qty_cast,
+          status,
+          demolding_records(
+            id,
+            qty_good,
+            qty_defect,
+            defect_reason,
+            defect_detail
+          ),
+          plan_item:production_plan_items(
+            product:products(
+              id,
+              code,
+              name,
+              category,
+              unit,
+              size,
+              concrete_per_unit,
+              wire_per_unit,
+              rebar_per_unit,
+              mesh_per_unit,
+              length
+            )
+          )
+        )
+      `)
+      .eq('id', orderId)
+      .single()
+    order = res.data ? ({ ...res.data, erp_reference: null } as any) : null
+    error = res.error
+  }
+
   if (error || !order) {
     console.error('Fetch order error:', error)
     throw new Error('ไม่พบใบสั่งผลิต')
+  }
+
+  // Fetch product_bom_items separately if product exists
+  const productId = (order as any).plan_item?.product?.id
+  if (productId && (order as any).plan_item?.product) {
+    const { data: bomData } = await supabase
+      .from('product_bom_items')
+      .select('id, qty_per_unit, raw_materials(id, name, category, unit, material_code, weight_per_meter)')
+      .eq('product_id', productId)
+
+    ;(order as any).plan_item.product.product_bom_items = bomData || []
   }
 
   // Handle plan object/array mapping and fetch actual materials

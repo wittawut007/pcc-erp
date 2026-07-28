@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import FilterBar, { isDateInRange } from '@/components/shared/FilterBar'
 
 interface Job {
   id: string; bed: string; qty_cast: number; qty_target: number
@@ -170,10 +171,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
         (j.worker?.full_name || '').toLowerCase().includes(q)
       )
 
-      let matchDate = true
-      if (dateRange.start && dateRange.end) {
-        if (datePart < dateRange.start || datePart > dateRange.end) matchDate = false
-      }
+      const matchDate = isDateInRange(datePart, dateRange)
 
       return matchSearch && matchDate
     })
@@ -244,10 +242,7 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
         (r.worker?.full_name || '').toLowerCase().includes(q)
       )
 
-      let matchDate = true
-      if (dateRange.start && dateRange.end) {
-        if (createdDate < dateRange.start || createdDate > dateRange.end) matchDate = false
-      }
+      const matchDate = isDateInRange(createdDate, dateRange)
 
       return matchSearch && matchDate
     })
@@ -310,72 +305,19 @@ export default function DemoldingClient({ readyJobs, recentDemolding, workers }:
       </div>
 
       {/* Filters (Search & Date) */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        {/* Search Bar */}
-        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#9CA3AF' }} />
-            <input
-              type="text"
-              placeholder="ค้นหาสินค้า, ใบสั่งผลิต, โรงผลิต, หรือชื่อพนักงาน..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ paddingLeft: 32, paddingRight: 12, height: 36, width: '100%', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 12, outline: 'none', color: '#374151', background: '#F9FAFB', boxSizing: 'border-box' }}
-            />
-          </div>
-          <span style={{ fontSize: 12, color: '#9CA3AF', whiteSpace: 'nowrap' }}>
-            พบ <strong style={{ color: '#374151' }}>{tab === 'queue' ? filteredJobs.length : filteredRecords.length}</strong> รายการ
-          </span>
-        </div>
-
-        {/* Date Filter */}
-        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <i className="fas fa-calendar-alt" style={{ color: '#9CA3AF', fontSize: 14 }} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>{tab === 'queue' ? 'วันที่แผน:' : 'วันที่ถอดแบบ:'}</span>
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 8, padding: '4px 8px' }}>
-            <input 
-              type="date" 
-              value={dateRange.start} 
-              onChange={e => setDateRange(p => ({ ...p, start: e.target.value }))}
-              style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: '#374151', cursor: 'pointer' }}
-            />
-            <span style={{ color: '#9CA3AF', fontSize: 12 }}>-</span>
-            <input 
-              type="date" 
-              value={dateRange.end} 
-              onChange={e => setDateRange(p => ({ ...p, end: e.target.value }))}
-              style={{ border: 'none', background: 'transparent', fontSize: 12, outline: 'none', color: '#374151', cursor: 'pointer' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button
-              onClick={() => setDateRange(getTodayRange())}
-              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
-            >วันนี้</button>
-            <button
-              onClick={() => setDateRange(getThisWeekRange())}
-              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
-            >สัปดาห์นี้</button>
-            <button
-              onClick={() => setDateRange(getThisMonthRange())}
-              style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer', transition: 'all 0.15s' }}
-            >เดือนนี้</button>
-            {(dateRange.start || dateRange.end) && (
-              <button
-                onClick={() => setDateRange({ start: '', end: '' })}
-                style={{ padding: '6px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', background: '#FEE2E2', color: '#DC2626', cursor: 'pointer', marginLeft: 4 }}
-                title="ล้างตัวกรอง"
-              >
-                <i className="fas fa-times" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      <FilterBar
+        search={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="ค้นหาสินค้า, ใบสั่งผลิต, โรงผลิต, หรือชื่อพนักงาน..."
+        countLabel={
+          tab === 'queue'
+            ? `${filteredJobs.length} รายการ จาก ${planGroups.length} ใบสั่งผลิต`
+            : `${filteredRecords.length} รายการ จาก ${historyGroups.length} ใบสั่งผลิต`
+        }
+        dateLabel={tab === 'queue' ? 'วันที่แผน:' : 'วันที่ถอดแบบ:'}
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+      />
 
       {/* Tabs */}
       <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
