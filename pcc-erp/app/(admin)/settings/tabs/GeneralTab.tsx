@@ -8,13 +8,13 @@ interface GeneralTabProps {
 export default function GeneralTab({ stats }: GeneralTabProps) {
   const buildVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? '1.0.0'
   const environment = process.env.NODE_ENV ?? 'development'
-  const supabaseProject = process.env.NEXT_PUBLIC_SUPABASE_URL
-    ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname.split('.')[0]
-    : 'not-configured'
+  const vpsHost = process.env.NEXT_PUBLIC_SUPABASE_URL
+    ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname
+    : '119.59.116.74'
 
   const envColors: Record<string, { color: string; bg: string; label: string }> = {
-    production: { color: '#10B981', bg: '#ECFDF5', label: 'Production' },
-    development: { color: '#F59E0B', bg: '#FFFBEB', label: 'Development' },
+    production: { color: '#10B981', bg: '#ECFDF5', label: 'Production (VPS)' },
+    development: { color: '#F59E0B', bg: '#FFFBEB', label: 'Development (VPS)' },
     test: { color: '#6366F1', bg: '#EEF2FF', label: 'Testing' },
   }
   const envStyle = envColors[environment] ?? envColors.development
@@ -31,14 +31,14 @@ export default function GeneralTab({ stats }: GeneralTabProps) {
       icon: 'fa-code-branch',
     },
     {
-      label: 'เฟรมเวิร์ค',
-      value: 'Next.js 16 · Supabase · TypeScript',
+      label: 'เฟรมเวิร์คและโครงสร้าง',
+      value: 'Next.js 15 · Self-Hosted VPS Supabase (PostgreSQL) · TypeScript',
       icon: 'fa-layer-group',
     },
     {
-      label: 'Supabase Project',
-      value: supabaseProject,
-      icon: 'fa-database',
+      label: 'เซิร์ฟเวอร์หลัก (Host VPS IP)',
+      value: `${vpsHost} (Self-Hosted Production VPS)`,
+      icon: 'fa-server',
     },
     {
       label: 'โซนเวลา (Timezone)',

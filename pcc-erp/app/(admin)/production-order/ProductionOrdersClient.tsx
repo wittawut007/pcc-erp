@@ -5,6 +5,17 @@ import Link from 'next/link'
 import { toast } from 'react-hot-toast'
 import { deleteProductionPlan } from '@/app/actions/planner'
 import PoDocumentModal from '@/components/shared/PoDocumentModal'
+import FilterBar, { DateRange, isDateInRange } from '@/components/shared/FilterBar'
+
+interface PlanItem {
+  id: string
+  bed?: string | null
+  product?: {
+    id: string
+    code: string
+    name: string
+  } | null
+}
 
 interface Plan {
   id: string
@@ -14,7 +25,7 @@ interface Plan {
   total_concrete: number | null
   created_at: string
   profile: { full_name: string; role: string } | { full_name: string; role: string }[] | null
-  items: { id: string }[]
+  items: PlanItem[]
   production_orders?: { order_number: string; status: string }[]
 }
 
@@ -94,18 +105,24 @@ function getProfile(p: ProfileShape | ProfileShape[] | null): ProfileShape | nul
 }
 
 export default function ProductionOrdersClient({ plans, userRole = 'worker' }: Props) {
+  const [tab, setTab] = useState<'queue' | 'history'>('queue')
   const [activeStatus, setActiveStatus] = useState<StatusKey | 'all'>('all')
   const [search, setSearch] = useState('')
+  const [dateRange, setDateRange] = useState<DateRange>({ start: '', end: '' })
   const [isPending, startTransition] = useTransition()
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [printModalPlanId, setPrintModalPlanId] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
 
-  // Reset currentPage to 1 when filters, search or pageSize change
+  // Split plans into queue (active) vs history (completed)
+  const queuePlans = useMemo(() => plans.filter(p => getStatus(p.status) !== 'completed'), [plans])
+  const historyPlans = useMemo(() => plans.filter(p => getStatus(p.status) === 'completed'), [plans])
+
+  // Reset currentPage to 1 when filters, search, dateRange, tab or pageSize change
   useEffect(() => {
     setCurrentPage(1)
-  }, [activeStatus, search, pageSize])
+  }, [tab, activeStatus, search, dateRange, pageSize])
 
   const handleDelete = (planId: string, orderNumber: string) => {
     if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งผลิต ${orderNumber} ?\nการกระทำนี้จะลบข้อมูลที่เกี่ยวข้องทั้งหมดและไม่สามารถย้อนกลับได้`)) return
@@ -136,20 +153,34 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
     completed: plans.filter(p => getStatus(p.status) === 'completed').length,
   }), [plans])
 
-  // Filtered list
+  // Filtered list based on active tab and search/date/status filters
   const filtered = useMemo(() => {
-    return plans.filter(p => {
+    const currentTabPlans = tab === 'queue' ? queuePlans : historyPlans
+    return currentTabPlans.filter(p => {
       const matchStatus = activeStatus === 'all' || getStatus(p.status) === activeStatus
+      const matchDate = isDateInRange(p.plan_date, dateRange)
+
       const po = Array.isArray(p.production_orders) ? p.production_orders[0] : null
       const orderNumber = po?.order_number || `ไม่มี PO (#${p.id.slice(0, 8).toUpperCase()})`
       const profile = getProfile(p.profile)
-      const matchSearch = !search.trim() ||
-        orderNumber.toLowerCase().includes(search.toLowerCase()) ||
-        (profile?.full_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-        p.plan_date.includes(search)
-      return matchStatus && matchSearch
+
+      const q = search.trim().toLowerCase()
+      if (!q) return matchStatus && matchDate
+
+      const matchOrderNum = orderNumber.toLowerCase().includes(q)
+      const matchProfile = (profile?.full_name ?? '').toLowerCase().includes(q)
+      const matchDateText = p.plan_date.includes(q)
+      const matchPlanId = p.id.toLowerCase().includes(q)
+      const matchItems = (p.items ?? []).some(item =>
+        (item.bed ?? '').toLowerCase().includes(q) ||
+        (item.product?.code ?? '').toLowerCase().includes(q) ||
+        (item.product?.name ?? '').toLowerCase().includes(q)
+      )
+
+      const matchSearch = matchOrderNum || matchProfile || matchDateText || matchPlanId || matchItems
+      return matchStatus && matchDate && matchSearch
     })
-  }, [plans, activeStatus, search])
+  }, [tab, queuePlans, historyPlans, activeStatus, search, dateRange])
 
   // Paginated list
   const paginatedList = useMemo(() => {
@@ -166,6 +197,21 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
   const fmtDateTime = (iso: string) =>
     new Date(iso).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
+  const TAB_STYLE = (active: boolean): React.CSSProperties => ({
+    padding: '10px 20px',
+    borderRadius: 8,
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    background: active ? '#2563EB' : 'transparent',
+    color: active ? '#fff' : '#6B7280',
+    border: 'none',
+    transition: 'all 0.15s',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  })
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', background: '#F7F8FA', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
@@ -173,7 +219,7 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
         {/* All */}
         <button
-          onClick={() => setActiveStatus('all')}
+          onClick={() => { setActiveStatus('all'); }}
           style={{
             padding: '16px 18px',
             borderRadius: 12,
@@ -200,7 +246,14 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
           return (
             <button
               key={key}
-              onClick={() => setActiveStatus(isActive ? 'all' : key)}
+              onClick={() => {
+                if (key === 'completed') {
+                  setTab('history')
+                } else {
+                  setTab('queue')
+                }
+                setActiveStatus(isActive ? 'all' : key)
+              }}
               style={{
                 padding: '16px 18px',
                 borderRadius: 12,
@@ -224,17 +277,71 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
         })}
       </div>
 
+      {/* ── Filter Bar (Search & Date Filter) ── */}
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="ค้นหาสินค้า, รหัส, โรงผลิต, เลขที่ PO..."
+        countLabel={
+          tab === 'queue'
+            ? `${filtered.length} รายการ จาก ${queuePlans.length} ใบสั่งผลิต`
+            : `${filtered.length} รายการ จาก ${historyPlans.length} ใบสั่งผลิต`
+        }
+        dateLabel="วันที่แผน:"
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+      />
+
       {/* ── Table Card ── */}
       <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
+
+        {/* Tab Bar */}
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', gap: 4, background: '#F9FAFB' }}>
+          <button style={TAB_STYLE(tab === 'queue')} onClick={() => { setTab('queue'); setActiveStatus('all'); }}>
+            <i className="fas fa-list-ul" />
+            คิวงานรออยู่
+            {queuePlans.length > 0 && (
+              <span style={{
+                background: '#EF4444',
+                color: '#fff',
+                borderRadius: 50,
+                padding: '2px 8px',
+                fontSize: 11,
+                fontWeight: 700,
+                marginLeft: 4,
+              }}>
+                {queuePlans.length}
+              </span>
+            )}
+          </button>
+          <button style={TAB_STYLE(tab === 'history')} onClick={() => { setTab('history'); setActiveStatus('all'); }}>
+            <i className="fas fa-history" />
+            ย้อนหลัง
+            {historyPlans.length > 0 && (
+              <span style={{
+                background: tab === 'history' ? 'rgba(255,255,255,0.3)' : '#E5E7EB',
+                color: tab === 'history' ? '#fff' : '#6B7280',
+                borderRadius: 50,
+                padding: '2px 8px',
+                fontSize: 11,
+                fontWeight: 700,
+                marginLeft: 4,
+              }}>
+                {historyPlans.length}
+              </span>
+            )}
+          </button>
+        </div>
 
         {/* Table Header Bar */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <div>
             <h2 style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: 0 }}>
-              {activeStatus === 'all' ? 'รายการสั่งผลิตทั้งหมด' : `รายการ: ${STATUS_CONFIG[activeStatus].label}`}
+              {tab === 'queue' ? 'คิวงานสั่งผลิตรออยู่' : 'ประวัติใบสั่งผลิตย้อนหลัง'}
+              {activeStatus !== 'all' ? ` (สถานะ: ${STATUS_CONFIG[activeStatus].label})` : ''}
             </h2>
             <p style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
-              แสดง {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filtered.length)} จาก {filtered.length} รายการ {search ? `(ค้นหา: "${search}")` : ''}
+              แสดง {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filtered.length)} จาก {filtered.length} รายการ {(search || dateRange.start || dateRange.end) ? '(กรองข้อมูลอยู่)' : ''}
             </p>
           </div>
 
@@ -262,23 +369,6 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
                 <option value={50}>50 รายการ</option>
                 <option value={100}>100 รายการ</option>
               </select>
-            </div>
-
-            {/* Search */}
-            <div style={{ position: 'relative' }}>
-              <i className="fas fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#9CA3AF' }}></i>
-              <input
-                type="text"
-                placeholder="ค้นหาเลขที่ PO, วันที่, ผู้อนุมัติ..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                style={{
-                  paddingLeft: 32, paddingRight: 12, height: 36,
-                  border: '1px solid #E5E7EB', borderRadius: 8,
-                  fontSize: 12, width: 260, outline: 'none', color: '#374151',
-                  background: '#F9FAFB',
-                }}
-              />
             </div>
           </div>
         </div>
@@ -422,7 +512,7 @@ export default function ProductionOrdersClient({ plans, userRole = 'worker' }: P
                             ดูรายละเอียด
                           </button>
 
-                          {userRole === 'admin' && (
+                          {(userRole === 'admin' || userRole === 'super_admin') && (
                             <button
                               onClick={() => handleDelete(plan.id, orderNumber)}
                               disabled={isPending && deletingId === plan.id}

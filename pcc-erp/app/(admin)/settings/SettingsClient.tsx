@@ -8,7 +8,6 @@ const GeneralTab = dynamic(() => import('./tabs/GeneralTab'))
 const UserManagementTab = dynamic(() => import('./tabs/UserManagementTab'))
 const MasterDataTab = dynamic(() => import('./tabs/MasterDataTab'))
 const MonitoringTab = dynamic(() => import('./tabs/MonitoringTab'))
-const SupabaseTab = dynamic(() => import('./tabs/SupabaseTab'))
 const PlanDeleteTab = dynamic(() => import('./tabs/PlanDeleteTab'))
 const BackupTab = dynamic(() => import('./tabs/BackupTab'))
 
@@ -25,9 +24,8 @@ const tabs: Tab[] = [
   { id: 'users', label: 'จัดการผู้ใช้', icon: 'fa-users-cog' },
   { id: 'master', label: 'ข้อมูลหลัก', icon: 'fa-database' },
   { id: 'backup', label: 'Backup', icon: 'fa-shield-alt' },
-  { id: 'supabase', label: 'Supabase', icon: 'fa-bolt' },
   { id: 'plan-delete', label: 'ลบแผนการผลิต', icon: 'fa-trash-alt', badge: '⚠️', badgeColor: '#DC2626' },
-  { id: 'monitoring', label: 'Monitoring', icon: 'fa-chart-bar' },
+  { id: 'monitoring', label: 'Monitoring VPS', icon: 'fa-server' },
 ]
 
 interface SettingsClientProps {
@@ -158,13 +156,12 @@ export default function SettingsClient({ stats, statsError }: SettingsClientProp
                   {tab.label}
                 </h2>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                  {tab.id === 'general' && 'ข้อมูลทั่วไปและสถานะระบบ'}
+                  {tab.id === 'general' && 'ข้อมูลทั่วไปและสถานะระบบ VPS'}
                   {tab.id === 'users' && 'จัดการบัญชีผู้ใช้และสิทธิ์การเข้าถึง'}
                   {tab.id === 'master' && 'จัดการข้อมูลหลัก: สินค้า, วัตถุดิบ, BOM'}
                   {tab.id === 'backup' && 'Automatic backup ฐานข้อมูลทุกวัน — ดูประวัติและ Download'}
-                  {tab.id === 'supabase' && 'รายละเอียดการใช้งานทรัพยากร Supabase'}
                   {tab.id === 'plan-delete' && '⚠️ ค้นหาและลบข้อมูลแผนการผลิตรวมถึงประวัติทั้งหมดโดยใช้ PO Code'}
-                  {tab.id === 'monitoring' && 'ตรวจสอบสถานะระบบและสถิติข้อมูล'}
+                  {tab.id === 'monitoring' && 'แดชบอร์ดตรวจสอบสถานะเครื่อง VPS: CPU, RAM, Storage และสถิติระบบ'}
                 </div>
               </div>
             </div>
@@ -179,7 +176,6 @@ export default function SettingsClient({ stats, statsError }: SettingsClientProp
         {activeTab === 'users' && <UserManagementTab stats={stats} />}
         {activeTab === 'master' && <MasterDataTab stats={stats} />}
         {activeTab === 'backup' && <BackupTab />}
-        {activeTab === 'supabase' && <SupabaseTab />}
         {activeTab === 'plan-delete' && <PlanDeleteTab />}
         {activeTab === 'monitoring' && <MonitoringTab stats={stats} statsError={statsError} />}
       </div>

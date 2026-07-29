@@ -21,7 +21,7 @@ export default async function LogsPage() {
 
   // ดึงทั้งสองพร้อมกันด้วย Promise.all — ลด Latency
   const [activityResult, errorResult] = await Promise.all([
-    fetchActivityLogs({ page: 0, pageSize: 100 }),
+    fetchActivityLogs({ page: 0, pageSize: 2000 }),
     getErrorLogs(),
   ])
 

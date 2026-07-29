@@ -18,7 +18,7 @@ export async function clearOldPlanData(planId: string) {
     .eq('id', user.id)
     .single()
 
-  if (!profile || !profile.is_active || (profile.role !== 'admin' && profile.role !== 'planner')) {
+  if (!profile || !profile.is_active || (profile.role !== 'admin' && profile.role !== 'super_admin' && profile.role !== 'planner')) {
     throw new Error('ไม่มีสิทธิ์ในการจัดการข้อมูลแผนการผลิต (Forbidden: Admin or Planner role required)')
   }
 
@@ -44,7 +44,7 @@ export async function deleteProductionPlan(planId: string) {
     if (!user) throw new Error('Unauthorized')
 
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-    if (profile?.role !== 'admin') throw new Error('Forbidden: Only admin can delete plans')
+    if (profile?.role !== 'admin' && profile?.role !== 'super_admin') throw new Error('Forbidden: Only admin can delete plans')
 
     // Find the production_orders for this plan
     const { data: orders } = await supabase

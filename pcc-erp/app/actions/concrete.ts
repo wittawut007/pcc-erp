@@ -638,7 +638,7 @@ export async function deleteConcreteOrder(orderId: string, bed: string | null, j
 
   // Check admin role
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') {
+  if (profile?.role !== 'admin' && profile?.role !== 'super_admin') {
     throw new Error('Only admins can delete concrete orders')
   }
 
@@ -688,7 +688,7 @@ export async function resetJobOrder(jobId: string, bed: string) {
   if (!user) throw new Error('Unauthorized')
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') throw new Error('Only admins can reset job orders')
+  if (profile?.role !== 'admin' && profile?.role !== 'super_admin') throw new Error('Only admins can reset job orders')
 
   const adminClient = createAdminClient()
 

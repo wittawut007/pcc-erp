@@ -34,7 +34,7 @@ export default async function MobileLayout({
 
         const userRole = (profile?.role || user.user_metadata?.role) as UserRole
 
-        if (!userRole || (userRole !== 'qc' && userRole !== 'admin')) {
+        if (!userRole || (userRole !== 'qc' && userRole !== 'admin' && userRole !== 'super_admin')) {
           shouldRedirectToUnauthorized = true
         } else {
           role = userRole

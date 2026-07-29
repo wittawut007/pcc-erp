@@ -17,7 +17,11 @@ export default async function ProductionOrdersPage() {
       total_concrete,
       created_at,
       profile:profiles!production_plans_created_by_fkey(full_name, role),
-      items:production_plan_items(id),
+      items:production_plan_items(
+        id,
+        bed,
+        product:products(id, code, name)
+      ),
       plan_materials(qty_dispensed),
       production_orders(order_number, status)
     `)

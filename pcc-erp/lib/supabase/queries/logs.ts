@@ -10,12 +10,12 @@
  *  - ป้องกัน Function Timeout ด้วย timeout guard
  */
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export interface FetchActivityLogsOptions {
   /** หน้าที่ต้องการ (เริ่มที่ 0) */
   page?: number
-  /** จำนวน records ต่อหน้า — ค่าเริ่มต้น 100, สูงสุด 200 */
+  /** จำนวน records ต่อหน้า — ค่าเริ่มต้น 2000 */
   pageSize?: number
   /** กรองตาม action_type */
   actionType?: string
@@ -43,47 +43,68 @@ export interface ActivityLogRow {
   profile: { full_name: string; role: string; employee_code: string | null } | null
 }
 
-/** ระยะเวลา timeout สำหรับ Query (ms) — ตั้งต่ำกว่า Vercel 10s เพื่อ fallback ได้ */
+/** ระยะเวลา timeout สำหรับ Query (ms) */
 const QUERY_TIMEOUT_MS = 8000
 
 export async function fetchActivityLogs(
   options: FetchActivityLogsOptions = {}
 ): Promise<ActivityLogsResult> {
-  const { page = 0, pageSize = 100, actionType, fromDate, toDate } = options
-  const safePagSize = Math.min(pageSize, 200)
+  const { page = 0, pageSize = 2000, actionType, fromDate, toDate } = options
+  const safePagSize = Math.min(pageSize, 5000)
   const from = page * safePagSize
   const to = from + safePagSize - 1
 
   const fetchFn = async (): Promise<ActivityLogsResult> => {
-    const supabase = await createClient()
+    const supabaseAdmin = createAdminClient()
 
-    let query = supabase
-      .from('activity_logs')
-      .select('*, profile:profiles(full_name, role, employee_code)', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(from, to)
+    let allLogs: ActivityLogRow[] = []
+    let currentFrom = from
+    let totalCount = 0
+    const maxFetchTo = to
+    const CHUNK_SIZE = 1000
 
-    if (actionType && actionType !== 'ทั้งหมด') {
-      query = query.eq('action_type', actionType)
+    while (currentFrom <= maxFetchTo) {
+      const currentTo = Math.min(currentFrom + CHUNK_SIZE - 1, maxFetchTo)
+
+      let query = supabaseAdmin
+        .from('activity_logs')
+        .select('*, profile:profiles!activity_logs_user_id_fkey(full_name, role, employee_code)', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(currentFrom, currentTo)
+
+      if (actionType && actionType !== 'ทั้งหมด') {
+        query = query.eq('action_type', actionType)
+      }
+
+      if (fromDate) {
+        query = query.gte('created_at', `${fromDate}T00:00:00.000Z`)
+      }
+
+      if (toDate) {
+        query = query.lte('created_at', `${toDate}T23:59:59.999Z`)
+      }
+
+      const { data, error, count } = await query
+
+      if (error) throw new Error(error.message)
+
+      if (count !== null) totalCount = count
+
+      if (data && data.length > 0) {
+        allLogs = allLogs.concat(data as ActivityLogRow[])
+        currentFrom += data.length
+        if (data.length < CHUNK_SIZE || allLogs.length >= totalCount) {
+          break
+        }
+      } else {
+        break
+      }
     }
 
-    if (fromDate) {
-      query = query.gte('created_at', `${fromDate}T00:00:00.000Z`)
-    }
-
-    if (toDate) {
-      query = query.lte('created_at', `${toDate}T23:59:59.999Z`)
-    }
-
-    const { data, error, count } = await query
-
-    if (error) throw new Error(error.message)
-
-    const totalCount = count ?? 0
     return {
-      logs: (data ?? []) as ActivityLogRow[],
+      logs: allLogs,
       totalCount,
-      hasMore: to < totalCount - 1,
+      hasMore: currentFrom < totalCount,
       timedOut: false,
     }
   }

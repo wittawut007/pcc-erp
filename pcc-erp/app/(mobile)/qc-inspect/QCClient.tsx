@@ -57,6 +57,14 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
     setJobs(initialData)
   }, [initialData])
 
+  // Auto-refresh queue data every 8 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      router.refresh()
+    }, 8000)
+    return () => clearInterval(interval)
+  }, [router])
+
   const castingJobs = jobs.filter(j => ['concrete_ordered', 'counterfort_ordered', 'stem_ordered'].includes(j.status))
   const demoldingJobs = jobs.filter(j => ['curing', 'ready_demold', 'counterfort_curing', 'stem_curing'].includes(j.status))
 
@@ -849,9 +857,9 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
       {/* Bottom Navigation */}
       <nav style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', background: 'linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,0.85) 35%, rgba(255,255,255,1) 100%)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '30px', paddingLeft: '20px', paddingRight: '20px', paddingBottom: 'max(24px, env(safe-area-inset-bottom))', zIndex: 40 }}>
         {[
-          { id: 'casting', label: 'ตรวจการเท', icon: 'fa-truck-monster' },
-          { id: 'demolding', label: 'ตรวจถอดแบบ', icon: 'fa-box-open' },
-          { id: 'logout', label: 'ออกจากระบบ', icon: 'fa-sign-out-alt' }
+          { id: 'casting', label: 'ตรวจการเท', icon: 'fa-truck-monster', count: castingJobs.length },
+          { id: 'demolding', label: 'ตรวจถอดแบบ', icon: 'fa-box-open', count: demoldingJobs.length },
+          { id: 'logout', label: 'ออกจากระบบ', icon: 'fa-sign-out-alt', count: 0 }
         ].map(tab => (
           <button
             key={tab.id}
@@ -873,12 +881,58 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
               <>
                 <div style={{ position: 'absolute', top: '-40px', width: '54px', height: '54px', backgroundColor: '#3B82F6', borderRadius: '99px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 16px rgba(59,130,246,0.45)', border: '4px solid #ffffff', zIndex: 10 }}>
                   <i className={`fas ${tab.icon}`} style={{ color: '#fff', fontSize: '18px' }}></i>
+                  {tab.count > 0 && (
+                    <span style={{
+                      position: 'absolute',
+                      top: '-2px',
+                      right: '-2px',
+                      backgroundColor: '#EF4444',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      fontWeight: 900,
+                      minWidth: '20px',
+                      height: '20px',
+                      borderRadius: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 5px',
+                      border: '2px solid #ffffff',
+                      boxShadow: '0 2px 6px rgba(239, 68, 68, 0.4)',
+                    }}>
+                      {tab.count}
+                    </span>
+                  )}
                 </div>
                 <span style={{ fontSize: '10px', fontWeight: 800, color: '#3B82F6', marginTop: '22px' }}>{tab.label}</span>
               </>
             ) : (
               <>
-                <i className={`fas ${tab.icon}`} style={{ fontSize: '20px', color: tab.id === 'logout' ? '#EF4444' : '#94A3B8', marginBottom: '4px' }}></i>
+                <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <i className={`fas ${tab.icon}`} style={{ fontSize: '20px', color: tab.id === 'logout' ? '#EF4444' : '#94A3B8', marginBottom: '4px' }}></i>
+                  {tab.count > 0 && (
+                    <span style={{
+                      position: 'absolute',
+                      top: '-6px',
+                      right: '-14px',
+                      backgroundColor: '#EF4444',
+                      color: '#ffffff',
+                      fontSize: '10px',
+                      fontWeight: 900,
+                      minWidth: '18px',
+                      height: '18px',
+                      borderRadius: '9px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 4px',
+                      border: '2px solid #ffffff',
+                      boxShadow: '0 2px 5px rgba(239, 68, 68, 0.3)',
+                    }}>
+                      {tab.count}
+                    </span>
+                  )}
+                </div>
                 <span style={{ fontSize: '10px', fontWeight: 700, color: tab.id === 'logout' ? '#EF4444' : '#94A3B8' }}>{tab.label}</span>
               </>
             )}

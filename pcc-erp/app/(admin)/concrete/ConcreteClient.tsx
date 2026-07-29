@@ -481,9 +481,30 @@ export default function ConcreteClient({ pending: initialPending, history: initi
     return () => clearInterval(interval)
   }, [router, tab])
 
+  const localToday = useMemo(() => {
+    if (today) return today
+    const d = new Date()
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }, [today])
+
+  const activeDateRange = useMemo(() => {
+    if (dateRange.start || dateRange.end) return dateRange
+    return { start: localToday, end: localToday }
+  }, [dateRange, localToday])
+
+  const targetOrders = useMemo(() => {
+    const all = [...pendingOrders, ...initialHistory].filter((o, idx, self) =>
+      self.findIndex(t => t.id === o.id) === idx
+    )
+    return all.filter(o => isDateInRange(o.requested_at, activeDateRange))
+  }, [pendingOrders, initialHistory, activeDateRange])
+
   const totalPending = pendingOrders.reduce((s, o) => s + (o.rounds ?? []).filter(r => r.status === 'pending').length, 0)
-  const todaySupplied = initialHistory.filter(o => o.status === 'supplied').length
-  const todayM3 = initialHistory.reduce((s, o) => s + (o.qty_requested ?? 0), 0)
+  const todaySupplied = targetOrders.filter(o => o.status === 'supplied' || o.status === 'received' || o.status === 'completed').length
+  const todayM3 = targetOrders.reduce((s, o) => s + (o.qty_requested ?? 0), 0)
 
   const handleSupply = useCallback((roundId: string) => {
     setLoadingRoundId(roundId)
@@ -523,10 +544,11 @@ export default function ConcreteClient({ pending: initialPending, history: initi
     })
   }, [router])
 
+  const isFilteredDate = Boolean(dateRange.start || dateRange.end)
   const kpis = [
     { label: 'รอบรอจ่าย', value: totalPending, icon: 'fa-hourglass-half', color: '#EA580C', bg: '#FFF7ED' },
-    { label: 'จ่ายครบแล้ว', value: todaySupplied, icon: 'fa-check-circle', color: '#16A34A', bg: '#F0FDF4' },
-    { label: 'รวม คิว วันนี้', value: todayM3.toFixed(2), icon: 'fa-tint', color: '#2563EB', bg: '#EFF6FF' },
+    { label: isFilteredDate ? 'จ่ายครบแล้ว (ช่วงที่เลือก)' : 'จ่ายครบแล้ว (วันนี้)', value: todaySupplied, icon: 'fa-check-circle', color: '#16A34A', bg: '#F0FDF4' },
+    { label: isFilteredDate ? 'รวมคิว (ช่วงที่เลือก)' : 'รวมคิววันนี้', value: todayM3.toFixed(2), icon: 'fa-tint', color: '#2563EB', bg: '#EFF6FF' },
   ]
 
   const TAB_STYLE = (active: boolean): React.CSSProperties => ({

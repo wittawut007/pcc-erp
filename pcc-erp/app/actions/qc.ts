@@ -290,21 +290,32 @@ export async function recordDemoldInspection(
   const product = Array.isArray(planItem?.product) ? planItem.product[0] : planItem?.product
   const productId = product?.id
   if (productId && demoldQtyGood > 0) {
-    const isComponent = (job as any)?.job_type === 'component' || product?.category?.includes('Counterfort') || product?.category?.includes('SFG')
+    const isComponent = (job as any)?.job_type === 'component' || product?.category?.includes('Counterfort') || product?.category?.includes('SFG') || product?.code?.startsWith('CF-')
     if (isComponent) {
-      const cfMaterialId = product?.counterfort_material_id
-      if (cfMaterialId) {
-        await receiveCounterfortToStock(cfMaterialId, demoldQtyGood, jobOrderId)
-      } else {
-        const { data: sfgMat } = await supabase
+      let cfMaterialId = product?.counterfort_material_id
+      if (!cfMaterialId && product) {
+        const { data: sfgByCode } = await supabase
           .from('raw_materials')
           .select('id')
           .eq('category', 'ชิ้นส่วน SFG')
-          .or(`material_code.eq.${product.code},name.eq.${product.name}`)
+          .eq('material_code', product.code)
           .maybeSingle()
-        if (sfgMat?.id) {
-          await receiveCounterfortToStock(sfgMat.id, demoldQtyGood, jobOrderId)
+
+        if (sfgByCode?.id) {
+          cfMaterialId = sfgByCode.id
+        } else {
+          const { data: sfgByName } = await supabase
+            .from('raw_materials')
+            .select('id')
+            .eq('category', 'ชิ้นส่วน SFG')
+            .eq('name', product.name)
+            .maybeSingle()
+          if (sfgByName?.id) cfMaterialId = sfgByName.id
         }
+      }
+
+      if (cfMaterialId) {
+        await receiveCounterfortToStock(cfMaterialId, demoldQtyGood, jobOrderId)
       }
     } else {
       const { data: existingFg } = await supabase.from('fg_inventory').select('id, qty').eq('product_id', productId).maybeSingle()

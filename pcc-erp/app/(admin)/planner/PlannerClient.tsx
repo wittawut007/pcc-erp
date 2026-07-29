@@ -458,8 +458,13 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
         })
       } else {
         // Fallback: ใช้การคำนวณแบบเดิมกรณีข้อมูล BOM ยังไม่มีในตาราง product_bom_items
+        const isComp = product.category.includes('CF') || product.category.includes('Counterfort') || product.code.startsWith('CF-')
+        const defaultWirePerUnit = isComp ? 2.0 : (product.wire_per_unit || product.length || 0)
+        const defaultMeshPerUnit = isComp ? 1.0 : (product.mesh_per_unit || 0)
+        const defaultRebarPerUnit = isComp ? 4.0 : (product.rebar_per_unit || 0)
+
         // Wire
-        const wireNeeded = (product.wire_per_unit || product.length || 0) * item.qty
+        const wireNeeded = defaultWirePerUnit * item.qty
         if (wireNeeded > 0) {
           const specificWire = rawMaterials.find(r => r.name === product.bom_code)
           const wireId = specificWire?.id || fallbackWire?.id
@@ -467,7 +472,7 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
         }
 
         // Mesh
-        const meshNeeded = (product.mesh_per_unit || 0) * item.qty
+        const meshNeeded = defaultMeshPerUnit * item.qty
         if (meshNeeded > 0) {
           const specificMesh = rawMaterials.find(r => r.name === product.bom_code)
           const meshId = specificMesh?.id || fallbackMesh?.id
@@ -475,7 +480,7 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
         }
 
         // Rebar
-        const rebarNeeded = (product.rebar_per_unit || 0) * item.qty
+        const rebarNeeded = defaultRebarPerUnit * item.qty
         if (rebarNeeded > 0) {
           const specificRebar = rawMaterials.find(r => r.name === product.bom_code)
           const rebarId = specificRebar?.id || fallbackRebar?.id

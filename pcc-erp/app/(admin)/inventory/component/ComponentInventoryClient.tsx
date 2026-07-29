@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import toast from 'react-hot-toast'
+import { updateCounterfortMinStock } from '@/app/actions/component'
 
 interface CounterfortMaterial {
   id: string
@@ -27,6 +28,7 @@ interface A42Product {
   code: string
   name: string
   size: string
+  category?: string
   counterfort_material_id: string | null
   counterfort_qty_per_unit: number
 }
@@ -35,38 +37,59 @@ interface Props {
   materials: CounterfortMaterial[]
   activityLogs: ActivityLog[]
   a42Products: A42Product[]
+  userRole?: string
 }
 
-export default function ComponentInventoryClient({ materials, activityLogs, a42Products }: Props) {
-  const [activeTab, setActiveTab] = useState<'stock' | 'history' | 'bom'>('stock')
+export default function ComponentInventoryClient({ materials: initialMaterials, activityLogs, a42Products, userRole }: Props) {
+  const [materials, setMaterials] = useState<CounterfortMaterial[]>(initialMaterials)
+  const [activeTab, setActiveTab] = useState<'stock' | 'bom'>('stock')
+  
+  // Modal Edit Min Stock States
+  const [editingMat, setEditingMat] = useState<CounterfortMaterial | null>(null)
+  const [editMinStock, setEditMinStock] = useState<number>(0)
+  const [savingMinStock, setSavingMinStock] = useState(false)
+
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin'
+
+  const handleOpenEditMinStock = (mat: CounterfortMaterial) => {
+    setEditingMat(mat)
+    setEditMinStock(mat.min_stock)
+  }
+
+  const handleSaveMinStock = async () => {
+    if (!editingMat) return
+    setSavingMinStock(true)
+    try {
+      await updateCounterfortMinStock(editingMat.id, editMinStock)
+      toast.success(`ปรับแต่ง Min Stock ของ ${editingMat.name} สำเร็จ!`)
+      setMaterials(prev => prev.map(m => m.id === editingMat.id ? { ...m, min_stock: editMinStock } : m))
+      setEditingMat(null)
+    } catch (err: any) {
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการบันทึก Min Stock')
+    } finally {
+      setSavingMinStock(false)
+    }
+  }
 
   const totalStock = materials.reduce((s, m) => s + m.qty_on_hand, 0)
   const lowStockCount = materials.filter(m => m.qty_on_hand < m.min_stock).length
 
-  // กรองสินค้าเฉพาะ L-Wall (กำแพงกันดิน) สำหรับ BOM Reference
+  // สินค้า L-Wall ที่ใช้ Counterfort (ตัดสินค้าที่เป็นตัวฐาน Counterfort ออก)
   const lwallProducts = a42Products.filter(p =>
-    !p.code.startsWith('CF-') &&
-    !p.name.toLowerCase().includes('counterfort h') &&
-    p.counterfort_qty_per_unit > 0
+    p.counterfort_material_id !== null &&
+    p.counterfort_qty_per_unit > 0 &&
+    !p.code.startsWith('CF-')
   )
 
-  const formatDate = (dt: string) =>
-    new Date(dt).toLocaleString('th-TH', {
-      day: 'numeric', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    })
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr)
+    return d.toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+  }
 
   const getStockStatus = (m: CounterfortMaterial) => {
     if (m.qty_on_hand === 0) return { label: 'หมด', color: '#DC2626', bg: '#FEF2F2', border: '#FECACA' }
     if (m.qty_on_hand < m.min_stock) return { label: 'ต่ำกว่ากำหนด', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' }
     return { label: 'พร้อมใช้', color: '#059669', bg: '#F0FDF4', border: '#A7F3D0' }
-  }
-
-  const getActionIcon = (actionType: string) => {
-    if (actionType.includes('รับ')) return '📥'
-    if (actionType.includes('เบิก')) return '📤'
-    if (actionType.includes('QC')) return '✅'
-    return '📋'
   }
 
   return (
@@ -80,20 +103,14 @@ export default function ComponentInventoryClient({ materials, activityLogs, a42P
           <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>รหัสชิ้นส่วน SFG</div>
         </div>
         <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Stock รวมทั้งหมด</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>คงเหลือรวมทุกรหัส</div>
           <div style={{ fontSize: 28, fontWeight: 800, color: '#2563EB' }}>{totalStock.toLocaleString()}</div>
-          <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>ชิ้น (พร้อมใช้งาน)</div>
+          <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>ชิ้นพร้อมใช้งาน</div>
         </div>
-        <div style={{
-          background: lowStockCount > 0 ? '#FFFBEB' : '#F0FDF4',
-          border: `1px solid ${lowStockCount > 0 ? '#FDE68A' : '#A7F3D0'}`,
-          borderRadius: 12, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-        }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Stock ต่ำกว่าเกณฑ์</div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: lowStockCount > 0 ? '#D97706' : '#059669' }}>{lowStockCount}</div>
-          <div style={{ fontSize: 12, color: lowStockCount > 0 ? '#92400E' : '#065F46', marginTop: 4 }}>
-            {lowStockCount > 0 ? '⚠️ ต้องผลิตเพิ่ม' : '✅ Stock เพียงพอ'}
-          </div>
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>เตือน Stock ต่ำ</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: lowStockCount > 0 ? '#DC2626' : '#059669' }}>{lowStockCount}</div>
+          <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>รายการที่ต่ำกว่า Min Stock</div>
         </div>
       </div>
 
@@ -104,7 +121,6 @@ export default function ComponentInventoryClient({ materials, activityLogs, a42P
           {[
             { key: 'stock' as const, label: 'Stock Counterfort', count: materials.length },
             { key: 'bom' as const, label: 'BOM Reference', count: lwallProducts.length },
-            { key: 'history' as const, label: 'ประวัติการเคลื่อนไหว', count: activityLogs.length },
           ].map(tab => (
             <button
               key={tab.key}
@@ -144,7 +160,11 @@ export default function ComponentInventoryClient({ materials, activityLogs, a42P
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {materials.map(m => {
                   const status = getStockStatus(m)
-                  const parentProducts = a42Products.filter(p => p.counterfort_material_id === m.id)
+                  const parentProducts = a42Products.filter(p =>
+                    p.counterfort_material_id === m.id &&
+                    p.counterfort_qty_per_unit > 0 &&
+                    !p.code.startsWith('CF-')
+                  )
                   return (
                     <div
                       key={m.id}
@@ -193,9 +213,40 @@ export default function ComponentInventoryClient({ materials, activityLogs, a42P
                         </div>
                         <div style={{ fontSize: 11, color: '#9CA3AF' }}>{m.unit}</div>
                       </div>
-                      <div style={{ textAlign: 'right', minWidth: 80 }}>
+                      <div style={{ textAlign: 'right', minWidth: 110 }}>
                         <div style={{ fontSize: 11, color: '#9CA3AF' }}>Min Stock</div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{m.min_stock} {m.unit}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginTop: 2 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>
+                            {m.min_stock} {m.unit}
+                          </span>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingMat(m)
+                                setEditMinStock(m.min_stock)
+                              }}
+                              title="แก้ไข Min Stock (เฉพาะ Admin / Super Admin)"
+                              style={{
+                                background: '#EFF6FF',
+                                border: '1px solid #BFDBFE',
+                                color: '#2563EB',
+                                borderRadius: 6,
+                                padding: '3px 8px',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              <i className="fas fa-pen" style={{ fontSize: 10 }} />
+                              แก้ไข
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <span style={{
                         padding: '4px 12px', borderRadius: 999, fontSize: 11, fontWeight: 700,
@@ -256,36 +307,7 @@ export default function ComponentInventoryClient({ materials, activityLogs, a42P
           </div>
         )}
 
-        {/* Tab: History */}
-        {activeTab === 'history' && (
-          <div style={{ padding: 24 }}>
-            {activityLogs.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '60px 0', color: '#9CA3AF' }}>
-                <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
-                <div style={{ fontWeight: 600 }}>ยังไม่มีประวัติการเคลื่อนไหว</div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {activityLogs.map(log => (
-                  <div key={log.id} style={{
-                    display: 'flex', gap: 16, padding: '14px 16px', borderRadius: 10,
-                    border: '1px solid #E5E7EB', background: '#fff', alignItems: 'flex-start'
-                  }}>
-                    <div style={{ fontSize: 24, lineHeight: 1 }}>{getActionIcon(log.action_type)}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, color: '#111827', marginBottom: 2 }}>{log.action_type}</div>
-                      <div style={{ fontSize: 12, color: '#6B7280' }}>{log.detail}</div>
-                    </div>
-                    <div style={{ textAlign: 'right', minWidth: 120 }}>
-                      <div style={{ fontSize: 11, color: '#9CA3AF' }}>{formatDate(log.created_at)}</div>
-                      <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{(log.user as any)?.full_name ?? '-'}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+
       </div>
 
       {/* Info Banner */}
@@ -296,6 +318,100 @@ export default function ComponentInventoryClient({ materials, activityLogs, a42P
           เมื่อสร้างแผนผลิต L-Wall ระบบจะตรวจสอบ Stock ที่นี่ก่อน หากไม่เพียงพอจะแจ้งเตือนให้ผลิต Counterfort เพิ่มก่อน
         </div>
       </div>
+
+      {/* Modal: Edit Min Stock */}
+      {editingMat && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 999,
+          background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(3px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420,
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+            overflow: 'hidden', border: '1px solid #E5E7EB'
+          }}>
+            {/* Modal Header */}
+            <div style={{ padding: '18px 24px', borderBottom: '1px solid #F3F4F6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FAFAFA' }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: '#111827', margin: 0 }}>
+                  ปรับแต่ง Min Stock
+                </h3>
+                <p style={{ fontSize: 12, color: '#6B7280', margin: '3px 0 0 0' }}>
+                  {editingMat.name} ({editingMat.material_code ?? '-'})
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingMat(null)}
+                style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', fontSize: 16 }}
+              >
+                <i className="fas fa-times" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 10, padding: 14, display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: '#6B7280' }}>Stock ปัจจุบัน</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#2563EB', marginTop: 2 }}>
+                    {editingMat.qty_on_hand} {editingMat.unit}
+                  </div>
+                </div>
+                <div style={{ borderRight: '1px solid #E5E7EB' }} />
+                <div>
+                  <div style={{ fontSize: 11, color: '#6B7280' }}>Min Stock ปัจจุบัน</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#374151', marginTop: 2 }}>
+                    {editingMat.min_stock} {editingMat.unit}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>
+                  ระบุ Min Stock ใหม่ ({editingMat.unit}):
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={editMinStock}
+                  onChange={e => setEditMinStock(Number(e.target.value))}
+                  style={{
+                    width: '100%', height: 42, padding: '0 14px',
+                    border: '1px solid #D1D5DB', borderRadius: 8, fontSize: 14,
+                    fontWeight: 700, outline: 'none', color: '#111827', boxSizing: 'border-box'
+                  }}
+                  placeholder="กรอกจำนวน Min Stock"
+                  autoFocus
+                />
+                <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>
+                  * เมื่อ Stock คงเหลือลดลงต่ำกว่า Min Stock ระบบจะแจ้งเตือน "ต่ำกว่ากำหนด" เพื่อให้วางแผนผลิตเพิ่ม
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #F3F4F6', background: '#FAFAFA', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setEditingMat(null)}
+                disabled={savingMinStock}
+                style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveMinStock}
+                disabled={savingMinStock}
+                style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: '#2563EB', fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', opacity: savingMinStock ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                {savingMinStock ? 'กำลังบันทึก...' : 'บันทึก Min Stock'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

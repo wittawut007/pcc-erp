@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import FilterBar, { isDateInRange, DateRange } from '@/components/shared/FilterBar'
 
 interface ActivityLog {
   id: string
@@ -87,37 +88,22 @@ export default function LogsClient({ logs }: { logs: ActivityLog[] }) {
   const [search, setSearch] = useState('')
   const [filterAction, setFilterAction] = useState('ทั้งหมด')
   const [filterRole, setFilterRole] = useState('ทั้งหมด')
-  const [filterRange, setFilterRange] = useState('7')
-  const [startDate, setStartDate] = useState(getLocalDateString(new Date()))
-  const [endDate, setEndDate] = useState(getLocalDateString(new Date()))
+  const [dateRange, setDateRange] = useState<DateRange>({ start: '', end: '' })
 
   const displayLogs = logs.length > 0 ? logs : MOCK_LOGS
 
   const actionTypes = useMemo(() => ['ทั้งหมด', ...Array.from(new Set(displayLogs.map(l => l.action_type)))], [displayLogs])
 
-  const cutoff = useMemo(() => {
-    if (filterRange === 'custom') return null
-    const d = new Date()
-    d.setDate(d.getDate() - parseInt(filterRange))
-    return d
-  }, [filterRange])
-
   const filteredWithoutRole = useMemo(() => displayLogs.filter(l => {
     const matchSearch = !search ||
-      l.profile?.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      (l.profile?.full_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
       l.action_type.toLowerCase().includes(search.toLowerCase()) ||
       (l.detail ?? '').toLowerCase().includes(search.toLowerCase())
     const matchAction = filterAction === 'ทั้งหมด' || l.action_type === filterAction
-    
-    let matchDate = true
-    if (filterRange === 'custom') {
-      const logDate = getLocalDateString(l.created_at)
-      matchDate = logDate >= startDate && logDate <= endDate
-    } else if (cutoff) {
-      matchDate = new Date(l.created_at) >= cutoff
-    }
+    const matchDate = isDateInRange(l.created_at, dateRange)
+
     return matchSearch && matchAction && matchDate
-  }), [displayLogs, search, filterAction, cutoff, filterRange, startDate, endDate])
+  }), [displayLogs, search, filterAction, dateRange])
 
   const filtered = useMemo(() => {
     if (filterRole === 'ทั้งหมด') return filteredWithoutRole
@@ -212,55 +198,32 @@ export default function LogsClient({ logs }: { logs: ActivityLog[] }) {
       {/* Main card */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
 
-        {/* Toolbar */}
-        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
-            <i className="fas fa-search" style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12 }}></i>
-            <input type="text" placeholder="ค้นหาชื่อ, กิจกรรม, รายละเอียด..." value={search} onChange={e => setSearch(e.target.value)}
-              style={{ width: '100%', paddingLeft: 33, paddingRight: 12, paddingTop: 8, paddingBottom: 8, border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
-          </div>
-          <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white', maxWidth: 160 }}>
-            <option value="ทั้งหมด">บทบาท: ทั้งหมด</option>
-            {Object.entries(ROLE_LABELS).map(([rKey, rLabel]) => (
-              <option key={rKey} value={rKey}>{rLabel}</option>
-            ))}
-          </select>
-          <select value={filterAction} onChange={e => setFilterAction(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white', maxWidth: 180 }}>
-            {actionTypes.map(a => <option key={a} value={a}>{a === 'ทั้งหมด' ? 'กิจกรรม: ทั้งหมด' : a}</option>)}
-          </select>
-          <select value={filterRange} onChange={e => setFilterRange(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white' }}>
-            <option value="1">วันนี้</option>
-            <option value="7">7 วันล่าสุด</option>
-            <option value="30">30 วันล่าสุด</option>
-            <option value="custom">เลือกวันที่เอง...</option>
-            <option value="9999">ทั้งหมด</option>
-          </select>
-
-          {/* Calendar date ranges (shows when 'custom' is selected) */}
-          {filterRange === 'custom' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input 
-                type="date" 
-                value={startDate} 
-                onChange={e => setStartDate(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white' }} 
-              />
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>ถึง</span>
-              <input 
-                type="date" 
-                value={endDate} 
-                onChange={e => setEndDate(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, outline: 'none', background: 'white' }} 
-              />
-            </div>
-          )}
-
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            {filtered.length} รายการ
-          </span>
+        {/* Toolbar with FilterBar */}
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+          <FilterBar
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="ค้นหาชื่อ, กิจกรรม, รายละเอียด..."
+            countLabel={`${filtered.length} รายการ`}
+            dateLabel="วันที่กิจกรรม:"
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
+            extraFilters={
+              <>
+                <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
+                  style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, outline: 'none', background: 'white', maxWidth: 160 }}>
+                  <option value="ทั้งหมด">บทบาท: ทั้งหมด</option>
+                  {Object.entries(ROLE_LABELS).map(([rKey, rLabel]) => (
+                    <option key={rKey} value={rKey}>{rLabel}</option>
+                  ))}
+                </select>
+                <select value={filterAction} onChange={e => setFilterAction(e.target.value)}
+                  style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, outline: 'none', background: 'white', maxWidth: 180 }}>
+                  {actionTypes.map(a => <option key={a} value={a}>{a === 'ทั้งหมด' ? 'กิจกรรม: ทั้งหมด' : a}</option>)}
+                </select>
+              </>
+            }
+          />
         </div>
 
         {/* Role Summary Pills & Excel Export */}

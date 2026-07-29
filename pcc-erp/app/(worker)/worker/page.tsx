@@ -28,13 +28,13 @@ export default async function WorkerPage() {
   })
 
   // Build a map: planId -> วัตถุดิบถูกจ่ายครบหรือยัง
-  // กฎ: ถ้าแผนไม่มี plan_materials เลย → ถือว่าไม่ต้องการวัตถุดิบ → ผ่าน (true)
-  //     ถ้ามี plan_materials → ทุกรายการต้อง status === 'dispensed' จึงจะถือว่าพร้อม
+  // กฎ: ทุกรายการในแผนต้องทำการเบิกจ่ายวัตถุดิบ (status === 'dispensed') จากฝ่ายวัตถุดิบเรียบร้อยแล้ว
+  //     หากยังไม่มีการออก plan_materials หรือยังมีรายการค้างจ่าย -> ถือว่ายังไม่พร้อม (false)
   const planMaterialDispensedMap: Record<string, boolean> = {}
   plans?.forEach((p: any) => {
     const materials = p.materials || []
     if (materials.length === 0) {
-      planMaterialDispensedMap[p.id] = true
+      planMaterialDispensedMap[p.id] = false
     } else {
       planMaterialDispensedMap[p.id] = materials.every((m: any) => m.status === 'dispensed')
     }

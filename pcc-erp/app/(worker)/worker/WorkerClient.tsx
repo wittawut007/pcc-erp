@@ -217,6 +217,15 @@ export default function WorkerClient({
     return { activeRoundsTotal: total, activeRoundsReceived: received }
   }, [activeConcreteOrders])
 
+  const dailyJobsCount = jobOrders.length
+  const receiveConcreteCount = React.useMemo(() => {
+    let count = 0
+    activeConcreteOrders.forEach(o => {
+      count += o.rounds.filter(r => r.status === 'supplied' || r.status === 'pending').length
+    })
+    return count
+  }, [activeConcreteOrders])
+
   const orderedProductionOrders = React.useMemo(() => {
     return Array.from(
       new Set(
@@ -1604,12 +1613,40 @@ export default function WorkerClient({
               <>
                 <div style={{ position: 'absolute', top: '-40px', width: '54px', height: '54px', backgroundColor: '#2563EB', borderRadius: '99px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 16px rgba(37,99,235,0.45)', border: '4px solid #ffffff', zIndex: 10 }}>
                   <i className="fas fa-clipboard-list" style={{ color: '#fff', fontSize: '18px' }}></i>
+                  {dailyJobsCount > 0 && (
+                    <span style={{
+                      position: 'absolute', top: '-2px', right: '-2px',
+                      backgroundColor: '#EF4444', color: '#ffffff',
+                      fontSize: '11px', fontWeight: 900,
+                      minWidth: '20px', height: '20px', borderRadius: '10px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '0 5px', border: '2px solid #ffffff',
+                      boxShadow: '0 2px 6px rgba(239, 68, 68, 0.4)',
+                    }}>
+                      {dailyJobsCount}
+                    </span>
+                  )}
                 </div>
                 <span style={{ fontSize: '10px', fontWeight: 800, color: '#2563EB', marginTop: '22px' }}>งานวันนี้</span>
               </>
             ) : (
               <>
-                <i className="fas fa-clipboard-list" style={{ fontSize: '20px', color: '#94A3B8', marginBottom: '4px' }}></i>
+                <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <i className="fas fa-clipboard-list" style={{ fontSize: '20px', color: '#94A3B8', marginBottom: '4px' }}></i>
+                  {dailyJobsCount > 0 && (
+                    <span style={{
+                      position: 'absolute', top: '-6px', right: '-14px',
+                      backgroundColor: '#EF4444', color: '#ffffff',
+                      fontSize: '10px', fontWeight: 900,
+                      minWidth: '18px', height: '18px', borderRadius: '9px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '0 4px', border: '2px solid #ffffff',
+                      boxShadow: '0 2px 5px rgba(239, 68, 68, 0.3)',
+                    }}>
+                      {dailyJobsCount}
+                    </span>
+                  )}
+                </div>
                 <span style={{ fontSize: '10px', fontWeight: 700, color: '#94A3B8' }}>งานวันนี้</span>
               </>
             )}
@@ -1622,18 +1659,41 @@ export default function WorkerClient({
               <>
                 <div style={{ position: 'absolute', top: '-40px', width: '54px', height: '54px', backgroundColor: '#2563EB', borderRadius: '99px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 16px rgba(37,99,235,0.45)', border: '4px solid #ffffff', zIndex: 10 }}>
                   <i className="fas fa-truck-monster" style={{ color: '#fff', fontSize: '18px' }}></i>
+                  {receiveConcreteCount > 0 && (
+                    <span style={{
+                      position: 'absolute', top: '-2px', right: '-2px',
+                      backgroundColor: '#EF4444', color: '#ffffff',
+                      fontSize: '11px', fontWeight: 900,
+                      minWidth: '20px', height: '20px', borderRadius: '10px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '0 5px', border: '2px solid #ffffff',
+                      boxShadow: '0 2px 6px rgba(239, 68, 68, 0.4)',
+                    }}>
+                      {receiveConcreteCount}
+                    </span>
+                  )}
                 </div>
                 <span style={{ fontSize: '10px', fontWeight: 800, color: '#2563EB', marginTop: '22px' }}>รับคอนกรีต</span>
               </>
             ) : (
               <>
-                <div style={{ position: 'relative' }}>
-                  <i className="fas fa-truck-monster" style={{ fontSize: '20px', color: concreteSent && concreteRoundsReceived < totalRounds ? '#F59E0B' : '#94A3B8', marginBottom: '4px' }}></i>
-                  {concreteSent && concreteRoundsReceived < totalRounds && (
-                    <div style={{ position: 'absolute', top: '-2px', right: '-4px', width: '8px', height: '8px', backgroundColor: '#EF4444', borderRadius: '99px', border: '1px solid #fff' }} />
+                <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <i className="fas fa-truck-monster" style={{ fontSize: '20px', color: receiveConcreteCount > 0 ? '#F59E0B' : '#94A3B8', marginBottom: '4px' }}></i>
+                  {receiveConcreteCount > 0 && (
+                    <span style={{
+                      position: 'absolute', top: '-6px', right: '-14px',
+                      backgroundColor: '#EF4444', color: '#ffffff',
+                      fontSize: '10px', fontWeight: 900,
+                      minWidth: '18px', height: '18px', borderRadius: '9px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '0 4px', border: '2px solid #ffffff',
+                      boxShadow: '0 2px 5px rgba(239, 68, 68, 0.3)',
+                    }}>
+                      {receiveConcreteCount}
+                    </span>
                   )}
                 </div>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: concreteSent && concreteRoundsReceived < totalRounds ? '#F59E0B' : '#94A3B8' }}>รับคอนกรีต</span>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: receiveConcreteCount > 0 ? '#F59E0B' : '#94A3B8' }}>รับคอนกรีต</span>
               </>
             )}
           </button>

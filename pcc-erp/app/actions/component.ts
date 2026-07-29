@@ -14,6 +14,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { logError } from '@/lib/logger'
 
@@ -140,8 +141,9 @@ export async function receiveCounterfortToStock(
 
   const newQty = material.qty_on_hand + qtyGood
 
-  // อัปเดต stock
-  const { error: updateError } = await supabase
+  // อัปเดต stock ด้วย Admin Client (ข้าม RLS)
+  const supabaseAdmin = createAdminClient()
+  const { error: updateError } = await supabaseAdmin
     .from('raw_materials')
     .update({ qty_on_hand: newQty, updated_at: new Date().toISOString() })
     .eq('id', materialId)
@@ -194,7 +196,8 @@ export async function deductCounterfortStock(
   const isInsufficient = material.qty_on_hand < qtyToDeduct
   const newQty = Math.max(0, material.qty_on_hand - qtyToDeduct)
 
-  const { error: updateError } = await supabase
+  const supabaseAdmin = createAdminClient()
+  const { error: updateError } = await supabaseAdmin
     .from('raw_materials')
     .update({ qty_on_hand: newQty, updated_at: new Date().toISOString() })
     .eq('id', materialId)
@@ -244,7 +247,7 @@ export async function approveCounterfortComponent(
       id, qty_target, job_type,
       plan_item:production_plan_items(
         qty_target,
-        product:products(id, name, counterfort_material_id, counterfort_qty_per_unit)
+        product:products(id, code, name, counterfort_material_id, counterfort_qty_per_unit)
       )
     `)
     .eq('id', jobOrderId)
@@ -255,7 +258,28 @@ export async function approveCounterfortComponent(
 
   const planItem = Array.isArray(job.plan_item) ? job.plan_item[0] : job.plan_item
   const product = Array.isArray(planItem?.product) ? planItem.product[0] : planItem?.product
-  const cfMaterialId = product?.counterfort_material_id
+  let cfMaterialId = product?.counterfort_material_id
+
+  if (!cfMaterialId && product) {
+    const { data: sfgByCode } = await supabase
+      .from('raw_materials')
+      .select('id')
+      .eq('category', 'ชิ้นส่วน SFG')
+      .eq('material_code', product.code)
+      .maybeSingle()
+
+    if (sfgByCode?.id) {
+      cfMaterialId = sfgByCode.id
+    } else {
+      const { data: sfgByName } = await supabase
+        .from('raw_materials')
+        .select('id')
+        .eq('category', 'ชิ้นส่วน SFG')
+        .eq('name', product.name)
+        .maybeSingle()
+      if (sfgByName?.id) cfMaterialId = sfgByName.id
+    }
+  }
 
   const now = new Date().toISOString()
 
@@ -298,4 +322,72 @@ export async function approveCounterfortComponent(
   revalidatePath('/inventory/component')
 
   return { success: true }
+}
+
+// ─── 5. ปรับเปลี่ยน Min Stock สำหรับ Counterfort SFG (เฉพาะ Admin / Super Admin) ─
+export async function updateCounterfortMinStock(materialId: string, newMinStock: number) {
+  const supabase = await createClient()
+
+  // 1. ตรวจสอบผู้ใช้งานและการเข้าสู่ระบบ
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    throw new Error('กรุณาเข้าสู่ระบบก่อนทำรายการ')
+  }
+
+  // 2. ตรวจสอบสิทธิ์ (ต้องเป็น admin หรือ super_admin เท่านั้น)
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, full_name')
+    .eq('id', user.id)
+    .single()
+
+  const role = profile?.role
+  if (role !== 'admin' && role !== 'super_admin') {
+    throw new Error('ไม่มีสิทธิ์แก้ไข Min Stock (สงวนสิทธิ์สำหรับ Admin และ Super Admin เท่านั้น)')
+  }
+
+  if (newMinStock < 0 || isNaN(newMinStock)) {
+    throw new Error('Min Stock ต้องเป็นตัวเลขมากกว่าหรือเท่ากับ 0')
+  }
+
+  // 3. ดึงข้อมูลชิ้นส่วนเดิม
+  const { data: mat, error: matError } = await supabase
+    .from('raw_materials')
+    .select('id, name, min_stock, unit')
+    .eq('id', materialId)
+    .single()
+
+  if (matError || !mat) {
+    throw new Error('ไม่พบข้อมูลชิ้นส่วน Counterfort ในระบบ')
+  }
+
+  const oldMinStock = mat.min_stock
+
+  // 4. บันทึก Min Stock ใหม่ด้วย Admin Client (ข้าม RLS)
+  const supabaseAdmin = createAdminClient()
+  const { error: updateError } = await supabaseAdmin
+    .from('raw_materials')
+    .update({ min_stock: newMinStock, updated_at: new Date().toISOString() })
+    .eq('id', materialId)
+
+  if (updateError) {
+    await logError({ action: 'updateCounterfortMinStock', error: updateError, context: { materialId, newMinStock } })
+    throw new Error(updateError.message)
+  }
+
+  // 5. บันทึก Activity Log
+  try {
+    await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action_type: 'ปรับแต่ง Min Stock (Counterfort SFG)',
+      entity_type: 'raw_materials',
+      entity_id: materialId,
+      detail: `ปรับปรุง Min Stock ของ [${mat.name}]: ${oldMinStock} → ${newMinStock} ${mat.unit}`,
+    })
+  } catch (err) {
+    await logError({ action: 'updateCounterfortMinStock/activityLog', error: err, context: { materialId } })
+  }
+
+  revalidatePath('/inventory/component')
+  return { success: true, oldMinStock, newMinStock }
 }

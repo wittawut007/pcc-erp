@@ -41,7 +41,7 @@ export default async function WorkerLayout({
         const userRole = (profile?.role || user.user_metadata?.role) as UserRole
 
         // อนุญาตให้ทั้ง worker และ admin เข้าถึงได้ (admin อาจต้องการดูหน้านี้)
-        if (!userRole || !['worker', 'admin'].includes(userRole)) {
+        if (!userRole || !['worker', 'admin', 'super_admin'].includes(userRole)) {
           shouldRedirectToUnauthorized = true
         } else {
           role = userRole

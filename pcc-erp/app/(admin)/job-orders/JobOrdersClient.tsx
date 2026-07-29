@@ -558,7 +558,7 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
                           <th style={thStyle}>พนักงาน</th>
                           <th style={thStyle}>วันที่/เวลา</th>
                           <th style={{ ...thStyle, textAlign: 'center' }}>ถอดแบบได้</th>
-                          {userRole === 'admin' && <th style={{ ...thStyle, textAlign: 'center' }}>จัดการ</th>}
+                          {(userRole === 'admin' || userRole === 'super_admin') && <th style={{ ...thStyle, textAlign: 'center' }}>จัดการ</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -774,7 +774,7 @@ export default function JobOrdersClient({ jobOrders: initial, historyJobOrders: 
                               </td>
 
                               {/* Admin Actions */}
-                              {userRole === 'admin' && (
+                              {(userRole === 'admin' || userRole === 'super_admin') && (
                                 <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                                   {(ds === 'concrete_ordered' || ds === 'casting' || ds === 'curing' || ds === 'ready_demold' ||
                                     ds === 'counterfort_ordered' || ds === 'counterfort_curing' || ds === 'cf_curing_done' ||

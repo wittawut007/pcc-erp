@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { logError } from '@/lib/logger'
 
@@ -60,7 +61,7 @@ export async function removePlanMaterial(planMaterialId: string) {
   if (!user) throw new Error('Unauthorized')
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') throw new Error('Unauthorized: Only admin can delete materials')
+  if (profile?.role !== 'admin' && profile?.role !== 'super_admin') throw new Error('Unauthorized: Only admin can delete materials')
 
   const { createClient: createServiceClient } = await import('@supabase/supabase-js')
   const serviceClient = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -140,8 +141,9 @@ export async function dispenseMaterial(
 
   if (updateErr) throw new Error(updateErr.message)
 
-  // หักสต็อก raw_materials
-  const { error: stockErr } = await supabase
+  // หักสต็อก raw_materials ด้วย Admin Client (ข้าม RLS)
+  const supabaseAdmin = createAdminClient()
+  const { error: stockErr } = await supabaseAdmin
     .from('raw_materials')
     .update({ qty_on_hand: currentStock - qtyDispensed })
     .eq('id', planMat.raw_material_id)
