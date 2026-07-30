@@ -29,7 +29,7 @@ export default async function ConcretePage({ searchParams }: Props) {
 
     ;[pending, history] = await Promise.all([
       getPendingConcreteOrders(),
-      getConcreteHistoryByDate(),
+      getConcreteHistoryByDate(selectedDate),
     ])
   } catch (e) {
     console.error('[ConcretePage] fetch error:', e)
