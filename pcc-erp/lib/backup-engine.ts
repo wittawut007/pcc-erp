@@ -212,7 +212,7 @@ export async function verifyAdminRequest(): Promise<{ userId: string } | NextRes
     .eq('id', user.id)
     .single()
 
-  if (profile?.role !== 'admin') {
+  if (profile?.role !== 'admin' && profile?.role !== 'super_admin') {
     return NextResponse.json({ error: 'ไม่มีสิทธิ์ Admin' }, { status: 403 })
   }
 

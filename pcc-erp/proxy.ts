@@ -193,10 +193,10 @@ export async function proxy(request: NextRequest) {
     }
 
     // Check specific role
-    if (path.startsWith('/qc-inspect') && role !== 'qc' && role !== 'admin') {
+    if (path.startsWith('/qc-inspect') && role !== 'qc' && role !== 'admin' && role !== 'super_admin') {
       return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponseMobile)
     }
-    if (path.startsWith('/worker') && role !== 'worker' && role !== 'admin') {
+    if (path.startsWith('/worker') && role !== 'worker' && role !== 'admin' && role !== 'super_admin') {
       return redirectWithCookies(new URL('/unauthorized?reason=forbidden', request.url), supabaseResponseMobile)
     }
 

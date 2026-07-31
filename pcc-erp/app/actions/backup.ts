@@ -136,9 +136,27 @@ export async function getBackupScheduleAction(): Promise<{ data?: BackupSchedule
       .from('backup_schedule_config')
       .select('*')
       .limit(1)
-      .single()
+      .maybeSingle()
 
     if (error) throw new Error(error.message)
+
+    if (!data) {
+      // ถ้ายังไม่มี config ให้สร้าง default 1 row
+      const { data: inserted, error: insertError } = await adminClient
+        .from('backup_schedule_config')
+        .insert({
+          is_enabled: true,
+          schedule_hour: 2,
+          schedule_minute: 0,
+          retention_days: 30,
+          backup_types: ['database'],
+        })
+        .select('*')
+        .single()
+
+      if (insertError) throw new Error(insertError.message)
+      return { data: inserted as BackupScheduleConfig }
+    }
 
     return { data: data as BackupScheduleConfig }
   } catch (err) {
@@ -161,20 +179,33 @@ export async function updateBackupScheduleAction(
       .from('backup_schedule_config')
       .select('id')
       .limit(1)
-      .single()
+      .maybeSingle()
 
-    if (!existing) throw new Error('ไม่พบ Schedule Config')
+    if (!existing) {
+      const { error } = await adminClient
+        .from('backup_schedule_config')
+        .insert({
+          is_enabled: config.is_enabled ?? true,
+          schedule_hour: config.schedule_hour ?? 2,
+          schedule_minute: config.schedule_minute ?? 0,
+          retention_days: config.retention_days ?? 30,
+          backup_types: config.backup_types ?? ['database'],
+          updated_at: new Date().toISOString(),
+          updated_by: userId,
+        })
+      if (error) throw new Error(error.message)
+    } else {
+      const { error } = await adminClient
+        .from('backup_schedule_config')
+        .update({
+          ...config,
+          updated_at: new Date().toISOString(),
+          updated_by: userId,
+        })
+        .eq('id', existing.id)
 
-    const { error } = await adminClient
-      .from('backup_schedule_config')
-      .update({
-        ...config,
-        updated_at: new Date().toISOString(),
-        updated_by: userId,
-      })
-      .eq('id', existing.id)
-
-    if (error) throw new Error(error.message)
+      if (error) throw new Error(error.message)
+    }
 
     return { success: true }
   } catch (err) {
