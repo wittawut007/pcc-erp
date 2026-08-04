@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { translateDefectReason } from '@/lib/utils/defects'
+import { getNextOrderNumber } from '@/lib/utils/order-number'
 import type { FgPrintData, FgPrintItem, PrintBomItem, PrintPlanMaterial, MaterialStatus, OrderStatus } from '@/lib/types'
 
 export async function saveErpReference(orderId: string, erpReference: string) {
@@ -134,14 +135,8 @@ export async function createManualFgOrder(
   const todayStr = now.split('T')[0]
   const datePart = todayStr.replace(/-/g, '')
 
-  // Generate sequence for ADJ-YYYYMMDD-XXX
-  const { count } = await supabase
-    .from('production_orders')
-    .select('*', { count: 'exact', head: true })
-    .like('order_number', `ADJ-${datePart}-%`)
-
-  const seq = String((count || 0) + 1).padStart(3, '0')
-  const orderNumber = `ADJ-${datePart}-${seq}`
+  // Generate sequence for ADJ-YYYYMMDD-XXX using MAX (not COUNT) to handle gaps from deleted orders
+  const orderNumber = await getNextOrderNumber(supabase, 'ADJ', datePart)
 
   const totalQty = items.reduce((sum, item) => sum + item.qty, 0)
 

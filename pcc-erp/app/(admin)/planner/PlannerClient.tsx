@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { clearOldPlanData } from '@/app/actions/planner'
 import { checkCounterfortStock } from '@/app/actions/component'
+import { getNextOrderNumber } from '@/lib/utils/order-number'
 import toast from 'react-hot-toast'
 import type { CounterfortStockCheck } from '@/lib/types'
 
@@ -547,14 +548,9 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
       if (existing) {
         finalOrderId = existing.id;
       } else {
-        // Generate sequential PO number: count ALL POs for this date
+        // Generate sequential PO number using MAX (not COUNT) to handle gaps from deleted POs
         const datePart = planDate.replace(/-/g, '')
-        const { count } = await supabase
-          .from('production_orders')
-          .select('*', { count: 'exact', head: true })
-          .like('order_number', `PO-${datePart}-%`)
-        const seq = String((count || 0) + 1).padStart(3, '0')
-        const orderNumber = `PO-${datePart}-${seq}`
+        const orderNumber = await getNextOrderNumber(supabase, 'PO', datePart)
 
         const { data: prodOrder, error: prodOrderErr } = await supabase.from('production_orders').insert({
           order_number: orderNumber,
