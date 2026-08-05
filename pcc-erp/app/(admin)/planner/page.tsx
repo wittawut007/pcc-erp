@@ -60,7 +60,7 @@ export default async function PlannerPage({
       .from('production_plans')
       .select('*, items:production_plan_items(*, product:products(*))')
       .eq('id', editPlanId)
-      .single()
+      .maybeSingle()
     editingPlan = data
     if (editingPlan) {
       selectedDate = editingPlan.plan_date
@@ -73,7 +73,7 @@ export default async function PlannerPage({
       .eq('plan_date', selectedDate)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
     editingPlan = data
   }
 
@@ -84,7 +84,7 @@ export default async function PlannerPage({
     .eq('role', 'worker')
     .eq('is_active', true)
     .limit(1)
-    .single()
+    .maybeSingle()
 
   const workerToken = workerProfile?.worker_token || ''
 

@@ -95,7 +95,7 @@ export async function proxy(request: NextRequest) {
         .from('profiles')
         .select('id, role, is_active, worker_token')
         .eq('worker_token', token)
-        .single()
+        .maybeSingle()
 
       if (!profile || profile.role !== 'worker' || !profile.is_active) {
         return NextResponse.redirect(new URL('/unauthorized?reason=invalid_qr', request.url))
@@ -132,7 +132,7 @@ export async function proxy(request: NextRequest) {
           .from('profiles')
           .select('id, role, is_active')
           .eq('worker_token', workerSession)
-          .single()
+          .maybeSingle()
 
         if (profile && profile.role === 'worker' && profile.is_active) {
           // Token valid: allow access to worker page
@@ -183,7 +183,7 @@ export async function proxy(request: NextRequest) {
         .from('profiles')
         .select('role, is_active')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
 
       if (profile?.role) {
         role = profile.role as UserRole
@@ -247,7 +247,7 @@ export async function proxy(request: NextRequest) {
         .from('profiles')
         .select('role')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
       if (profile?.role) {
         role = profile.role as UserRole
       }

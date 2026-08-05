@@ -65,7 +65,7 @@ export default function LoginPage() {
         .from('profiles')
         .select('role')
         .eq('id', data.user.id)
-        .single()
+        .maybeSingle()
       role = profile?.role
     }
 
