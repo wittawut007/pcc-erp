@@ -43,7 +43,7 @@ export async function proxy(request: NextRequest) {
 
   // ─── กรณี API Routes: รีเฟรช Cookie และตรวจสอบ Auth ───────────────────
   if (path.startsWith('/api/')) {
-    if (path === '/api/seed-users' || path === '/api/auth/test-worker') {
+    if (path === '/api/seed-users' || path === '/api/auth/test-worker' || path === '/api/admin/backup/auto') {
       return NextResponse.next()
     }
 
