@@ -39,17 +39,17 @@ export async function runDatabaseBackup(triggeredBy: string): Promise<BackupResu
     // 3. Export ข้อมูลจากทุก table ที่มีอยู่จริง (ตาม migrations 001–015)
     // ใช้ allSettled เพื่อให้ 1 table ล้มเหลวไม่กระทบ table อื่น
     const tableKeys = [
-      'profiles', 'products', 'bom_items', 'raw_materials',
+      'profiles', 'products', 'product_bom_items', 'raw_materials',
       'raw_material_transactions', 'production_plans', 'production_plan_items',
       'production_orders', 'job_orders', 'demolding_records',
       'qc_inspections', 'job_order_defects', 'fg_inventory', 'fg_receipts',
-      'wip_inventory', 'concrete_orders', 'plan_materials', 'activity_logs',
+      'wip_inventory', 'concrete_orders', 'concrete_rounds', 'plan_materials', 'activity_logs',
     ] as const
 
     const tablePromises = [
       adminClient.from('profiles').select('id, email, full_name, role, employee_code, is_active, created_at'),
       adminClient.from('products').select('*'),
-      adminClient.from('bom_items').select('*'),
+      adminClient.from('product_bom_items').select('*'),
       adminClient.from('raw_materials').select('*'),
       adminClient.from('raw_material_transactions').select('*'),
       adminClient.from('production_plans').select('*'),
@@ -63,6 +63,7 @@ export async function runDatabaseBackup(triggeredBy: string): Promise<BackupResu
       adminClient.from('fg_receipts').select('*'),
       adminClient.from('wip_inventory').select('*'),
       adminClient.from('concrete_orders').select('*'),
+      adminClient.from('concrete_rounds').select('*'),
       adminClient.from('plan_materials').select('*'),
       adminClient.from('activity_logs').select('*').limit(5000),
     ]

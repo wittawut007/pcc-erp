@@ -389,9 +389,9 @@ export default function ProductsClient({
       unit: p.unit, concrete_per_unit: p.concrete_per_unit,
       length: p.length ?? 0,
       concrete_group: p.concrete_group ?? '',
-      is_two_phase: !!p.is_two_phase,
-      concrete_counterfort: p.concrete_counterfort ?? '',
-      concrete_stem: p.concrete_stem ?? '',
+      is_two_phase: false,
+      concrete_counterfort: 0,
+      concrete_stem: 0,
     })
 
     // Build BOM from product_bom_items
@@ -403,7 +403,7 @@ export default function ProductsClient({
       raw_material_unit: item.raw_materials?.unit ?? '',
       qty_per_unit: Number(item.qty_per_unit),
       sort_order: item.sort_order ?? 1,
-      phase: item.phase || 'all',
+      phase: 'all',
     })
 
     setBomForm({
@@ -421,10 +421,7 @@ export default function ProductsClient({
     setSaving(true)
     try {
       const concreteGroupVal = (baseForm as any).concrete_group
-      const isTwoPhase = !!(baseForm as any).is_two_phase
-      const concreteCounterfort = isTwoPhase ? (parseFloat((baseForm as any).concrete_counterfort as string) || 0) : 0
-      const concreteStem = isTwoPhase ? (parseFloat((baseForm as any).concrete_stem as string) || 0) : 0
-      const concretePerUnit = isTwoPhase ? (concreteCounterfort + concreteStem) : (parseFloat(baseForm.concrete_per_unit as string) || 0)
+      const concretePerUnit = parseFloat(baseForm.concrete_per_unit as string) || 0
 
       const payload = {
         code: baseForm.code,
@@ -437,9 +434,9 @@ export default function ProductsClient({
         bom_code: null, // deprecated — now using product_bom_items
         wip_code: null, // Always null since WIP is removed from the system
         length: baseForm.category.startsWith('A13') ? (parseFloat(baseForm.length as string) || null) : null,
-        is_two_phase: isTwoPhase,
-        concrete_counterfort: concreteCounterfort,
-        concrete_stem: concreteStem,
+        is_two_phase: false,
+        concrete_counterfort: 0,
+        concrete_stem: 0,
         // Keep legacy columns for backward compatibility (sum of qty)
         wire_per_unit: bomForm.wire.reduce((s, r) => s + (parseFloat(r.qty_per_unit as string) || 0), 0) || null,
         mesh_per_unit: bomForm.mesh.reduce((s, r) => s + (parseFloat(r.qty_per_unit as string) || 0), 0) || null,
@@ -468,7 +465,7 @@ export default function ProductsClient({
           raw_material_id: r.raw_material_id,
           qty_per_unit: parseFloat(r.qty_per_unit as string) || 0,
           sort_order: r.sort_order,
-          phase: isTwoPhase ? (r.phase === 'stem' ? 'stem' : 'counterfort') : 'all'
+          phase: 'all'
         }))
 
       // Delete removed items (existing product only)
@@ -755,8 +752,6 @@ export default function ProductsClient({
                 const catStyle = CAT_STYLES.find(c => c.prefix === prefix) || CAT_STYLES[0]
                 const boms = productBomItems.filter(b => b.product_id === p.id)
                 const bomCount = boms.length
-                const cfBomCount = boms.filter(b => b.phase === 'counterfort').length
-                const stemBomCount = boms.filter(b => b.phase === 'stem').length
 
                 return (
                   <tr key={p.id} className="hover:bg-[var(--bg)] transition-colors" style={{ position: 'relative' }}>
@@ -770,25 +765,14 @@ export default function ProductsClient({
                         {bomCount > 0 && (
                           <span style={{ color: '#0369A1', fontWeight: 600 }}>
                             <i className="fas fa-cubes" style={{ fontSize: 8, marginRight: 3 }}></i>
-                            {p.is_two_phase ? (
-                              `BOM: CF ${cfBomCount} / STEM ${stemBomCount} รายการ`
-                            ) : (
-                              `BOM ${bomCount} รายการ`
-                            )}
+                            BOM {bomCount} รายการ
                           </span>
                         )}
-                        {p.is_two_phase ? (
+                        {p.concrete_per_unit > 0 && (
                           <span style={{ color: '#16A34A', fontWeight: 600 }}>
                             <i className="fas fa-fill-drip" style={{ fontSize: 8, marginRight: 3 }}></i>
-                            คอนกรีต: CF {Number(p.concrete_counterfort ?? 0).toFixed(4)} / STEM {Number(p.concrete_stem ?? 0).toFixed(4)} ม.³
+                            คอนกรีต: {Number(p.concrete_per_unit).toFixed(4)} ม.³
                           </span>
-                        ) : (
-                          p.concrete_per_unit > 0 && (
-                            <span style={{ color: '#16A34A', fontWeight: 600 }}>
-                              <i className="fas fa-fill-drip" style={{ fontSize: 8, marginRight: 3 }}></i>
-                              คอนกรีต: {Number(p.concrete_per_unit).toFixed(4)} ม.³
-                            </span>
-                          )
                         )}
                       </div>
                     </td>

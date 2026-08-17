@@ -277,7 +277,7 @@ export interface AuthUpdatePayload {
   user_metadata: {
     full_name: string
     role: UserRole
-    employee_code: string
+    employee_code: string | null
   }
   ban_duration: string
   password?: string
@@ -286,7 +286,7 @@ export interface AuthUpdatePayload {
 export interface ProfileUpdatePayload {
   full_name: string
   role: UserRole
-  employee_code: string
+  employee_code: string | null
   is_active: boolean
   avatar_url?: string | null
 }

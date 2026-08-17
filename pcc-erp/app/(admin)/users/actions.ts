@@ -28,11 +28,12 @@ async function assertAdminUser() {
 }
 
 export async function createUserAction(formData: FormData) {
-  const email = formData.get('email') as string
+  const email = ((formData.get('email') as string) || '').trim()
   const password = formData.get('password') as string
-  const fullName = formData.get('fullName') as string
+  const fullName = ((formData.get('fullName') as string) || '').trim()
   const role = formData.get('role') as string
-  const employeeCode = formData.get('employeeCode') as string
+  const rawEmployeeCode = ((formData.get('employeeCode') as string) || '').trim()
+  const employeeCode = rawEmployeeCode !== '' ? rawEmployeeCode : null
   const avatarUrl = formData.get('avatarUrl') as string | null
 
   try {
@@ -43,6 +44,30 @@ export async function createUserAction(formData: FormData) {
     }
 
     const supabaseAdmin = createAdminClient()
+
+    // Pre-validation 1: ตรวจสอบว่ามีอีเมลนี้ในระบบแล้วหรือยัง
+    const { data: existingEmail } = await supabaseAdmin
+      .from('profiles')
+      .select('id, full_name')
+      .ilike('email', email)
+      .maybeSingle()
+
+    if (existingEmail) {
+      throw new Error(`อีเมล "${email}" มีในระบบอยู่แล้ว (ใช้งานโดย ${existingEmail.full_name})`)
+    }
+
+    // Pre-validation 2: ตรวจสอบว่ารหัสพนักงานซ้ำกับผู้ใช้อื่นหรือไม่
+    if (employeeCode) {
+      const { data: existingEmp } = await supabaseAdmin
+        .from('profiles')
+        .select('id, full_name, employee_code')
+        .ilike('employee_code', employeeCode)
+        .maybeSingle()
+
+      if (existingEmp) {
+        throw new Error(`รหัสพนักงาน "${employeeCode}" ถูกใช้งานแล้วในระบบ (โดย ${existingEmp.full_name})`)
+      }
+    }
 
     // 1. Create User in Supabase Auth
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -55,7 +80,7 @@ export async function createUserAction(formData: FormData) {
     if (authError) throw authError
 
     if (authData.user) {
-      // 2. upsert แทน update เพื่อรองรับทั้งกรณีที่ trigger สร้าง profile ไว้แล้ว
+      // 2. upsert profile
       const { error: profileError } = await supabaseAdmin
         .from('profiles')
         .upsert({
@@ -70,7 +95,16 @@ export async function createUserAction(formData: FormData) {
           onConflict: 'id',
         })
 
-      if (profileError) throw new Error(`สร้าง profile ไม่สำเร็จ: ${profileError.message}`)
+      if (profileError) {
+        // Rollback auth user creation if profile upsert fails
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+        await supabaseAdmin.from('profiles').delete().eq('id', authData.user.id)
+        
+        if (profileError.code === '23505' || profileError.message.includes('profiles_employee_code_key')) {
+          throw new Error(`รหัสพนักงาน "${employeeCode}" ถูกใช้งานแล้วในระบบ`)
+        }
+        throw new Error(`สร้าง profile ไม่สำเร็จ: ${profileError.message}`)
+      }
     }
 
     return { success: true, user: authData.user }
@@ -82,9 +116,10 @@ export async function createUserAction(formData: FormData) {
 
 export async function updateUserAction(formData: FormData) {
   const userId = formData.get('userId') as string
-  const fullName = formData.get('fullName') as string
+  const fullName = ((formData.get('fullName') as string) || '').trim()
   const role = formData.get('role') as string
-  const employeeCode = formData.get('employeeCode') as string
+  const rawEmployeeCode = ((formData.get('employeeCode') as string) || '').trim()
+  const employeeCode = rawEmployeeCode !== '' ? rawEmployeeCode : null
   const password = formData.get('password') as string
   const isActive = formData.get('isActive') === 'true'
   const avatarUrl = formData.get('avatarUrl') as string | null
@@ -115,6 +150,20 @@ export async function updateUserAction(formData: FormData) {
       throw new Error('ไม่สามารถกำหนดสิทธิ์เป็น Super Admin ผ่าน UI ได้ (ต้องดำเนินการผ่านฐานข้อมูลเท่านั้น)')
     }
 
+    // Pre-validation: ตรวจสอบว่ารหัสพนักงานซ้ำกับผู้ใช้อื่นหรือไม่
+    if (employeeCode) {
+      const { data: existingEmp } = await supabaseAdmin
+        .from('profiles')
+        .select('id, full_name, employee_code')
+        .ilike('employee_code', employeeCode)
+        .neq('id', userId)
+        .maybeSingle()
+
+      if (existingEmp) {
+        throw new Error(`รหัสพนักงาน "${employeeCode}" ถูกใช้งานแล้วในระบบ (โดย ${existingEmp.full_name})`)
+      }
+    }
+
     const finalRole = targetProfile?.role === 'super_admin' ? 'super_admin' : role
 
     // Update Auth Data (Email / Password / Ban state)
@@ -138,7 +187,12 @@ export async function updateUserAction(formData: FormData) {
 
     const { error: profileError } = await supabaseAdmin.from('profiles').update(profileData).eq('id', userId)
 
-    if (profileError) throw profileError
+    if (profileError) {
+      if (profileError.code === '23505' || profileError.message.includes('profiles_employee_code_key')) {
+        throw new Error(`รหัสพนักงาน "${employeeCode}" ถูกใช้งานแล้วในระบบ`)
+      }
+      throw profileError
+    }
 
     return { success: true }
   } catch (error: unknown) {
