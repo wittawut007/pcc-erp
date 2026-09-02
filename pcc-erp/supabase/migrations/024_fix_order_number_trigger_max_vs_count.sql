@@ -10,6 +10,11 @@ DECLARE
   seq      INTEGER;
   p_date   DATE;
 BEGIN
+  -- If order_number is already set and does not start with 'PO-', preserve it (e.g. ADJ-...)
+  IF NEW.order_number IS NOT NULL AND NEW.order_number != '' AND NOT (NEW.order_number LIKE 'PO-%') THEN
+    RETURN NEW;
+  END IF;
+
   -- Get plan_date from the referenced production_plans row
   SELECT plan_date INTO p_date FROM production_plans WHERE id = NEW.plan_id;
 

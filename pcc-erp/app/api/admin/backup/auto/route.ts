@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
-import { runDatabaseBackup } from '@/lib/backup-engine'
+import { checkAndRunScheduledBackup } from '@/lib/backup-scheduler'
 
 /**
  * Handler สำหรับ Auto Backup
- * รองรับทั้ง GET (Vercel Cron / curl) และ POST (API triggers)
+ * รองรับทั้ง GET (Vercel Cron / curl) และ POST (API triggers / Webhooks)
+ *
+ * Query Params:
+ * - force=true : บังคับรัน Backup ทันทีโดยข้ามการตรวจสอบชั่วโมง (สำหรับทดสอบ)
+ * - secret=... : ส่ง Secret Key ผ่าน Query Param แทน Header ได้
  */
 async function handleAutoBackup(request: Request) {
   const url = new URL(request.url)
@@ -11,6 +15,7 @@ async function handleAutoBackup(request: Request) {
   const cronSecretHeader = request.headers.get('x-cron-secret')
   const secretParam = url.searchParams.get('secret') || url.searchParams.get('key')
   const isVercelCron = request.headers.get('x-vercel-cron') === '1'
+  const isForce = url.searchParams.get('force') === 'true' || request.headers.get('x-force') === 'true'
 
   const cronSecret = process.env.CRON_SECRET
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -54,44 +59,39 @@ async function handleAutoBackup(request: Request) {
     return NextResponse.json({ error: 'Unauthorized — Invalid or missing Cron Secret' }, { status: 401 })
   }
 
-  // ─── 2. ตรวจสอบสถานะการเปิดใช้งาน (Schedule Config) ──────────────────────────
-  try {
-    const { createAdminClient } = await import('@/lib/supabase/admin')
-    const adminClient = createAdminClient()
+  // ─── 2. ตรวจสอบเงื่อนไขเวลาและทำการ Backup ───────────────────────────────────
+  console.log(`[BACKUP AUTO] Processing auto backup trigger (Force: ${isForce})...`)
+  const result = await checkAndRunScheduledBackup({ force: isForce })
 
-    const { data: config } = await adminClient
-      .from('backup_schedule_config')
-      .select('is_enabled, schedule_hour')
-      .limit(1)
-      .maybeSingle()
-
-    if (config && !config.is_enabled) {
-      console.log('[BACKUP AUTO] Auto backup is disabled in config — skipping')
-      return NextResponse.json({ skipped: true, reason: 'Auto backup is disabled in settings' })
-    }
-  } catch (configErr) {
-    console.warn('[BACKUP AUTO] Could not read schedule config, proceeding anyway:', configErr)
+  if (result.skipped) {
+    return NextResponse.json({
+      skipped: true,
+      reason: result.reason,
+      currentHourBKK: result.currentHourBKK,
+      scheduledHour: result.scheduledHour,
+    })
   }
 
-  // ─── 3. รัน Backup ──────────────────────────────────────────────────────────
-  console.log('[BACKUP AUTO] Starting scheduled auto backup...')
-  const result = await runDatabaseBackup('auto')
-
   if (result.success) {
-    console.log(`[BACKUP AUTO] Success: ${result.fileName} (${result.fileSizeBytes} bytes, ${result.durationSeconds}s)`)
     return NextResponse.json({
       success: true,
       fileName: result.fileName,
       fileSizeBytes: result.fileSizeBytes,
       durationSeconds: result.durationSeconds,
+      currentHourBKK: result.currentHourBKK,
+      scheduledHour: result.scheduledHour,
     })
-  } else {
-    console.error('[BACKUP AUTO] Failed:', result.error)
-    return NextResponse.json(
-      { success: false, error: result.error },
-      { status: 500 }
-    )
   }
+
+  return NextResponse.json(
+    {
+      success: false,
+      error: result.error,
+      currentHourBKK: result.currentHourBKK,
+      scheduledHour: result.scheduledHour,
+    },
+    { status: 500 }
+  )
 }
 
 /**
@@ -109,3 +109,4 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return handleAutoBackup(request)
 }
+

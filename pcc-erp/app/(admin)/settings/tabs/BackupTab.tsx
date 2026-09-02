@@ -393,12 +393,20 @@ export default function BackupTab() {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>
-              <i className="fas fa-calendar-alt" style={{ marginRight: 8, color: 'var(--accent)' }} />
-              ตั้งค่า Auto Backup
+            <div style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <i className="fas fa-calendar-alt" style={{ color: 'var(--accent)' }} />
+              <span>ตั้งค่าสำรองข้อมูลอัตโนมัติ (Auto Backup)</span>
+              <span style={{
+                fontSize: 11, fontWeight: 600,
+                padding: '2px 8px', borderRadius: 12,
+                background: scheduleForm.is_enabled ? '#D1FAE5' : '#F3F4F6',
+                color: scheduleForm.is_enabled ? '#059669' : '#6B7280',
+              }}>
+                {scheduleForm.is_enabled ? '● เปิดใช้งานอยู่' : '○ ปิดใช้งาน'}
+              </span>
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-              Vercel Cron Job — รันทุกวัน {scheduleTimeDisplay}
+              ระบบทำงานอัตโนมัติทุกวัน {scheduleTimeDisplay} (เวลาประเทศไทย UTC+7)
             </div>
           </div>
           {/* Toggle */}

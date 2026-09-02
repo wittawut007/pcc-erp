@@ -682,14 +682,26 @@ echo "✅ [$(date)] Backup complete."
 ls -lh "$BACKUP_DIR" | tail -10
 ```
 
-### 8.2 ตั้ง Cron Job สำหรับ Backup อัตโนมัติ
+### 8.2 การตั้งเวลา Backup อัตโนมัติ (เชื่อมกับหน้าตั้งค่าในระบบ ERP)
 
+ระบบ PCC ERP รองรับการตั้งเวลา Backup อัตโนมัติได้จาก **หน้าตั้งค่า (Settings -> Backup)** โดยตรง:
+1. **Next.js In-Process Scheduler (อัตโนมัติ):** เมื่อรันระบบผ่าน PM2 ตัว Next.js Server จะมี Scheduler ภายในตัว คอยตรวจเช็คเวลาไทยทุก 10 นาที หากถึงชั่วโมงที่ตั้งไว้ในหน้าจอจะทำ Backup ทันที และบันทึกประวัติให้ดาวน์โหลดได้
+2. **Linux Crontab Trigger (แนะนำให้ตั้งไว้ควบคู่กันเพื่อความแม่นยำ 100%):**
 ```bash
+# คัดลอกสคริปต์ไปยังโฟลเดอร์ scripts
+$ cp /home/deploy/pcc-erp/scripts/cron_auto_backup.sh /home/deploy/scripts/
+$ chmod +x /home/deploy/scripts/cron_auto_backup.sh
+
+# เปิดแก้ไข crontab
 $ crontab -e
 ```
 
+เพิ่มคำสั่งนี้ลงใน crontab (รันทุกต้นชั่วโมงเพื่อเรียกตรวจตามเวลาที่ตั้งไว้ในหน้าเว็บ):
 ```cron
-# PCC ERP — รัน backup ทุกวันเวลา 02:00 AM
+# PCC ERP — Hourly Auto Backup Check (รันตามเวลาที่ตั้งไว้ในหน้า Settings)
+0 * * * * /home/deploy/scripts/cron_auto_backup.sh >> /home/deploy/logs/auto_backup_cron.log 2>&1
+
+# (ทางเลือกเสริม) รัน pg_dump สำรองไฟล์ระดับ OS ไว้ที่เครื่องทุกวันเวลา 02:00 AM
 0 2 * * * /home/deploy/scripts/backup.sh >> /home/deploy/logs/backup.log 2>&1
 ```
 

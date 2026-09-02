@@ -543,7 +543,7 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
 
       // Check if order already exists for this plan
       let finalOrderId;
-      const { data: existing } = await supabase.from('production_orders').select('id').eq('plan_id', plan.id).single();
+      const { data: existing } = await supabase.from('production_orders').select('id').eq('plan_id', plan.id).maybeSingle();
 
       if (existing) {
         finalOrderId = existing.id;
