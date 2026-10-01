@@ -65,7 +65,7 @@ export default function QCClient({ initialData, qcName, avatarUrl }: { initialDa
     return () => clearInterval(interval)
   }, [router])
 
-  const castingJobs = jobs.filter(j => ['concrete_ordered', 'counterfort_ordered', 'stem_ordered'].includes(j.status))
+  const castingJobs = jobs.filter(j => ['concrete_ordered', 'casting', 'counterfort_ordered', 'stem_ordered'].includes(j.status))
   const demoldingJobs = jobs.filter(j => ['curing', 'ready_demold', 'counterfort_curing', 'stem_curing'].includes(j.status))
 
   const groupedCastingJobs = useMemo(() => {

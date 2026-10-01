@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:ip": "next dev -H 0.0.0.0",
+    "dev": "next dev --webpack",
+    "dev:ip": "next dev -H 0.0.0.0 --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

@@ -83,6 +83,7 @@ export async function inspectPour(
   }
 
   revalidatePath('/qc')
+  revalidatePath('/qc-inspect')
 }
 
 /**
@@ -383,7 +384,7 @@ export async function getQCJobOrders() {
       production_order:production_orders(order_number, status)
     `)
     .in('status', [
-      'concrete_ordered', 'casting', 'curing', 'ready_demold', 'demolded',
+      'concrete_ordered', 'casting', 'curing', 'ready_demold',
       'counterfort_ordered', 'counterfort_curing', 'stem_ordered', 'stem_curing'
     ])
     .in('job_type', ['fg', 'component'])
