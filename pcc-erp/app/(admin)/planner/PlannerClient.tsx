@@ -69,6 +69,7 @@ export interface ProductBomItem {
 interface Props {
   products: Product[]
   editingPlan: any          // plan being viewed/edited (null = new plan)
+  hasStartedProduction?: boolean
   recentPlans: any[]        // list of recent plans for the sidebar
   rawMaterials: RawMaterial[]
   bomItems?: ProductBomItem[]
@@ -91,7 +92,7 @@ const CATEGORIES = [
   'A82 เสารั้ว',
 ]
 
-export default function PlannerClient({ products, editingPlan, recentPlans, rawMaterials, bomItems = [], today, selectedDate, workerToken = '' }: Props) {
+export default function PlannerClient({ products, editingPlan, hasStartedProduction = false, recentPlans, rawMaterials, bomItems = [], today, selectedDate, workerToken = '' }: Props) {
 
   const supabase = createClient()
   const [isPending, startTransition] = useTransition()
@@ -323,8 +324,15 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
 
   const cfStockInsufficient = cfStockChecks.some(c => !c.sufficient)
 
+  const isPlanConfirmed = editingPlan?.status === 'confirmed'
+  const isPlanLocked = Boolean(editingPlan?.id && hasStartedProduction)
+  const isSubmitting = saving || confirming
+  const editingPoNumber = Array.isArray(editingPlan?.production_orders)
+    ? editingPlan.production_orders[0]?.order_number
+    : null
+
   const handleAddProduct = () => {
-    if (!selectedProduct) return
+    if (isPlanLocked || !selectedProduct) return
     const existing = planItems.findIndex(i => i.productId === selectedProduct.id && i.bed === selectedBed)
     if (existing >= 0) {
       const updated = [...planItems]
@@ -360,10 +368,18 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
 
 
   const handleRemove = (idx: number) => {
+    if (isPlanLocked) return
     setPlanItems(planItems.filter((_, i) => i !== idx))
   }
 
   const savePlanData = async (status: 'draft' | 'confirmed') => {
+    if (isPlanLocked) {
+      throw new Error('แผนนี้เริ่มกระบวนการผลิตแล้ว ไม่สามารถแก้ไขหรือบันทึกซ้ำได้ กรุณากด "สร้างแผนใหม่"')
+    }
+    if (isPlanConfirmed && status === 'draft') {
+      throw new Error('แผนนี้ยืนยันออกใบสั่งผลิตแล้ว ไม่สามารถบันทึกกลับเป็นแบบร่างได้')
+    }
+
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not authenticated')
 
@@ -373,6 +389,9 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
     const planType = hasComponentItem ? 'component' : 'fg'
 
     if (editingPlan?.id) {
+      // ตรวจสอบและลบรายการเดิมให้สำเร็จก่อนอัปเดตหัวแผน (ป้องกันกรณีแผนเริ่มผลิตแล้วแต่หัวแผนถูกแก้)
+      await clearOldPlanData(editingPlan.id)
+
       // UPDATE existing plan
       const { data: updated, error: planError } = await supabase
         .from('production_plans')
@@ -387,9 +406,6 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
         .single()
       if (planError) throw planError
       plan = updated
-
-      // Clear old items
-      await clearOldPlanData(plan.id)
     } else {
       // INSERT new plan (no upsert — allow multiple per day)
       const { data: inserted, error: planError } = await supabase
@@ -514,6 +530,15 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
   }
 
   const handleSaveDraft = async () => {
+    if (saving || confirming) return
+    if (isPlanLocked) {
+      toast.error('แผนนี้เริ่มกระบวนการผลิตแล้ว ไม่สามารถแก้ไขได้')
+      return
+    }
+    if (isPlanConfirmed) {
+      toast.error('แผนนี้ยืนยันออกใบสั่งผลิตแล้ว ไม่สามารถบันทึกเป็นแบบร่างได้')
+      return
+    }
     if (planItems.length === 0) {
       toast.error('กรุณาเพิ่มรายการสินค้าลงแผนก่อน')
       return
@@ -531,6 +556,11 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
   }
 
   const handleConfirmPlan = async () => {
+    if (saving || confirming) return
+    if (isPlanLocked) {
+      toast.error('แผนนี้เริ่มกระบวนการผลิตแล้ว ไม่สามารถแก้ไขหรือบันทึกซ้ำได้ กรุณาสร้างแผนใหม่')
+      return
+    }
     if (planItems.length === 0) {
       toast.error('กรุณาเพิ่มรายการสินค้าลงแผนก่อน')
       return
@@ -596,8 +626,6 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
     supabaseRouter.push(`/planner?date=${planDate}&new=true`)
   }
 
-  const isPlanConfirmed = editingPlan?.status === 'confirmed'
-
   // Group recentPlans by date for the sidebar
   const plansByDate = useMemo(() => {
     const map = new Map<string, any[]>()
@@ -619,9 +647,42 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
 
       {/* LEFT — Product Selector & Plan Table */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+
+        {/* LOCKED PLAN BANNER */}
+        {isPlanLocked && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <i className="fas fa-lock text-amber-600 mt-0.5 text-base" />
+              <div>
+                <div className="font-bold text-amber-900 text-sm">
+                  แผนนี้เริ่มกระบวนการผลิตแล้ว {editingPoNumber ? `(${editingPoNumber})` : ''} — ล็อกการแก้ไขเพื่อป้องกันรายการซ้ำซ้อน
+                </div>
+                <div className="text-xs text-amber-800 mt-0.5">
+                  ไม่สามารถแก้ไขหรือกดบันทึกซ้ำในแผนนี้ได้ หากต้องการสั่งผลิตเพิ่มเติม กรุณากดปุ่ม &quot;สร้างแผนใหม่&quot;
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => supabaseRouter.push(`/production-order/${editingPlan.id}`)}
+                className="px-3 py-2 rounded-lg text-xs font-bold bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 cursor-pointer"
+              >
+                <i className="fas fa-file-alt mr-1.5" /> ดูใบสั่งผลิต
+              </button>
+              <button
+                type="button"
+                onClick={handleNewPlan}
+                className="px-3 py-2 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+              >
+                <i className="fas fa-plus mr-1.5" /> สร้างแผนใหม่
+              </button>
+            </div>
+          </div>
+        )}
         
         {/* ADD PRODUCT FORM */}
-        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', opacity: isPlanLocked ? 0.6 : 1, pointerEvents: isPlanLocked ? 'none' : 'auto' }}>
           <div className="flex items-center gap-2 font-bold text-[15px] mb-4 text-gray-800">
             <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">
               <i className="fas fa-plus"></i>
@@ -755,7 +816,20 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
                              {item.concrete.toFixed(2)}
                           </td>
                           <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                             <button onClick={() => handleRemove(idx)} style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626', width: 32, height: 32, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.15s' }}>
+                             <button
+                               onClick={() => handleRemove(idx)}
+                               disabled={isPlanLocked}
+                               title={isPlanLocked ? 'ไม่สามารถลบได้เนื่องจากเริ่มผลิตแล้ว' : 'ลบรายการ'}
+                               style={{
+                                 background: isPlanLocked ? '#F3F4F6' : '#FEF2F2',
+                                 border: `1px solid ${isPlanLocked ? '#E5E7EB' : '#FECACA'}`,
+                                 color: isPlanLocked ? '#9CA3AF' : '#DC2626',
+                                 width: 32, height: 32, borderRadius: 8,
+                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                 cursor: isPlanLocked ? 'not-allowed' : 'pointer',
+                                 transition: 'all 0.15s',
+                               }}
+                             >
                                 <i className="fas fa-trash-alt" style={{ fontSize: 12 }}></i>
                              </button>
                           </td>
@@ -863,8 +937,9 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 200, position: 'relative', zIndex: 1 }}>
                 <button
                   onClick={handleSaveDraft}
-                  disabled={saving || planItems.length === 0}
-                  className="w-full bg-transparent hover:bg-white/8 border border-gray-600 text-gray-200 font-semibold rounded-xl text-[13px] disabled:opacity-40 transition-all flex justify-center items-center gap-2"
+                  disabled={isSubmitting || isPlanLocked || isPlanConfirmed || planItems.length === 0}
+                  title={isPlanLocked ? 'แผนเริ่มผลิตแล้ว ไม่สามารถแก้ไขได้' : isPlanConfirmed ? 'แผนนี้ยืนยันแล้ว ไม่สามารถบันทึกกลับเป็นแบบร่างได้' : undefined}
+                  className="w-full bg-transparent hover:bg-white/8 border border-gray-600 text-gray-200 font-semibold rounded-xl text-[13px] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex justify-center items-center gap-2"
                   style={{ minHeight: 40, padding: '8px 16px' }}
                 >
                    {saving
@@ -875,19 +950,27 @@ export default function PlannerClient({ products, editingPlan, recentPlans, rawM
                 </button>
                 <button
                   onClick={handleConfirmPlan}
-                  disabled={confirming || planItems.length === 0}
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-[14px] disabled:opacity-40 transition-all flex justify-center items-center gap-2 relative"
+                  disabled={isSubmitting || isPlanLocked || planItems.length === 0}
+                  title={isPlanLocked ? 'แผนเริ่มผลิตแล้ว ไม่สามารถบันทึกซ้ำได้' : undefined}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-[14px] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex justify-center items-center gap-2 relative"
                   style={{ minHeight: 44, padding: '10px 16px' }}
                 >
                    {confirming
                      ? <i className="fas fa-spinner fa-spin text-sm"></i>
-                     : (
-                       <>
-                         <i className="fas fa-check-circle text-sm"></i>
-                         <span>บันทึก/สร้างใบสั่งผลิต</span>
-                         <i className="fas fa-arrow-right absolute right-4 text-blue-200"></i>
-                       </>
-                     )
+                     : isPlanLocked
+                       ? (
+                         <>
+                           <i className="fas fa-lock text-sm"></i>
+                           <span>ล็อกการแก้ไข (เริ่มผลิตแล้ว)</span>
+                         </>
+                       )
+                       : (
+                         <>
+                           <i className="fas fa-check-circle text-sm"></i>
+                           <span>{isPlanConfirmed ? 'อัปเดตแผนและใบสั่งผลิต' : 'บันทึก/สร้างใบสั่งผลิต'}</span>
+                           <i className="fas fa-arrow-right absolute right-4 text-blue-200"></i>
+                         </>
+                       )
                    }
                 </button>
              </div>

@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
 import type { UserRole } from '@/lib/supabase/types'
-
-import MobileLogoutButton from '@/components/shared/MobileLogoutButton'
+import { classifyServerDevice } from '@/lib/utils/device'
+import MobileOnlyGuard, { DesktopBlockedView } from '@/components/shared/MobileOnlyGuard'
 
 export default async function MobileLayout({
   children,
@@ -53,19 +54,41 @@ export default async function MobileLayout({
     }
   }
 
+  const headerList = await headers()
+  const serverCheck = classifyServerDevice(
+    headerList.get('user-agent'),
+    headerList.get('sec-ch-ua-mobile')
+  )
+  const canAccessDashboard = role === 'admin' || role === 'super_admin'
+
+  if (serverCheck === 'desktop') {
+    return (
+      <DesktopBlockedView
+        roleLabel="พนักงาน QC"
+        showDashboardLink={canAccessDashboard}
+      />
+    )
+  }
+
   return (
-    <div style={{
-      minHeight: '100dvh',
-      background: '#F8FAFC',
-      display: 'flex',
-      flexDirection: 'column',
-      maxWidth: 480,
-      margin: '0 auto',
-    }}>
-      {/* Page Content */}
-      <main style={{ flex: 1, overflowY: 'auto' }}>
-        {children}
-      </main>
-    </div>
+    <MobileOnlyGuard
+      roleLabel="พนักงาน QC"
+      serverCheck={serverCheck}
+      showDashboardLink={canAccessDashboard}
+    >
+      <div style={{
+        minHeight: '100dvh',
+        background: '#F8FAFC',
+        display: 'flex',
+        flexDirection: 'column',
+        maxWidth: 480,
+        margin: '0 auto',
+      }}>
+        {/* Page Content */}
+        <main style={{ flex: 1, overflowY: 'auto' }}>
+          {children}
+        </main>
+      </div>
+    </MobileOnlyGuard>
   )
 }

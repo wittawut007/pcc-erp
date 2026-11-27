@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { saveErpReference, createManualFgOrder, getManualFgFormData } from '@/app/actions/fg'
 import FgDocumentModal from '@/components/shared/FgDocumentModal'
 import FilterBar, { isDateInRange } from '@/components/shared/FilterBar'
+import StockReceiptReportTab from './StockReceiptReportTab'
 
 interface ProductionOrder {
   id: string
@@ -125,7 +126,7 @@ export default function FgInventoryClient({
   const [erpRef, setErpRef] = useState('')
   const [saving, setSaving] = useState(false)
   const [printModalOrderId, setPrintModalOrderId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'queue' | 'history'>('queue')
+  const [activeTab, setActiveTab] = useState<'queue' | 'history' | 'report'>('queue')
 
   // New state variables for manual addition modal
   const [showAddModal, setShowAddModal] = useState(false)
@@ -482,38 +483,40 @@ export default function FgInventoryClient({
       </div>
 
       {/* Filters (Search & Date & Action) */}
-      <FilterBar
-        search={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="ค้นหาเลขที่ใบสั่งผลิต, รหัสสินค้า, หรืออ้างอิง ERP..."
-        countLabel={`${filtered.length} ใบสั่งผลิต`}
-        dateLabel="วันที่สั่งผลิต:"
-        dateRange={dateRange}
-        onDateRangeChange={setDateRange}
-        style={{ marginBottom: 16 }}
-        actionButton={
-          <button
-            onClick={() => setShowAddModal(true)}
-            style={{
-              padding: '10px 18px',
-              background: 'var(--accent)',
-              color: 'white',
-              border: 'none',
-              borderRadius: 8,
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              height: 36,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <i className="fas fa-plus" /> ปรับขนาดสินค้าเสีย / เพิ่มสินค้าสำเร็จรูปเอง
-          </button>
-        }
-      />
+      {activeTab !== 'report' && (
+        <FilterBar
+          search={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="ค้นหาเลขที่ใบสั่งผลิต, รหัสสินค้า, หรืออ้างอิง ERP..."
+          countLabel={`${filtered.length} ใบสั่งผลิต`}
+          dateLabel="วันที่สั่งผลิต:"
+          dateRange={dateRange}
+          onDateRangeChange={setDateRange}
+          style={{ marginBottom: 16 }}
+          actionButton={
+            <button
+              onClick={() => setShowAddModal(true)}
+              style={{
+                padding: '10px 18px',
+                background: 'var(--accent)',
+                color: 'white',
+                border: 'none',
+                borderRadius: 8,
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                height: 36,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <i className="fas fa-plus" /> ปรับขนาดสินค้าเสีย / เพิ่มสินค้าสำเร็จรูปเอง
+            </button>
+          }
+        />
+      )}
 
       {/* Table */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
@@ -543,9 +546,23 @@ export default function FgInventoryClient({
               </span>
             )}
           </button>
+          <button 
+            type="button"
+            style={TAB_STYLE(activeTab === 'report')} 
+            onClick={() => setActiveTab('report')}
+          >
+            <i className="fas fa-file-excel" style={{ marginRight: 6, color: activeTab === 'report' ? '#fff' : '#107C41' }} />
+            รายงานรับเข้าสต็อก (IV70007)
+          </button>
         </div>
 
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        {activeTab === 'report' ? (
+          <div style={{ padding: '20px 24px' }}>
+            <StockReceiptReportTab />
+          </div>
+        ) : (
+          <>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr>
               {['', 'วันที่', 'ใบสั่งผลิต', 'จำนวนรายการ (ชิ้น)', 'สถานะ', 'หมายเลขอ้างอิง', 'เอกสาร', 'จัดการ'].map((h, i) => (
@@ -798,9 +815,11 @@ export default function FgInventoryClient({
               )
             })}
           </tbody>
-        </table>
-        {filtered.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 12 }}>ไม่พบข้อมูลใบสั่งผลิต</div>
+            </table>
+            {filtered.length === 0 && (
+              <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 12 }}>ไม่พบข้อมูลใบสั่งผลิต</div>
+            )}
+          </>
         )}
       </div>
 

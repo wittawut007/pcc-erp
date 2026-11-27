@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 import type { UserRole } from '@/lib/supabase/types'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
+import { classifyServerDevice } from '@/lib/utils/device'
+import MobileOnlyGuard, { DesktopBlockedView } from '@/components/shared/MobileOnlyGuard'
 
 export default async function WorkerLayout({
   children,
@@ -8,6 +10,12 @@ export default async function WorkerLayout({
   children: React.ReactNode
 }) {
   let role: UserRole = 'worker'
+
+  const headerList = await headers()
+  const serverCheck = classifyServerDevice(
+    headerList.get('user-agent'),
+    headerList.get('sec-ch-ua-mobile')
+  )
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const isConfigured = supabaseUrl && supabaseUrl !== 'your_supabase_project_url'
@@ -17,8 +25,15 @@ export default async function WorkerLayout({
     const workerSession = cookieStore.get('worker_session')?.value
 
     if (workerSession) {
-      // If entering via QR code (worker_session is set), allow access directly
-      return <>{children}</>
+      if (serverCheck === 'desktop') {
+        return <DesktopBlockedView roleLabel="พนักงานผลิต" />
+      }
+      // If entering via QR code (worker_session is set), allow access directly on mobile devices
+      return (
+        <MobileOnlyGuard roleLabel="พนักงานผลิต" serverCheck={serverCheck}>
+          {children}
+        </MobileOnlyGuard>
+      )
     }
 
     let shouldRedirectToLogin = false
@@ -59,5 +74,24 @@ export default async function WorkerLayout({
     }
   }
 
-  return <>{children}</>
+  const canAccessDashboard = role === 'admin' || role === 'super_admin'
+
+  if (serverCheck === 'desktop') {
+    return (
+      <DesktopBlockedView
+        roleLabel="พนักงานผลิต"
+        showDashboardLink={canAccessDashboard}
+      />
+    )
+  }
+
+  return (
+    <MobileOnlyGuard
+      roleLabel="พนักงานผลิต"
+      serverCheck={serverCheck}
+      showDashboardLink={canAccessDashboard}
+    >
+      {children}
+    </MobileOnlyGuard>
+  )
 }

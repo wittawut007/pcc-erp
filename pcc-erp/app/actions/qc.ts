@@ -203,6 +203,34 @@ export async function recordDemoldInspection(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
 
+  if (
+    !Number.isInteger(demoldQtyGood) ||
+    !Number.isInteger(demoldQtyDefect) ||
+    demoldQtyGood < 0 ||
+    demoldQtyDefect < 0
+  ) {
+    throw new Error('จำนวนสินค้าดีและของเสียต้องเป็นจำนวนเต็มที่ไม่ติดลบ')
+  }
+
+  // 1. Get job order details first and validate total count === qty_target
+  const { data: job, error: jobFetchError } = await supabase
+    .from('job_orders')
+    .select('id, qty_target, job_type, plan_item:production_plan_items(product:products(id, name, code, category, counterfort_material_id, counterfort_qty_per_unit))')
+    .eq('id', jobOrderId)
+    .single()
+
+  if (jobFetchError || !job) {
+    throw new Error('ไม่พบใบงาน (Job Order)')
+  }
+
+  const targetQty = Number(job.qty_target ?? 0)
+  const totalCounted = demoldQtyGood + demoldQtyDefect
+  if (totalCounted !== targetQty) {
+    throw new Error(
+      `ไม่สามารถบันทึกได้: ยอดรวมสินค้าดี (${demoldQtyGood}) + ของเสีย (${demoldQtyDefect}) = ${totalCounted} ชิ้น ไม่ตรงกับจำนวนเป้าหมาย (${targetQty} ชิ้น)`
+    )
+  }
+
   const now = new Date().toISOString()
   const primaryReason = defectReason || (defectBreakdown && defectBreakdown[0]?.reason) || null
 
@@ -243,7 +271,7 @@ export async function recordDemoldInspection(
     if (error) throw new Error(error.message)
   }
 
-  // อัปเดต job_order status → qc_passed
+  // อัปเดต job_order status → demolded
   const { error: jobErr } = await supabase
     .from('job_orders')
     .update({
@@ -253,9 +281,6 @@ export async function recordDemoldInspection(
     .eq('id', jobOrderId)
 
   if (jobErr) throw new Error(jobErr.message)
-
-  // 1. Get job order details for inventory
-  const { data: job } = await supabase.from('job_orders').select('job_type, plan_item:production_plan_items(product:products(id, name, code, category, counterfort_material_id, counterfort_qty_per_unit))').eq('id', jobOrderId).single()
 
 
   // 2. Insert into demolding_records

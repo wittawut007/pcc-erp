@@ -23,16 +23,102 @@ export async function clearOldPlanData(planId: string) {
   }
 
   const supabase = createAdminClient()
-  
-  // Safe deletion: delete job_orders first to avoid FK violations
-  const { data: oldItems } = await supabase.from('production_plan_items').select('id').eq('plan_id', planId)
-  if (oldItems && oldItems.length > 0) {
-    const itemIds = oldItems.map(i => i.id)
-    await supabase.from('job_orders').delete().in('plan_item_id', itemIds)
+
+  // 1. ตรวจสอบรายการสินค้าในแผนและใบสั่งผลิตที่เกี่ยวข้อง
+  const [{ data: oldItems, error: oldItemsErr }, { data: oldOrders, error: oldOrdersErr }, { data: oldMaterials, error: oldMatErr }] = await Promise.all([
+    supabase.from('production_plan_items').select('id').eq('plan_id', planId),
+    supabase.from('production_orders').select('id, status').eq('plan_id', planId),
+    supabase.from('plan_materials').select('id, status, qty_dispensed').eq('plan_id', planId),
+  ])
+
+  if (oldItemsErr) throw new Error(`ไม่สามารถตรวจสอบรายการแผนเดิมได้: ${oldItemsErr.message}`)
+  if (oldOrdersErr) throw new Error(`ไม่สามารถตรวจสอบใบสั่งผลิตเดิมได้: ${oldOrdersErr.message}`)
+  if (oldMatErr) throw new Error(`ไม่สามารถตรวจสอบรายการเบิกวัตถุดิบเดิมได้: ${oldMatErr.message}`)
+
+  // ห้ามแก้ไขหากมีการเบิกจ่ายวัตถุดิบไปแล้ว
+  const hasDispensedMaterial = (oldMaterials ?? []).some(
+    (m) => (Number(m.qty_dispensed) || 0) > 0 || (m.status && m.status !== 'pending')
+  )
+  if (hasDispensedMaterial) {
+    throw new Error('ไม่สามารถแก้ไขแผนนี้ได้ เนื่องจากมีการเบิกจ่ายวัตถุดิบแล้ว กรุณาสร้างแผนใหม่แทน')
   }
-  
-  await supabase.from('production_plan_items').delete().eq('plan_id', planId)
-  await supabase.from('plan_materials').delete().eq('plan_id', planId)
+
+  // ห้ามแก้ไขหากใบสั่งผลิตถูกปิด/ซิงค์เข้า ERP แล้ว
+  const hasClosedOrder = (oldOrders ?? []).some((o) => o.status && o.status !== 'active')
+  if (hasClosedOrder) {
+    throw new Error('ไม่สามารถแก้ไขแผนนี้ได้ เนื่องจากใบสั่งผลิตดำเนินการเสร็จสิ้นแล้ว กรุณาสร้างแผนใหม่แทน')
+  }
+
+  const itemIds = (oldItems ?? []).map((i) => i.id)
+  const orderIds = (oldOrders ?? []).map((o) => o.id)
+
+  // 2. ตรวจสอบ job_orders ที่ผูกกับแผนหรือใบสั่งผลิตนี้
+  const jobMap = new Map<string, { id: string; status: string; qty_cast: number | null }>()
+
+  if (itemIds.length > 0) {
+    const { data: jobsByItem, error: jobsByItemErr } = await supabase
+      .from('job_orders')
+      .select('id, status, qty_cast')
+      .in('plan_item_id', itemIds)
+    if (jobsByItemErr) throw new Error(`ไม่สามารถตรวจสอบคิวงานผลิตเดิมได้: ${jobsByItemErr.message}`)
+    for (const j of jobsByItem ?? []) jobMap.set(j.id, j)
+  }
+
+  if (orderIds.length > 0) {
+    const { data: jobsByOrder, error: jobsByOrderErr } = await supabase
+      .from('job_orders')
+      .select('id, status, qty_cast')
+      .in('order_id', orderIds)
+    if (jobsByOrderErr) throw new Error(`ไม่สามารถตรวจสอบคิวงานผลิตตามใบสั่งผลิตได้: ${jobsByOrderErr.message}`)
+    for (const j of jobsByOrder ?? []) jobMap.set(j.id, j)
+  }
+
+  const existingJobs = Array.from(jobMap.values())
+  const hasStartedJob = existingJobs.some(
+    (j) => j.status !== 'pending' || (Number(j.qty_cast) || 0) > 0
+  )
+  if (hasStartedJob) {
+    throw new Error('ไม่สามารถแก้ไขแผนนี้ได้ เนื่องจากเริ่มกระบวนการผลิตไปแล้ว กรุณาสร้างแผนใหม่แทน')
+  }
+
+  // ตรวจสอบตารางลูกที่อาจอ้างอิง job_orders อยู่ (ป้องกัน FK error 23503)
+  const jobIds = existingJobs.map((j) => j.id)
+  if (jobIds.length > 0) {
+    const [concreteRes, qcRes, demoldRes, fgRes] = await Promise.all([
+      supabase.from('concrete_orders').select('id').in('job_order_id', jobIds).limit(1),
+      supabase.from('qc_inspections').select('id').in('job_order_id', jobIds).limit(1),
+      supabase.from('demolding_records').select('id').in('job_order_id', jobIds).limit(1),
+      supabase.from('fg_receipts').select('id').in('job_order_id', jobIds).limit(1),
+    ])
+
+    const hasLinkedProductionData =
+      (concreteRes.data?.length ?? 0) > 0 ||
+      (qcRes.data?.length ?? 0) > 0 ||
+      (demoldRes.data?.length ?? 0) > 0 ||
+      (fgRes.data?.length ?? 0) > 0
+
+    if (hasLinkedProductionData) {
+      throw new Error('ไม่สามารถแก้ไขแผนนี้ได้ เนื่องจากมีข้อมูลการสั่งคอนกรีต/QC/ถอดแบบเชื่อมโยงอยู่แล้ว กรุณาสร้างแผนใหม่แทน')
+    }
+
+    // 3. ลบ job_orders เดิม (ที่ยังเป็น pending ทั้งหมด) พร้อมตรวจ error
+    const { error: delJobsErr } = await supabase.from('job_orders').delete().in('id', jobIds)
+    if (delJobsErr) {
+      throw new Error(`ไม่สามารถลบคิวงานเดิมได้ (${delJobsErr.message})`)
+    }
+  }
+
+  // 4. ลบ production_plan_items เดิม พร้อมตรวจ error
+  const { error: delItemsErr } = await supabase.from('production_plan_items').delete().eq('plan_id', planId)
+  if (delItemsErr) {
+    throw new Error(`ไม่สามารถลบรายการแผนผลิตเดิมได้ (${delItemsErr.message})`)
+  }
+
+  // 5. ลบ plan_materials เดิม พร้อมตรวจ error
+  const { error: delMatErr } = await supabase.from('plan_materials').delete().eq('plan_id', planId)
+  if (delMatErr) {
+    throw new Error(`ไม่สามารถลบรายการวัตถุดิบเดิมได้ (${delMatErr.message})`)
+  }
 }
 
 export async function deleteProductionPlan(planId: string) {

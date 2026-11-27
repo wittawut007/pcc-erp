@@ -256,6 +256,23 @@ export async function approveCounterfortComponent(
   if (jobError || !job) throw new Error('ไม่พบ Job Order')
   if (job.job_type !== 'component') throw new Error('Job นี้ไม่ใช่ประเภท Counterfort Component')
 
+  if (
+    !Number.isInteger(qtyGood) ||
+    !Number.isInteger(qtyDefect) ||
+    qtyGood < 0 ||
+    qtyDefect < 0
+  ) {
+    throw new Error('จำนวนสินค้าดีและของเสียต้องเป็นจำนวนเต็มที่ไม่ติดลบ')
+  }
+
+  const targetQty = Number(job.qty_target ?? 0)
+  const totalCounted = qtyGood + qtyDefect
+  if (totalCounted !== targetQty) {
+    throw new Error(
+      `ไม่สามารถบันทึกได้: ยอดรวมสินค้าดี (${qtyGood}) + ของเสีย (${qtyDefect}) = ${totalCounted} ชิ้น ไม่ตรงกับจำนวนเป้าหมาย (${targetQty} ชิ้น)`
+    )
+  }
+
   const planItem = Array.isArray(job.plan_item) ? job.plan_item[0] : job.plan_item
   const product = Array.isArray(planItem?.product) ? planItem.product[0] : planItem?.product
   let cfMaterialId = product?.counterfort_material_id

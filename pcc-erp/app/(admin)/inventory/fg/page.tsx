@@ -25,7 +25,7 @@ export default async function FgInventoryPage() {
         qty_cast,
         demolding_records(qty_good, qty_defect),
         plan_item:production_plan_items(
-          product:products(id, code, name, category, unit, size)
+          product:products(id, code, name, category, unit, size, length)
         )
       )
     `)
@@ -48,7 +48,7 @@ export default async function FgInventoryPage() {
           qty_cast,
           demolding_records(qty_good, qty_defect),
           plan_item:production_plan_items(
-            product:products(id, code, name, category, unit, size)
+            product:products(id, code, name, category, unit, size, length)
           )
         )
       `)

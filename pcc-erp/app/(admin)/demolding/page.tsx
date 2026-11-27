@@ -40,7 +40,7 @@ export default async function DemoldingPage() {
       worker:profiles(full_name)
     `)
     .order('created_at', { ascending: false })
-    .limit(20)
+    .limit(1000)
 
   const { data: workers } = await supabase
     .from('profiles')

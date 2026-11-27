@@ -216,10 +216,11 @@ export async function getMaterialSummary(params?: {
           id,
           order_number,
           status,
-          job_orders(id, status)
+          job_orders(id, status, bed)
         ),
         items:production_plan_items(
           id,
+          bed,
           qty_target,
           product:products(
             id,
@@ -311,10 +312,14 @@ export async function getConcreteSummary(params?: {
       status,
       mix_ratio,
       requested_at,
+      requested_by_profile:profiles!concrete_orders_requested_by_fkey(full_name),
+      supplied_by_profile:profiles!concrete_orders_supplied_by_fkey(full_name),
       job_order:job_orders!inner(
         id,
+        bed,
         plan_item:production_plan_items!inner(
           id,
+          bed,
           qty_target,
           product:products!inner(
             id,
@@ -326,9 +331,10 @@ export async function getConcreteSummary(params?: {
         ),
         production_order:production_orders!inner(
           id,
+          order_number,
           plan_id,
           status,
-          job_orders(id, status),
+          job_orders(id, status, bed),
           plan:production_plans!inner(
             id,
             plan_date,

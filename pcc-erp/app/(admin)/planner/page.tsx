@@ -55,10 +55,16 @@ export default async function PlannerPage({
 
   // Load specific plan if editing, else load by date (most recent for that date)
   let editingPlan: any = null
+  const planSelectQuery = `
+    *,
+    items:production_plan_items(*, product:products(*)),
+    production_orders(id, order_number, status, job_orders(id, status, qty_cast)),
+    plan_materials(id, status, qty_dispensed)
+  `
   if (editPlanId) {
     const { data } = await supabase
       .from('production_plans')
-      .select('*, items:production_plan_items(*, product:products(*))')
+      .select(planSelectQuery)
       .eq('id', editPlanId)
       .maybeSingle()
     editingPlan = data
@@ -69,13 +75,25 @@ export default async function PlannerPage({
     // Load most-recent plan for that date if navigated by date
     const { data } = await supabase
       .from('production_plans')
-      .select('*, items:production_plan_items(*, product:products(*))')
+      .select(planSelectQuery)
       .eq('plan_date', selectedDate)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
     editingPlan = data
   }
+
+  const planOrders = Array.isArray(editingPlan?.production_orders) ? editingPlan.production_orders : []
+  const planMaterials = Array.isArray(editingPlan?.plan_materials) ? editingPlan.plan_materials : []
+  const hasStartedProduction = Boolean(
+    editingPlan && (
+      planOrders.some((po: any) =>
+        (po.status && po.status !== 'active') ||
+        (Array.isArray(po.job_orders) && po.job_orders.some((j: any) => j.status !== 'pending' || (Number(j.qty_cast) || 0) > 0))
+      ) ||
+      planMaterials.some((m: any) => (Number(m.qty_dispensed) || 0) > 0 || (m.status && m.status !== 'pending'))
+    )
+  )
 
   // Fetch a generic active worker token for the QR code
   const { data: workerProfile } = await supabase
@@ -98,6 +116,7 @@ export default async function PlannerPage({
         key={editingPlan?.id || selectedDate}
         products={products ?? []}
         editingPlan={editingPlan ?? null}
+        hasStartedProduction={hasStartedProduction}
         recentPlans={recentPlans ?? []}
         rawMaterials={rawMaterials ?? []}
         bomItems={bomItems ?? []}
